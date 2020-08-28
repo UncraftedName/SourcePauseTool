@@ -25,6 +25,12 @@ typedef void(__fastcall* _VGui_Paint)(void* thisptr, int edx, int mode);
 typedef int(__fastcall* DemoPlayer__Func)(void* thisptr);
 typedef bool(__fastcall* _CEngineTrace__PointOutsideWorld)(void* thisptr, int edx, const Vector& pt);
 typedef void(__cdecl* _Host_AccumulateTime)(float dt);
+typedef bool(__fastcall* _ProcessMessages)(void* thisptr, int edx, void* readPtr);
+typedef void*(__fastcall* _FindMessage)(void* thisptr, int edx, int type);
+
+typedef char*(__thiscall* _GetMsgName)(void* thisptr);
+typedef int(__thiscall* _GetMsgID)(void* thisptr);
+typedef bool(__fastcall* _RegisterMessage)(void* thisptr, int edx, void* msg);
 
 class EngineDLL : public IHookableNameFilter
 {
@@ -56,6 +62,10 @@ public:
 	void __cdecl HOOKED_Cbuf_Execute_Func();
 	void __fastcall HOOKED_VGui_Paint_Func(void* thisptr, int edx, int mode);
 
+	static bool __fastcall HOOKED_ProcessMessages(void* thisptr, int edx, void* readPtr);
+	static void* __fastcall HOOKED_FindMessage(void* thisptr, int edx, int type);
+	static bool __fastcall HOOKED_RegisterMessage(void* thisptr, int edx, void* msg);
+
 	float GetTickrate() const;
 	void SetTickrate(float value);
 
@@ -65,8 +75,20 @@ public:
 	bool Demo_IsPlaybackPaused() const;
 	_CEngineTrace__PointOutsideWorld ORIG_CEngineTrace__PointOutsideWorld;
 
-protected:
+	struct RegMsg {
+	public:
+		int id;
+		char* name;
+	};
+
+	void* CNetChanPtr;
+	_FindMessage ORIG_FindMessage;
 	PatternContainer patternContainer;
+	_GetMsgName GetMsgName;
+	_GetMsgID GetMsgID;
+	std::vector<RegMsg> RegMsgs;
+
+protected:
 	_SV_ActivateServer ORIG_SV_ActivateServer;
 	_FinishRestore ORIG_FinishRestore;
 	_SetPaused ORIG_SetPaused;
@@ -76,6 +98,8 @@ protected:
 	_Cbuf_Execute ORIG_Cbuf_Execute;
 	_VGui_Paint ORIG_VGui_Paint;
 	_Host_AccumulateTime ORIG_Host_AccumulateTime;
+	_ProcessMessages ORIG_ProcessMessages;
+	_RegisterMessage ORIG_RegisterMessage;
 
 	void* pGameServer;
 	bool* pM_bLoadgame;

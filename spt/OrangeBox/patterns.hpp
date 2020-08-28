@@ -94,6 +94,20 @@ namespace patterns
 		    Host_AccumulateTime,
 		    "5135",
 		    "51 F3 0F 10 ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? F3 0F 11 ?? ?? ?? ?? ?? 8B 01 8B 50");
+		PATTERNS(
+			ProcessMessages,
+		    "3420",
+			"83 EC 34 53 55 89 4C 24 08 56 B9 ?? ?? ?? ?? 33 DB");
+		PATTERNS(FindMessage,
+			"3420",
+			"53 55 56 57 8B F9 8B 9F ?? ?? ?? ?? 33 F6",
+		    "1910503",
+		    "55 8B EC 83 EC 2C 53 89 4D FC 56 B9 00 10 00 00 57 BE 9C");
+		PATTERNS(RegisterMessage,
+		         "5135",
+		         "56 57 8B 7C 24 0C 8B 07 8B 50 1C 8B F1 8B CF FF D2 50 8B CE E8",
+		         "2001",
+		         "55 8B EC 53 8B D9 8B 4D 08 8B 01 8B 50 1C FF D2 50 8B CB E8");
 	} // namespace engine
 
 	namespace client

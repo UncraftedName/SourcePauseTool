@@ -63,6 +63,63 @@ void __cdecl EngineDLL::HOOKED_Host_AccumulateTime(float dt)
 		engineDLL.ORIG_Host_AccumulateTime(dt);
 }
 
+bool __fastcall EngineDLL::HOOKED_ProcessMessages(void* thisptr, int edx, void* readPtr) {
+	engineDLL.CNetChanPtr = thisptr;
+	return engineDLL.ORIG_ProcessMessages(thisptr, edx, readPtr);
+}
+
+void* __fastcall EngineDLL::HOOKED_FindMessage(void* thisptr, int edx, int type)
+{
+	return engineDLL.ORIG_FindMessage(thisptr, edx, type);
+}
+
+bool __fastcall EngineDLL::HOOKED_RegisterMessage(void* thisptr, int edx, void* msg) {
+	int offID = 7;
+	int offName = 9;
+	engineDLL.GetMsgID = (_GetMsgID)(*(*((void***)msg) + offID));
+	engineDLL.GetMsgName = (_GetMsgName)(*(*((void***)msg) + offName));
+	RegMsg m;
+	m.id = engineDLL.GetMsgID(msg);
+	m.name = engineDLL.GetMsgName(msg);
+	if (m.id <= 3)
+		engineDLL.RegMsgs.clear();
+	engineDLL.RegMsgs.push_back(m);
+	Msg("register message %d: %s\n", m.id, m.name);
+	return engineDLL.ORIG_RegisterMessage(thisptr, edx, msg);
+}
+
+/*CON_COMMAND(TestFindMessage, "") {
+	for (int i = 0; i < 15; i++) 
+	{
+#if SSDK2007
+		void* ret = engineDLL.ORIG_FindMessage(engineDLL.CNetChanPtr, 0, i);
+#else
+		void** vec = *reinterpret_cast<void***>((reinterpret_cast<char*>(engineDLL.CNetChanPtr) + 0x602));
+		void* ret = vec[i];
+#endif
+		if (ret != nullptr) {
+			auto vftable = *reinterpret_cast<void***>(ret);
+			engineDLL.GetMsgName = reinterpret_cast<_GetMsgName>(*((int*)vftable + 9));
+			Msg("%d: %s\n", i, engineDLL.GetMsgName(ret));
+		}
+	}
+
+	void* ret = engineDLL.ORIG_FindMessage(engineDLL.CNetChanPtr, 0, std::stoi(args.Arg(1)));
+	if (ret != nullptr)
+	{
+		auto vftable = *reinterpret_cast<void***>(ret);
+		//engineDLL.patternContainer.AddVFTableHook(VFTableHook(vftable, 9, (PVOID)engineDLL.HOOKED_GetMsgName, (PVOID*)&engineDLL.ORIG_GetMsgName));
+		//engineDLL.patternContainer.Unhook();
+		//engineDLL.patternContainer.Hook();
+		engineDLL.ORIG_GetMsgName = reinterpret_cast<_GetMsgName>(*((int*)vftable + 9));
+
+		int funcAddr = *(int32*)((char*)(*(int32*)ret) + 0x24);
+		char* name = *(char**)((char*)funcAddr + 1);
+		Msg("name is %s\n", name);
+		Msg("name is %s\n", engineDLL.ORIG_GetMsgName(ret));
+	}
+}*/
+
 void __cdecl EngineDLL::HOOKED_Cbuf_Execute()
 {
 	TRACE_ENTER();
@@ -147,6 +204,7 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CEngineTrace__PointOutsideWorld);
 	DEF_FUTURE(_Host_RunFrame);
 	DEF_FUTURE(Host_AccumulateTime);
+	DEF_FUTURE(ProcessMessages);
 
 	GET_HOOKEDFUTURE(SV_ActivateServer);
 	GET_HOOKEDFUTURE(FinishRestore);
@@ -157,6 +215,7 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 	GET_FUTURE(CEngineTrace__PointOutsideWorld);
 	GET_FUTURE(_Host_RunFrame);
 	GET_HOOKEDFUTURE(Host_AccumulateTime);
+	GET_HOOKEDFUTURE(ProcessMessages);
 
 	// m_bLoadgame and pGameServer (&sv)
 	if (ORIG_SpawnPlayer)
@@ -317,6 +376,29 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 	{
 		pHost_Realtime = *reinterpret_cast<float**>((uintptr_t)ORIG_Host_AccumulateTime + 5);
 	}
+
+	DEF_FUTURE(RegisterMessage);
+	GET_HOOKEDFUTURE(RegisterMessage);
+
+	//DEF_FUTURE(FindMessage);
+	//GET_HOOKEDFUTURE(FindMessage);
+
+#if SSDK2007
+	if (ORIG_ProcessMessages)
+	{
+		Msg("spt: ProcessMessages found at %d!\n", ORIG_ProcessMessages);
+		// + 631 to get to call, so +1 for call instruction. 1520 is offset in 3420
+		int off = 631;
+		int32 callOff = *reinterpret_cast<int32*>((char*)ORIG_ProcessMessages + off + 1);
+		ORIG_FindMessage =
+		    reinterpret_cast<_FindMessage>(reinterpret_cast<char*>(ORIG_ProcessMessages) + off + 5 + callOff);
+		patternContainer.AddHook(HOOKED_FindMessage, (PVOID*)&ORIG_FindMessage);
+		Msg("spt: the call has an offset of %d, that means that FindMessage() - ProcessMessages() = %d.\n",
+		    callOff,
+		    reinterpret_cast<uintptr_t>(ORIG_FindMessage) - reinterpret_cast<uintptr_t>(ORIG_ProcessMessages));
+		Msg("spt: FindMessage is at %p\n", ORIG_FindMessage);
+	}
+#endif // SSDK2007
 
 	patternContainer.Hook();
 }
