@@ -107,7 +107,9 @@ namespace patterns
 		         "5135",
 		         "56 57 8B 7C 24 0C 8B 07 8B 50 1C 8B F1 8B CF FF D2 50 8B CE E8",
 		         "2001",
-		         "55 8B EC 53 8B D9 8B 4D 08 8B 01 8B 50 1C FF D2 50 8B CB E8");
+		         "55 8B EC 53 8B D9 8B 4D 08 8B 01 8B 50 1C FF D2 50 8B CB E8",
+			     "4044",
+			     "56 57 8B 7C 24 0C 8B 07 8B F1 8B CF FF 50 1C 50 8B CE E8");
 	} // namespace engine
 
 	namespace client
