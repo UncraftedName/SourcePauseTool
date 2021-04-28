@@ -232,6 +232,15 @@ ConCommand y_spt_set_isg("y_spt_set_isg",
                          FCVAR_DONTRECORD | FCVAR_CHEAT);
 #endif // SSDK2007 || SSDK2013
 
+void CC_Draw_Triangle_Test(const CCommand& args) {
+	Vector p1(0, 0, 0);
+	Vector p2(100, 100, 100);
+	Vector p3(200, 250, 300);
+	serverDLL.ORIG_NDebugOverlay_Triangle(p1, p2, p3, 255, 0, 0, 100, true, 10);
+}
+
+ConCommand y_spt_draw_triangle_test("y_spt_draw_triangle_test", CC_Draw_Triangle_Test);
+
 ConVar* _viewmodel_fov = nullptr;
 ConVar* _sv_accelerate = nullptr;
 ConVar* _sv_airaccelerate = nullptr;

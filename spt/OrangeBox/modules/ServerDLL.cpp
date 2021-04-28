@@ -254,6 +254,7 @@ void ServerDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CGameMovement__GetPlayerMins);
 	DEF_FUTURE(SetPredictionRandomSeed);
 	DEF_FUTURE(CGameMovement__DecayPunchAngle);
+	DEF_FUTURE(NDebugOverlay_Triangle);
 	GET_HOOKEDFUTURE(FinishGravity);
 	GET_HOOKEDFUTURE(PlayerRunCommand);
 	GET_HOOKEDFUTURE(CheckStuck);
@@ -272,6 +273,7 @@ void ServerDLL::Hook(const std::wstring& moduleName,
 	GET_HOOKEDFUTURE(CGameMovement__GetPlayerMins);
 	GET_HOOKEDFUTURE(SetPredictionRandomSeed);
 	GET_FUTURE(CGameMovement__DecayPunchAngle);
+	GET_FUTURE(NDebugOverlay_Triangle);
 
 	if (DoesGameLookLikePortal())
 	{
@@ -613,6 +615,7 @@ void ServerDLL::Clear()
 	ORIG_MiddleOfSlidingFunction = nullptr;
 	ORIG_MiddleOfTeleportTouchingEntity = nullptr;
 	ORIG_EndOfTeleportTouchingEntity = nullptr;
+	ORIG_NDebugOverlay_Triangle = nullptr;
 	off1M_nOldButtons = 0;
 	off2M_nOldButtons = 0;
 	cantJumpNextTime = false;

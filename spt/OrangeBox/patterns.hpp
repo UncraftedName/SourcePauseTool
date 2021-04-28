@@ -463,6 +463,9 @@ namespace patterns
 		         "5135",
 		         "8B 80 24 27 00 00 8B CD 8B A9 24 27 00 00 89 44 24 3C");
 		PATTERNS(EndOfTeleportTouchingEntity, "5135", "E8 E3 CC DB FF 8D 8C 24 B8 00 00 00 E8 17 45 F5 FF");
+		PATTERNS(NDebugOverlay_Triangle,
+		         "5135",
+		         "83 EC 30 56 E8 ?? ?? ?? ?? 8B F0 85 F6 0F 84 ?? ?? ?? ?? 8B 86 FC 00 00 00")
 	} // namespace server
 
 	namespace vguimatsurface

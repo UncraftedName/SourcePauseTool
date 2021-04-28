@@ -75,6 +75,16 @@ typedef void(__cdecl* _TracePlayerBBoxForGround2)(const Vector& start,
                                                   trace_t& pm);
 typedef void(__cdecl* _SetPredictionRandomSeed)(void* usercmd);
 
+typedef void(__cdecl* _NDebugOverlay_Triangle)(const Vector& p1,
+                                               const Vector& p2,
+                                               const Vector& p3,
+                                               int r,
+                                               int g,
+                                               int b,
+                                               int a,
+                                               bool noDepthTest,
+                                               float duration);
+
 class ServerDLL : public IHookableNameFilter
 {
 public:
@@ -195,6 +205,7 @@ public:
 	_CPortalGameMovement__TracePlayerBBox ORIG_CPortalGameMovement__TracePlayerBBox;
 	_TracePlayerBBoxForGround ORIG_TracePlayerBBoxForGround;
 	_TracePlayerBBoxForGround2 ORIG_TracePlayerBBoxForGround2;
+	_NDebugOverlay_Triangle ORIG_NDebugOverlay_Triangle;
 	Gallant::Signal0<void> JumpSignal;
 	bool overrideMinMax;
 	Vector _mins;
