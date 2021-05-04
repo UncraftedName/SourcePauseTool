@@ -1,5 +1,8 @@
 #include "cvars.hpp"
 
+#include "client_class.h"
+#include "overlay\portal_camera.hpp"
+
 #include "convar.h"
 #include "modules.hpp"
 

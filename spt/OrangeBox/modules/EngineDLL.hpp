@@ -74,7 +74,7 @@ public:
 	bool Demo_IsPlayingBack() const;
 	bool Demo_IsPlaybackPaused() const;
 	_CEngineTrace__PointOutsideWorld ORIG_CEngineTrace__PointOutsideWorld;
-	_CDebugOverlay_AddTriangleOverlay ORIG_CDebugOverlay_AddTriangleOverlay;
+	_CDebugOverlay_AddTriangleOverlay ORIG_CDebugOverlay_AddTriangleOverlay; // one-sided triangle
 
 protected:
 	PatternContainer patternContainer;

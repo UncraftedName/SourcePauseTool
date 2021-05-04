@@ -70,7 +70,10 @@ void VPhysicsDLL::Hook(const std::wstring& moduleName,
 	uint32_t ORIG_MiddleOfRecheck_ov_element = NULL;
 
 	DEF_FUTURE(MiddleOfRecheck_ov_element);
+	DEF_FUTURE(CPhysicsCollision__CreateDebugMesh);
+
 	GET_FUTURE(MiddleOfRecheck_ov_element);
+	GET_FUTURE(CPhysicsCollision__CreateDebugMesh);
 
 	if (ORIG_MiddleOfRecheck_ov_element)
 		this->isgFlagPtr = *(bool**)(ORIG_MiddleOfRecheck_ov_element + 2);
@@ -83,9 +86,12 @@ void VPhysicsDLL::Hook(const std::wstring& moduleName,
 void VPhysicsDLL::Unhook()
 {
 	patternContainer.Unhook();
+	Clear();
 }
 
 void VPhysicsDLL::Clear()
 {
-	this->isgFlagPtr = nullptr;
+	IHookableNameFilter::Clear();
+	ORIG_CPhysicsCollision__CreateDebugMesh = nullptr;
+	isgFlagPtr = nullptr;
 }

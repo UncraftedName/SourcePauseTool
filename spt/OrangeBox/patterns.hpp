@@ -493,6 +493,9 @@ namespace patterns
 		         "C6 05 ?? ?? ?? ?? 01 83 EE 01 3B 74 24 28 7D D3 8B 4C 24 38",
 		         "1910503",
 		         "C6 05 ?? ?? ?? ?? 01 4E 3B 75 F0 7D D3 8B 8D DC FD FF FF");
+		PATTERNS(CPhysicsCollision__CreateDebugMesh,
+		         "5135",
+		         "83 EC 10 8B 4C 24 14 8B 01 8B 40 08 55 56 57 33 ED 8D 54 24 10 52");
 	} // namespace vphysics
 
 } // namespace patterns

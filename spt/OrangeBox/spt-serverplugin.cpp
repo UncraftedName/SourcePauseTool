@@ -36,6 +36,7 @@
 #include "module_hooks.hpp"
 #include "overlay\overlay-renderer.hpp"
 #include "overlay\overlays.hpp"
+#include "overlay\portal_camera.hpp"
 #include "tier0\memdbgoff.h" // YaLTeR - switch off the memory debugging.
 using namespace std::literals;
 
@@ -1238,3 +1239,123 @@ CON_COMMAND(
 }
 
 #endif
+
+// these structs are here in case I need to use them later, but I don't think I'll need them for anything
+struct Polyhedron_IndexedLine_t
+{
+	unsigned short iPointIndices[2];
+};
+
+struct Polyhedron_IndexedLineReference_t
+{
+	unsigned short iLineIndex;
+	unsigned char iEndPointIndex;
+};
+
+struct Polyhedron_IndexedPolygon_t
+{
+	unsigned short iFirstIndex;
+	unsigned short iIndexCount;
+	Vector polyNormal;
+};
+
+class CPolyhedron
+{
+public:
+	Vector* pVertices;
+	Polyhedron_IndexedLine_t* pLines;
+	Polyhedron_IndexedLineReference_t* pIndices;
+	Polyhedron_IndexedPolygon_t* pPolygons;
+
+	unsigned short iVertexCount;
+	unsigned short iLineCount;
+	unsigned short iIndexCount;
+	unsigned short iPolygonCount;
+};
+
+void drawPolyhedrons(CUtlVector<CPolyhedron*> polyhedrons, int r, int g, int b) {}
+
+CON_COMMAND(_y_spt_draw_portal_collision, "")
+{
+	// currently only works for the portal which you're in
+	auto portal = GetEngine()->PEntityOfEntIndex(GetEnvironmentPortal()->entindex())->GetIServerEntity();
+	if (!portal)
+	{
+		Msg("no portal\n");
+		return;
+	}
+
+	uint32_t* simulator = (uint32_t*)portal + 327;
+	uint32_t* other = *(uint32_t**)(simulator + 1);
+	if (!other)
+	{
+		Msg("other sim null?\n");
+		return;
+	}
+	if (*(uint32_t**)(other + 1) == simulator)
+	{
+		Msg("good job you found the simulator\n");
+	}
+	else
+	{
+		Msg("linked doesn't match\n");
+		return;
+	}
+	// "shadertest/wireframevertexcolor", "Other textures"
+	
+	uint32_t offsets[] = {76, 94, 101}; // world brushes, local wall tube, local wall brushes
+	color32 colors[] = {{255, 0, 0, 150}, {40, 255, 0, 100}, {40, 0, 255, 100}};
+
+	Vector* v;
+	for (int idx = 0; idx < 3; idx++)
+	{
+		CPhysCollide* pCollide = *(CPhysCollide**)(simulator + offsets[idx]);
+		const int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(nullptr, 0, pCollide, &v); // turns out you don't need to pass anything for the first two params (ecx/edx)
+		for (int i = 0; i < vertCount / 3; i += 3)
+		{
+			int newR = colors[idx].r - ((i % 6) ? 0 : 40);
+
+			// this pushes the faces towards their normal to prevent z fighting, but that's not necessary (I think) if noDepthTest is used
+			/*Vector a, b, c;
+			a = v[i];
+			b = v[i + 1];
+			c = v[i + 2];
+			Vector norm = (b - a).Cross(c - a);
+			norm.NormalizeInPlace();
+			norm *= -0.1f;
+			a += norm;
+			b += norm;
+			c += norm;*/
+			
+			// drawing twice might come in handy if the normals are not on the side we want them to be
+			engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i], v[i+1], v[i+2], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
+			//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i+2], v[i+1], v[i], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
+		}
+		g_pMemAlloc->Free(v);
+	}
+
+	// clipped - 328 / 4
+
+	CUtlVector<char[28]> &clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 82);
+
+	for (int i = 0; i < clippedStaticProps.Count(); i++) {
+		char* elem = clippedStaticProps[i];
+		CPhysCollide* pCollide = *((CPhysCollide**)elem + 2);
+		if (pCollide)
+		{
+			const int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(nullptr, 0, pCollide, &v);
+			for (int j = 0; j < vertCount / 3; j += 3)
+			{
+				color32 c = {200, (j % 6) ? 150 : 200, 0, 100};
+				engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[j], v[j+1], v[j+2], c.r, c.g, c.b, c.a, true, 10);
+				//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[j+2], v[j+1], v[j], c.r, c.g, c.b, c.a, true, 10);
+			}
+			g_pMemAlloc->Free(v);
+		}
+	}
+
+	// 304 = m_InternalData.Simulation.Static.World.Brushes.pCollideable
+	// 344 = m_InternalData.Simulation.Static.World.StaticProps.ClippedRepresentations.m_Size
+	// 376 = m_InternalData.Simulation.Static.Wall.Local.Tube.pCollideable
+	// 404 = m_InternalData.Simulation.Static.Wall.Local.Brushes.pCollideable
+}
