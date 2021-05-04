@@ -6,9 +6,14 @@
 #include "engine\iserverplugin.h"
 #include "tier3\tier3.h"
 
+typedef struct Tri_t
+{
+	Vector v1, v2, v3;
+};
+
 typedef int(__fastcall* _CPhysicsCollision__CreateDebugMesh)(IPhysicsCollision* thisptr,
                                                              int dummy,
-                                                             CPhysCollide* pCollisionModel,
+                                                             const CPhysCollide* pCollisionModel,
                                                              Vector** outVerts);
 
 class VPhysicsDLL : public IHookableNameFilter
@@ -24,10 +29,13 @@ public:
 	virtual void Unhook();
 	virtual void Clear();
 
-	_CPhysicsCollision__CreateDebugMesh ORIG_CPhysicsCollision__CreateDebugMesh; // after using this, make sure to g_pMemAlloc->Free the verts
+	bool IsCreateDebugMeshHooked();
+	int CreateDebugMesh(const CPhysCollide* pCollisionModel, Tri_t** outTriangles); // returns triangle count
+	void DestroyDebugMesh(Tri_t* triangles);
 
 	bool* isgFlagPtr;
 
 protected:
 	PatternContainer patternContainer;
+	_CPhysicsCollision__CreateDebugMesh ORIG_CPhysicsCollision__CreateDebugMesh;
 };

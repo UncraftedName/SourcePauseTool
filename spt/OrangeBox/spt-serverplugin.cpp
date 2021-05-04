@@ -1273,7 +1273,46 @@ public:
 	unsigned short iPolygonCount;
 };
 
-void drawPolyhedrons(CUtlVector<CPolyhedron*> polyhedrons, int r, int g, int b) {}
+// void drawPolyhedrons(CUtlVector<CPolyhedron*> polyhedrons, int r, int g, int b) {}
+
+void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDepthTest, float duration)
+{
+	if (!pCollide)
+		return;
+	Tri_t* tris;
+	// turns out you don't need to pass anything for the first two params (ecx/edx)
+	const int triCount = vphysicsDLL.CreateDebugMesh(pCollide, &tris);
+	float sc[] = {1, 0.8f};
+	for (int i = 0; i < triCount; i++)
+	{
+		// scale the colors so that (most) neighboring triangles don't look the same
+		color32 c = cc;
+		float s = sc[i % 2];
+		c.r *= s;
+		c.g *= s;
+		c.b *= s;
+
+		Vector& v1 = tris[i].v1;
+		Vector& v2 = tris[i].v2;
+		Vector& v3 = tris[i].v3;
+		// this pushes the faces towards their normal to prevent z fighting, but that's not necessary (I think) if noDepthTest is used
+		if (!noDepthTest)
+		{
+			Vector norm = (v1 - v2).Cross(v3 - v1);
+			norm.NormalizeInPlace();
+			norm *= 0.1f;
+			v1 += norm;
+			v2 += norm;
+			v3 += norm;
+		}
+
+		// drawing twice might come in handy if the normals are not on the side we want them to be
+		//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i], v[i+1], v[i+2], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
+		//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i+2], v[i+1], v[i], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
+		engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v1, v2, v3, c.r, c.g, c.b, c.a, noDepthTest, duration);
+	}
+	g_pMemAlloc->Free(tris);
+}
 
 CON_COMMAND(_y_spt_draw_portal_collision, "")
 {
@@ -1284,9 +1323,9 @@ CON_COMMAND(_y_spt_draw_portal_collision, "")
 		Msg("no portal\n");
 		return;
 	}
-
 	uint32_t* simulator = (uint32_t*)portal + 327;
-	uint32_t* other = *(uint32_t**)(simulator + 1);
+	// this is just a bunch of nonsense to check if the sim ptr makes sense
+	/*uint32_t* other = *(uint32_t**)(simulator + 1);
 	if (!other)
 	{
 		Msg("other sim null?\n");
@@ -1300,62 +1339,37 @@ CON_COMMAND(_y_spt_draw_portal_collision, "")
 	{
 		Msg("linked doesn't match\n");
 		return;
-	}
+	}*/
 	// "shadertest/wireframevertexcolor", "Other textures"
-	
+
 	uint32_t offsets[] = {76, 94, 101}; // world brushes, local wall tube, local wall brushes
-	color32 colors[] = {{255, 0, 0, 150}, {40, 255, 0, 100}, {40, 0, 255, 100}};
+	color32 colors[] = {{255, 20, 50, 100}, {40, 255, 0, 100}, {70, 120, 255, 150}};
 
 	Vector* v;
 	for (int idx = 0; idx < 3; idx++)
 	{
 		CPhysCollide* pCollide = *(CPhysCollide**)(simulator + offsets[idx]);
-		const int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(nullptr, 0, pCollide, &v); // turns out you don't need to pass anything for the first two params (ecx/edx)
-		for (int i = 0; i < vertCount / 3; i += 3)
-		{
-			int newR = colors[idx].r - ((i % 6) ? 0 : 40);
-
-			// this pushes the faces towards their normal to prevent z fighting, but that's not necessary (I think) if noDepthTest is used
-			/*Vector a, b, c;
-			a = v[i];
-			b = v[i + 1];
-			c = v[i + 2];
-			Vector norm = (b - a).Cross(c - a);
-			norm.NormalizeInPlace();
-			norm *= -0.1f;
-			a += norm;
-			b += norm;
-			c += norm;*/
-			
-			// drawing twice might come in handy if the normals are not on the side we want them to be
-			engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i], v[i+1], v[i+2], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
-			//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i+2], v[i+1], v[i], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
-		}
-		g_pMemAlloc->Free(v);
+		drawCPhysCollide(pCollide, colors[idx], false, 10);
 	}
 
 	// clipped - 328 / 4
 
-	CUtlVector<char[28]> &clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 82);
+	CUtlVector<char[28]>& clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 83);
 
-	for (int i = 0; i < clippedStaticProps.Count(); i++) {
+	for (int i = 0; i < clippedStaticProps.Count(); i++)
+	{
 		char* elem = clippedStaticProps[i];
 		CPhysCollide* pCollide = *((CPhysCollide**)elem + 2);
-		if (pCollide)
-		{
-			const int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(nullptr, 0, pCollide, &v);
-			for (int j = 0; j < vertCount / 3; j += 3)
-			{
-				color32 c = {200, (j % 6) ? 150 : 200, 0, 100};
-				engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[j], v[j+1], v[j+2], c.r, c.g, c.b, c.a, true, 10);
-				//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[j+2], v[j+1], v[j], c.r, c.g, c.b, c.a, true, 10);
-			}
-			g_pMemAlloc->Free(v);
-		}
+		drawCPhysCollide(pCollide, color32{200, 200, 0, 100}, false, 10);
 	}
 
 	// 304 = m_InternalData.Simulation.Static.World.Brushes.pCollideable
 	// 344 = m_InternalData.Simulation.Static.World.StaticProps.ClippedRepresentations.m_Size
 	// 376 = m_InternalData.Simulation.Static.Wall.Local.Tube.pCollideable
 	// 404 = m_InternalData.Simulation.Static.Wall.Local.Brushes.pCollideable
+	
+	// TODO:
+	// look at the dynamic stuff
+	// look at stuff that only has IPhysicsObject's e.g. Simulation.Static.Wall.RemoteTransformedToLocal.Brushes
+	// look at the whole physics environment?
 }

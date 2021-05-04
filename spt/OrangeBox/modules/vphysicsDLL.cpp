@@ -95,3 +95,24 @@ void VPhysicsDLL::Clear()
 	ORIG_CPhysicsCollision__CreateDebugMesh = nullptr;
 	isgFlagPtr = nullptr;
 }
+
+
+
+bool VPhysicsDLL::IsCreateDebugMeshHooked()
+{
+	return ORIG_CPhysicsCollision__CreateDebugMesh;
+}
+
+int VPhysicsDLL::CreateDebugMesh(const CPhysCollide* pCollide, Tri_t** outTriangles)
+{
+	if (!IsCreateDebugMeshHooked() || !pCollide)
+		return -1;
+	// I don't think the physics collision is actually used in this function
+	return ORIG_CPhysicsCollision__CreateDebugMesh(g_pPhysicsCollision, 0, pCollide, (Vector**)outTriangles) / 3;
+}
+
+void VPhysicsDLL::DestroyDebugMesh(Tri_t* triangles)
+{
+	if (triangles && IsCreateDebugMeshHooked())
+		g_pMemAlloc->Free(triangles);
+}
