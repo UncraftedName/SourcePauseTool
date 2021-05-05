@@ -37,6 +37,8 @@
 #include "overlay\overlay-renderer.hpp"
 #include "overlay\overlays.hpp"
 #include "overlay\portal_camera.hpp"
+#include "..\utils\property_getter.hpp"
+#include <chrono>
 #include "tier0\memdbgoff.h" // YaLTeR - switch off the memory debugging.
 using namespace std::literals;
 
@@ -1240,6 +1242,8 @@ CON_COMMAND(
 
 #endif
 
+// clang-format off
+
 // these structs are here in case I need to use them later, but I don't think I'll need them for anything
 struct Polyhedron_IndexedLine_t
 {
@@ -1275,10 +1279,23 @@ public:
 
 // void drawPolyhedrons(CUtlVector<CPolyhedron*> polyhedrons, int r, int g, int b) {}
 
-void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDepthTest, float duration)
+inline bool operator<(const std::pair<Vector, Vector>& lhs, const std::pair<Vector, Vector>& rhs) {
+	return lhs.first.x + lhs.second.x < rhs.first.x + rhs.second.x;
+}
+
+inline bool operator==(const std::pair<Vector, Vector>& lhs, const std::pair<Vector, Vector>& rhs) {
+	return lhs.first == rhs.first && lhs.second == rhs.second;
+}
+
+void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDepthTest, float duration, const char* collideName)
 {
-	if (!pCollide)
+	if (!pCollide) {
+		DevMsg("CPhysCollide %s is null, not drawing\n", collideName);
 		return;
+	}
+	DevMsg("draw CPhysCollide stats for %s: ", collideName);
+	int lines = 0;
+	int triangles = 0;
 	Tri_t* tris;
 	// turns out you don't need to pass anything for the first two params (ecx/edx)
 	const int triCount = vphysicsDLL.CreateDebugMesh(pCollide, &tris);
@@ -1287,10 +1304,10 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 	{
 		// scale the colors so that (most) neighboring triangles don't look the same
 		color32 c = cc;
-		float s = sc[i % 2];
-		c.r *= s;
-		c.g *= s;
-		c.b *= s;
+		//float s = sc[i % 2];
+		//c.r *= s;
+		//c.g *= s;
+		//c.b *= s;
 
 		Vector& v1 = tris[i].v1;
 		Vector& v2 = tris[i].v2;
@@ -1305,26 +1322,145 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 			v2 += norm;
 			v3 += norm;
 		}
+		/*if (drawnLines.insert(std::make_pair(v1, v2)).second && drawnLines.insert(std::make_pair(v2, v1)).second)
+			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v1, v2, 0, 0, 0, 255, noDepthTest, duration);
+		if (drawnLines.insert(std::make_pair(v2, v3)).second && drawnLines.insert(std::make_pair(v3, v2)).second)
+			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v2, v3, 0, 0, 0, 255, noDepthTest, duration);
+		if (drawnLines.insert(std::make_pair(v3, v1)).second && drawnLines.insert(std::make_pair(v1, v3)).second)
+			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v3, v1, 0, 0, 0, 255, noDepthTest, duration);*/
+
+		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v1, v2, 0, 0, 0, 255, noDepthTest, duration);
+		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v2, v3, 0, 0, 0, 255, noDepthTest, duration);
+		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v3, v1, 0, 0, 0, 255, noDepthTest, duration);
+		lines += 3;
 
 		// drawing twice might come in handy if the normals are not on the side we want them to be
 		//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i], v[i+1], v[i+2], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
 		//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i+2], v[i+1], v[i], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
 		engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v1, v2, v3, c.r, c.g, c.b, c.a, noDepthTest, duration);
+		triangles += 1;
 	}
+	DevMsg("%d triangles & %d lines\n", triangles, lines);
 	g_pMemAlloc->Free(tris);
 }
 
-CON_COMMAND(_y_spt_draw_portal_collision, "")
+// clang-format on
+
+static int lastPortalIndex = -1;
+
+// draws the geo for 10s
+CON_COMMAND(_y_spt_draw_portal_collision,
+            "auto|blue|orange|<index> (if auto but not in bubble, will use the portal which you were last in)")
 {
-	// currently only works for the portal which you're in
-	auto portal = GetEngine()->PEntityOfEntIndex(GetEnvironmentPortal()->entindex())->GetIServerEntity();
-	if (!portal)
+	if (!GetEngine()->PEntityOfEntIndex(0))
 	{
-		Msg("no portal\n");
+		Msg("playing a demo? can't get entities\n");
 		return;
 	}
+	char* arg = args.ArgC() == 1 ? "auto" : args[1]; // default to auto
+
+	bool want_blue = !strcmp(arg, "blue");
+	bool want_orange = !strcmp(arg, "orange");
+	bool want_auto = !strcmp(arg, "auto");
+findPortal:
+	int portalIndex = -1;
+	if (want_auto)
+	{
+		auto pEnv = GetEnvironmentPortal();
+		if (pEnv)
+		{
+			portalIndex = pEnv->entindex();
+		}
+		else if (lastPortalIndex == -1)
+		{
+			Msg("auto selected but not in bubble, looking for any portal\n");
+			want_blue = want_orange = true;
+			want_auto = false;
+			goto findPortal;
+		}
+		else
+		{
+			auto pEnt = utils::GetClientEntity(lastPortalIndex - 1);
+			if (invalidPortal(pEnt))
+			{
+				lastPortalIndex = -1;
+				Msg("auto selected but last portal not set, looking for any portal\n");
+				want_blue = want_orange = true;
+				want_auto = false;
+				goto findPortal;
+			}
+			portalIndex = lastPortalIndex;
+		}
+	}
+	else if (want_blue || want_orange)
+	{
+		int lastViableIndex = -1;
+		for (int i = 1; i < MAX_EDICTS; ++i)
+		{
+			IClientEntity* ent = utils::GetClientEntity(i - 1);
+
+			if (!invalidPortal(ent))
+			{
+				const char* modelName = utils::GetModelName(ent);
+				bool is_orange = strstr(modelName, "portal2");
+				if ((want_orange && is_orange) || (want_blue && !is_orange))
+				{
+					// prioritize an open portal
+					int handle = utils::GetProperty<int>(ent->entindex() - 1, "m_hLinkedPortal");
+					int index = (handle & (MAX_EDICTS - 1));
+					if (index < MAX_EDICTS)
+					{
+						portalIndex = i;
+						break;
+					}
+					else
+					{
+						lastViableIndex = i;
+					}
+				}
+			}
+		}
+		if (portalIndex == -1)
+		{
+			if (lastViableIndex == -1)
+			{
+				Msg("no %s portals found\n", arg);
+				return;
+			}
+			portalIndex = lastViableIndex;
+		}
+		Msg("using %s portal at index %d\n", arg, portalIndex);
+	}
+	else
+	{
+		portalIndex = atoi(args[1]);
+		if (portalIndex < 1 || portalIndex >= MAX_EDICTS || invalidPortal(utils::GetClientEntity(portalIndex)))
+		{
+			Msg("portal index %s not valid\n", arg);
+			return;
+		}
+	}
+	lastPortalIndex = portalIndex;
+
+	auto pEnt = GetEngine()->PEntityOfEntIndex(portalIndex);
+	if (!pEnt)
+	{
+		Msg("pEnt is null, I forgot when this happens but I can't get that sweet juicy server entitiy\n");
+		return;
+	}
+
+	auto portal = pEnt->GetIServerEntity();
+	if (!portal)
+	{
+		Msg("server entity is null :/\n");
+		return;
+	}
+
+	// okay now we can finally start drawing stuff
+	debugOverlay->ClearAllOverlays();
+
 	uint32_t* simulator = (uint32_t*)portal + 327;
-	// this is just a bunch of nonsense to check if the sim ptr makes sense
+	// this is just a sanity check if the sim ptr makes sense
 	/*uint32_t* other = *(uint32_t**)(simulator + 1);
 	if (!other)
 	{
@@ -1342,32 +1478,34 @@ CON_COMMAND(_y_spt_draw_portal_collision, "")
 	}*/
 	// "shadertest/wireframevertexcolor", "Other textures"
 
+	auto startTime = std::chrono::steady_clock::now();
+
 	uint32_t offsets[] = {76, 94, 101}; // world brushes, local wall tube, local wall brushes
 	color32 colors[] = {{255, 20, 50, 100}, {40, 255, 0, 100}, {70, 120, 255, 150}};
+	char* names[] = {"world brushes", "local wall tube", "local wall brushes"};
 
-	Vector* v;
 	for (int idx = 0; idx < 3; idx++)
 	{
 		CPhysCollide* pCollide = *(CPhysCollide**)(simulator + offsets[idx]);
-		drawCPhysCollide(pCollide, colors[idx], false, 10);
+		drawCPhysCollide(pCollide, colors[idx], false, 10, names[idx]);
 	}
 
 	// clipped - 328 / 4
 
 	CUtlVector<char[28]>& clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 83);
 
+	char name[30];
 	for (int i = 0; i < clippedStaticProps.Count(); i++)
 	{
+		sprintf(name, "clipped static prop #%d", i + 1);
 		char* elem = clippedStaticProps[i];
 		CPhysCollide* pCollide = *((CPhysCollide**)elem + 2);
-		drawCPhysCollide(pCollide, color32{200, 200, 0, 100}, false, 10);
+		drawCPhysCollide(pCollide, color32{200, 200, 0, 100}, false, 10, name);
 	}
 
-	// 304 = m_InternalData.Simulation.Static.World.Brushes.pCollideable
-	// 344 = m_InternalData.Simulation.Static.World.StaticProps.ClippedRepresentations.m_Size
-	// 376 = m_InternalData.Simulation.Static.Wall.Local.Tube.pCollideable
-	// 404 = m_InternalData.Simulation.Static.Wall.Local.Brushes.pCollideable
-	
+	auto endTime = std::chrono::steady_clock::now();
+	DevMsg("generating debug meshes for portal geometry took %dus\n",
+	    std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime));
 	// TODO:
 	// look at the dynamic stuff
 	// look at stuff that only has IPhysicsObject's e.g. Simulation.Static.Wall.RemoteTransformedToLocal.Brushes

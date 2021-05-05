@@ -36,6 +36,15 @@ typedef void(__cdecl* _CDebugOverlay_AddTriangleOverlay)(const Vector& p1,
                                                          bool noDepthTest,
                                                          float flDuration);
 
+typedef void(__cdecl* _CDebugOverlay_AddLineOverlay)(const Vector& origin,
+                                                     const Vector& dest,
+                                                     int r,
+                                                     int g,
+                                                     int b,
+                                                     int a,
+                                                     bool noDepthTest,
+                                                     float flDuration);
+
 class EngineDLL : public IHookableNameFilter
 {
 public:
@@ -75,6 +84,7 @@ public:
 	bool Demo_IsPlaybackPaused() const;
 	_CEngineTrace__PointOutsideWorld ORIG_CEngineTrace__PointOutsideWorld;
 	_CDebugOverlay_AddTriangleOverlay ORIG_CDebugOverlay_AddTriangleOverlay; // one-sided triangle
+	_CDebugOverlay_AddLineOverlay ORIG_CDebugOverlay_AddLineOverlay;
 
 protected:
 	PatternContainer patternContainer;

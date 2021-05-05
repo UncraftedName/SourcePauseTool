@@ -148,6 +148,7 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(_Host_RunFrame);
 	DEF_FUTURE(Host_AccumulateTime);
 	DEF_FUTURE(CDebugOverlay_AddTriangleOverlay);
+	DEF_FUTURE(CDebugOverlay_AddLineOverlay);
 
 	GET_HOOKEDFUTURE(SV_ActivateServer);
 	GET_HOOKEDFUTURE(FinishRestore);
@@ -158,7 +159,9 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 	GET_FUTURE(CEngineTrace__PointOutsideWorld);
 	GET_FUTURE(_Host_RunFrame);
 	GET_HOOKEDFUTURE(Host_AccumulateTime);
-	GET_FUTURE(CDebugOverlay_AddTriangleOverlay); // don't hook this, it's after the function start
+	// don't hook these, the patterns are just after the function start
+	GET_FUTURE(CDebugOverlay_AddTriangleOverlay);
+	GET_FUTURE(CDebugOverlay_AddLineOverlay);
 
 	// m_bLoadgame and pGameServer (&sv)
 	if (ORIG_SpawnPlayer)
