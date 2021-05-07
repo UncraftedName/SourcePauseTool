@@ -39,6 +39,7 @@
 #include "overlay\portal_camera.hpp"
 #include "..\utils\property_getter.hpp"
 #include <chrono>
+#include <unordered_set>
 #include "tier0\memdbgoff.h" // YaLTeR - switch off the memory debugging.
 using namespace std::literals;
 
@@ -1279,13 +1280,7 @@ public:
 
 // void drawPolyhedrons(CUtlVector<CPolyhedron*> polyhedrons, int r, int g, int b) {}
 
-inline bool operator<(const std::pair<Vector, Vector>& lhs, const std::pair<Vector, Vector>& rhs) {
-	return lhs.first.x + lhs.second.x < rhs.first.x + rhs.second.x;
-}
-
-inline bool operator==(const std::pair<Vector, Vector>& lhs, const std::pair<Vector, Vector>& rhs) {
-	return lhs.first == rhs.first && lhs.second == rhs.second;
-}
+typedef std::pair<Vector, Vector> Line;
 
 void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDepthTest, float duration, const char* collideName)
 {
@@ -1295,11 +1290,26 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 	}
 	DevMsg("draw CPhysCollide stats for %s: ", collideName);
 	int lines = 0;
-	int triangles = 0;
 	Tri_t* tris;
-	// turns out you don't need to pass anything for the first two params (ecx/edx)
 	const int triCount = vphysicsDLL.CreateDebugMesh(pCollide, &tris);
 	float sc[] = {1, 0.8f};
+	
+	struct line_hash {
+		// there will only be hash collisions if the midpoint of two lines lies on the same xy diagonal
+		std::size_t operator()(const Line& line) const {
+			float add = (line.first.x + line.second.x) + (line.first.y + line.second.y);
+			std::hash<std::size_t> hash_int;
+			return hash_int(*(std::size_t*)&add);
+		}
+	};
+	struct line_comp {
+		bool operator()(const Line& l1, const Line& l2) const {
+			return (l1.first == l2.first && l1.second == l2.second)
+				|| (l1.first == l2.second && l1.second == l2.first);
+		}
+	};
+	std::unordered_set<Line, line_hash, line_comp> drawnLines(3 * triCount);
+
 	for (int i = 0; i < triCount; i++)
 	{
 		// scale the colors so that (most) neighboring triangles don't look the same
@@ -1308,7 +1318,7 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 		//c.r *= s;
 		//c.g *= s;
 		//c.b *= s;
-
+		
 		Vector& v1 = tris[i].v1;
 		Vector& v2 = tris[i].v2;
 		Vector& v3 = tris[i].v3;
@@ -1322,26 +1332,33 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 			v2 += norm;
 			v3 += norm;
 		}
-		/*if (drawnLines.insert(std::make_pair(v1, v2)).second && drawnLines.insert(std::make_pair(v2, v1)).second)
-			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v1, v2, 0, 0, 0, 255, noDepthTest, duration);
-		if (drawnLines.insert(std::make_pair(v2, v3)).second && drawnLines.insert(std::make_pair(v3, v2)).second)
-			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v2, v3, 0, 0, 0, 255, noDepthTest, duration);
-		if (drawnLines.insert(std::make_pair(v3, v1)).second && drawnLines.insert(std::make_pair(v1, v3)).second)
-			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v3, v1, 0, 0, 0, 255, noDepthTest, duration);*/
+		// for debugging
+		// Msg("v1: %f %f %f, v2: %f %f %f, v3: %f %f %f\n", v1.x, v1.y, v1.z, v2.x, v2.y, v2.z, v3.x, v3.y, v3.z);
 
-		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v1, v2, 0, 0, 0, 255, noDepthTest, duration);
+		// the less we draw the better, so check if we've drawn these lines already
+		// the whole portal simulator takes up to ~6ms to generate the debug mesh in extreme cases on my machine
+
+		if (drawnLines.insert(Line(v1, v2)).second) {
+			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v1, v2, 0, 0, 0, 255, noDepthTest, duration);
+			lines++;
+		}
+		if (drawnLines.insert(Line(v2, v3)).second) {
+			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v2, v3, 0, 0, 0, 255, noDepthTest, duration);
+			lines++;
+		}
+		if (drawnLines.insert(Line(v3, v1)).second) {
+			engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v3, v1, 0, 0, 0, 255, noDepthTest, duration);
+			lines++;
+		}
+
+		/*engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v1, v2, 0, 0, 0, 255, noDepthTest, duration);
 		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v2, v3, 0, 0, 0, 255, noDepthTest, duration);
 		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v3, v1, 0, 0, 0, 255, noDepthTest, duration);
-		lines += 3;
-
-		// drawing twice might come in handy if the normals are not on the side we want them to be
-		//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i], v[i+1], v[i+2], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
-		//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v[i+2], v[i+1], v[i], newR, colors[idx].g, colors[idx].b, colors[idx].a, true, 10);
+		lines += 3;*/
 		engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v1, v2, v3, c.r, c.g, c.b, c.a, noDepthTest, duration);
-		triangles += 1;
 	}
-	DevMsg("%d triangles & %d lines\n", triangles, lines);
-	g_pMemAlloc->Free(tris);
+	DevMsg("%d triangles & %d lines\n", triCount, lines);
+	vphysicsDLL.DestroyDebugMesh(tris);
 }
 
 // clang-format on

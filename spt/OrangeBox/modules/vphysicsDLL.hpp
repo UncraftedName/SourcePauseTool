@@ -6,7 +6,7 @@
 #include "engine\iserverplugin.h"
 #include "tier3\tier3.h"
 
-typedef struct Tri_t
+struct Tri_t
 {
 	Vector v1, v2, v3;
 };
