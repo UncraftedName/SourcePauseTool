@@ -489,6 +489,7 @@ namespace patterns
 		         "C6 05 ?? ?? ?? ?? 01 83 EE 01 3B 74 24 28 7D D3 8B 4C 24 38",
 		         "1910503",
 		         "C6 05 ?? ?? ?? ?? 01 4E 3B 75 F0 7D D3 8B 8D DC FD FF FF");
+		PATTERNS(CreatePhysicsObject, "5135", "81 EC 58 01 00 00 83 BC 24 64 01 00 00 00");
 	} // namespace vphysics
 
 } // namespace patterns

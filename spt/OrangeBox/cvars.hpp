@@ -56,6 +56,7 @@ extern ConVar _y_spt_yawspeed;
 extern ConVar _y_spt_force_90fov;
 
 extern ConVar y_spt_hud_velocity;
+extern ConVar y_spt_hud_vphysics_velocity;
 extern ConVar y_spt_hud_flags;
 extern ConVar y_spt_hud_moveflags;
 extern ConVar y_spt_hud_movecollideflags;

@@ -16,6 +16,11 @@
 #include "..\game\shared\usercmd.h"
 #endif
 
+#if !defined(OE) && !defined(P2)
+#define GAME_DLL
+#include "cbase.h"
+#endif
+
 using std::size_t;
 using std::uintptr_t;
 
@@ -137,6 +142,7 @@ __declspec(naked) void ServerDLL::HOOKED_MiddleOfTeleportTouchingEntity()
 		mov ecx, ebp; // first paremeter - pass portal ref
 		mov edx, esp; // second parameter - pass stack pointer
 		add edx, 0x24; // account for pushad/pushfd
+		push ebx; // player, null if the teleporting entity is not a player
 		call ServerDLL::HOOKED_MiddleOfTeleportTouchingEntity_Func;
 		popfd;
 		popad;
@@ -946,25 +952,37 @@ void ServerDLL::HOOKED_MiddleOfSlidingFunction_Func()
 	}
 }
 
-/**
-* A no free edicts crash when trying to do a vag happens when the 2nd teleport places the entity
-* behind the entry portal. This causes another teleport by the entry portal to be queued which
-* sometimes places the entity right back to where it started, triggering another vag. This process is
-* recursive, and would eventually cause a stack overflow if the game didn't crash from allocating an
-* edict for a shadowclone every single teleport. This function detects when there are too many recursive
-* teleports, and nudges the entity position before the teleport so that it doesn't return to exactly the
-* same spot. The position vector is on the stack at this point, so we access it via a stack pointer from
-* the original teleport function. This works for both players and other entities.
-*/
-void __fastcall ServerDLL::HOOKED_MiddleOfTeleportTouchingEntity_Func(void* portalPtr, void* tpStackPointer)
+void __fastcall ServerDLL::HOOKED_MiddleOfTeleportTouchingEntity_Func(CBaseEntity* portal,
+                                                                      void* tpStackPtr,
+                                                                      CBaseEntity* player)
 {
+	if (player)
+	{
+		Vector vel, vphysicsVel, diff;
+		//vel = player->GetAbsVelocity();
+		player->GetVelocity(&vel, nullptr);
+		player->VPhysicsGetObject()->GetVelocity(&vphysicsVel, nullptr);
+		diff = vphysicsVel - vel;
+		DevMsg("difference in speed in %f %f %f (%f)\n", diff.x, diff.y, diff.z, diff.Length());
+	}
+
+	/*
+	* A no free edicts crash when trying to do a vag happens when the 2nd teleport places the entity
+	* behind the entry portal. This causes another teleport by the entry portal to be queued which
+	* sometimes places the entity right back to where it started, triggering another vag. This process is
+	* recursive, and would eventually cause a stack overflow if the game didn't crash from allocating an
+	* edict for a shadowclone every single teleport. This function detects when there are too many recursive
+	* teleports, and nudges the entity position before the teleport so that it doesn't return to exactly the
+	* same spot. The position vector is on the stack at this point, so we access it via a stack pointer from
+	* the original teleport function. This works for both players and other entities.
+	*/
 	if (!serverDLL.ORIG_EndOfTeleportTouchingEntity || !y_spt_prevent_vag_crash.GetBool())
 		return;
 	if (serverDLL.recursiveTeleportCount++ > 2)
 	{
 		Msg("spt: nudging entity to prevent more recursive teleports!\n");
-		Vector* entPos = (Vector*)((uint32_t*)tpStackPointer + 26);
-		Vector* portalNorm = *((Vector**)portalPtr + 2505) + 2;
+		Vector* entPos = (Vector*)((uint32_t*)tpStackPtr + 26);
+		Vector* portalNorm = *((Vector**)portal + 2505) + 2;
 		DevMsg(
 		    "spt: ent coords in TeleportTouchingEntity: %f %f %f, portal norm: %f %f %f, %i recursive teleports\n",
 		    entPos->x,
@@ -974,10 +992,8 @@ void __fastcall ServerDLL::HOOKED_MiddleOfTeleportTouchingEntity_Func(void* port
 		    portalNorm->y,
 		    portalNorm->z,
 		    serverDLL.recursiveTeleportCount);
-		// push entity further into the portal so it comes further out after the teleport
-		entPos->x -= portalNorm->x;
-		entPos->y -= portalNorm->y;
-		entPos->z -= portalNorm->z;
+		// push entity further into the portal so it comes further out after the teleport (and not behind)
+		*entPos -= *portalNorm;
 	}
 }
 

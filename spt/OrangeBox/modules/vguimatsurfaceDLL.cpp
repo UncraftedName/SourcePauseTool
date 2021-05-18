@@ -21,6 +21,11 @@
 #include "const.h"
 #include "vgui_controls\controls.h"
 
+#if !defined(OE) && !defined(P2)
+#define GAME_DLL
+#include "cbase.h"
+#endif
+
 #undef max
 #undef min
 
@@ -164,12 +169,12 @@ void VGui_MatSurfaceDLL::DrawHUD(vrect_t* screen)
 			DrawHopHud(screen, scheme, surface);
 		}
 
-		if (y_spt_hud_velocity.GetBool() || y_spt_hud_flags.GetBool() || y_spt_hud_moveflags.GetBool()
-		    || y_spt_hud_movecollideflags.GetBool() || y_spt_hud_collisionflags.GetBool()
-		    || y_spt_hud_script_length.GetBool() || y_spt_hud_accel.GetBool() || y_spt_hud_vars.GetBool()
-		    || y_spt_hud_portal_bubble.GetBool() || y_spt_hud_ag_sg_tester.GetBool()
-		    || !whiteSpacesOnly(y_spt_hud_ent_info.GetString()) || y_spt_hud_oob.GetBool()
-		    || y_spt_hud_velocity_angles.GetBool() || y_spt_hud_isg.GetBool())
+		if (y_spt_hud_velocity.GetBool() || y_spt_hud_vphysics_velocity.GetBool() || y_spt_hud_flags.GetBool()
+		    || y_spt_hud_moveflags.GetBool() || y_spt_hud_movecollideflags.GetBool()
+		    || y_spt_hud_collisionflags.GetBool() || y_spt_hud_script_length.GetBool()
+		    || y_spt_hud_accel.GetBool() || y_spt_hud_vars.GetBool() || y_spt_hud_portal_bubble.GetBool()
+		    || y_spt_hud_ag_sg_tester.GetBool() || !whiteSpacesOnly(y_spt_hud_ent_info.GetString())
+		    || y_spt_hud_oob.GetBool() || y_spt_hud_velocity_angles.GetBool() || y_spt_hud_isg.GetBool())
 		{
 			DrawTopHUD(screen, scheme, surface);
 		}
@@ -428,6 +433,19 @@ void VGui_MatSurfaceDLL::DrawTopHUD(vrect_t* screen, vgui::IScheme* scheme, IMat
 	{
 		DRAW_TRIPLEFLOAT(L"vel(xyz)", currentVel.x, currentVel.y, currentVel.z);
 		DRAW_FLOAT(L"vel(xy)", currentVel.Length2D());
+	}
+
+	if (y_spt_hud_vphysics_velocity.GetBool())
+	{
+		Vector vphysVel = vec3_origin;
+		if (GetServerPlayer())
+			GetServerPlayer()->GetBaseEntity()->VPhysicsGetObject()->GetVelocity(&vphysVel, nullptr);
+		DRAW_TRIPLEFLOAT(L"vphysics vel(xyz)", vphysVel.x, vphysVel.y, vphysVel.z);
+		Vector diff = vphysVel - currentVel;
+		// manually draw this to prevent constant flickering between 0.00 and -0.00
+		int w = y_spt_hud_decimals.GetInt();
+		swprintf_s(buffer, BUFFER_SIZE, L"vphysics - normal vel: %+.*f %+.*f %+.*f", w, diff.x, w, diff.y, w, diff.z);
+		DRAW();
 	}
 
 	if (y_spt_hud_velocity_angles.GetBool())

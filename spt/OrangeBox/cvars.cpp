@@ -148,6 +148,10 @@ ConVar _y_spt_yawspeed("_y_spt_yawspeed", "0", FCVAR_TAS_RESET);
 ConVar _y_spt_force_90fov("_y_spt_force_90fov", "0");
 
 ConVar y_spt_hud_velocity("y_spt_hud_velocity", "0", FCVAR_CHEAT, "Turns on the velocity hud.\n");
+ConVar y_spt_hud_vphysics_velocity("y_spt_hud_vphysics_velocity",
+                                   "0",
+                                   FCVAR_CHEAT,
+                                   "Turns on the velocity hud, getting the velocity from vphysics.");
 ConVar y_spt_hud_flags("y_spt_hud_flags", "0", FCVAR_CHEAT, "Turns on the flags hud.\n");
 ConVar y_spt_hud_moveflags("y_spt_hud_moveflags", "0", FCVAR_CHEAT, "Turns on the move type hud.\n");
 ConVar y_spt_hud_movecollideflags("y_spt_hud_movecollideflags", "0", FCVAR_CHEAT, "Turns on the move collide hud.\n");
