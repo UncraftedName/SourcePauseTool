@@ -40,6 +40,10 @@
 #include "..\utils\property_getter.hpp"
 #include <chrono>
 #include <unordered_set>
+/*#if !defined(OE) && !defined(P2)
+#define GAME_DLL
+#include "cbase.h"
+#endif*/
 #include "tier0\memdbgoff.h" // YaLTeR - switch off the memory debugging.
 using namespace std::literals;
 
@@ -1281,6 +1285,7 @@ public:
 // void drawPolyhedrons(CUtlVector<CPolyhedron*> polyhedrons, int r, int g, int b) {}
 
 typedef std::pair<Vector, Vector> Line;
+static float collide_eps; // how much to push the normals by
 
 void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDepthTest, float duration, const char* collideName)
 {
@@ -1292,7 +1297,7 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 	int lines = 0;
 	Tri_t* tris;
 	const int triCount = vphysicsDLL.CreateDebugMesh(pCollide, &tris);
-	float sc[] = {1, 0.8f};
+	//float sc[] = {1, 0.8f};
 	
 	struct line_hash {
 		// there will only be hash collisions if the midpoint of two lines lies on the same xy diagonal
@@ -1313,7 +1318,7 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 	for (int i = 0; i < triCount; i++)
 	{
 		// scale the colors so that (most) neighboring triangles don't look the same
-		color32 c = cc;
+		//color32 c = cc;
 		//float s = sc[i % 2];
 		//c.r *= s;
 		//c.g *= s;
@@ -1327,7 +1332,7 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 		{
 			Vector norm = (v1 - v2).Cross(v3 - v1);
 			norm.NormalizeInPlace();
-			norm *= 0.1f;
+			norm *= collide_eps;
 			v1 += norm;
 			v2 += norm;
 			v3 += norm;
@@ -1355,7 +1360,8 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v2, v3, 0, 0, 0, 255, noDepthTest, duration);
 		engineDLL.ORIG_CDebugOverlay_AddLineOverlay(v3, v1, 0, 0, 0, 255, noDepthTest, duration);
 		lines += 3;*/
-		engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v1, v2, v3, c.r, c.g, c.b, c.a, noDepthTest, duration);
+		//engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v1, v2, v3, c.r, c.g, c.b, c.a, noDepthTest, duration);
+		engineDLL.ORIG_CDebugOverlay_AddTriangleOverlay(v1, v2, v3, cc.r, cc.g, cc.b, cc.a, noDepthTest, duration);
 	}
 	DevMsg("%d triangles & %d lines\n", triCount, lines);
 	vphysicsDLL.DestroyDebugMesh(tris);
@@ -1472,6 +1478,20 @@ findPortal:
 		Msg("server entity is null :/\n");
 		return;
 	}
+
+	// push the normals further away if the player is further, this reduces z fighting but also makes the mesh looks good up close
+	if (GetServerPlayer())
+	{
+		// hack
+		const Vector* player_origin = (Vector*)(GetServerPlayer() + 179);
+		const Vector* portal_origin = (Vector*)(portal + 179);
+		collide_eps = pow(player_origin->DistTo(*portal_origin), 0.6) / 500;
+	}
+	else
+	{
+		collide_eps = 0.1;
+	}
+	DevMsg("pushing normals by %f\n", collide_eps);
 
 	// okay now we can finally start drawing stuff
 	debugOverlay->ClearAllOverlays();
