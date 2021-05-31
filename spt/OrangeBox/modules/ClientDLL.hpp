@@ -52,6 +52,7 @@ typedef void(__fastcall* _CViewEffects__Fade)(void* thisptr, int edx, void* data
 typedef void(__fastcall* _CViewEffects__Shake)(void* thisptr, int edx, void* data);
 typedef const Vector&(__cdecl* _MainViewOrigin)();
 typedef void(__cdecl* _ResetToneMapping)(float value);
+typedef bool(__fastcall* _DetectAndHandlePortalTeleportation)(void* thisptr, int edx);
 
 struct afterframes_entry_t
 {
@@ -119,6 +120,7 @@ public:
 	                                                    int whatToDraw);
 	void __fastcall HOOKED_CViewRender__Render_Func(void* thisptr, int edx, void* rect);
 	static void __cdecl HOOKED_ResetToneMapping(float value);
+	static bool __fastcall HOOKED_DetectAndHandlePortalTeleportation(void* thisptr, int edx);
 
 	void DelayAfterframesQueue(int delay);
 	void AddIntoAfterframesQueue(const afterframes_entry_t& entry);
@@ -196,6 +198,7 @@ protected:
 	_CViewEffects__Shake ORIG_CViewEffects__Shake;
 	_MainViewOrigin ORIG_MainViewOrigin;
 	_ResetToneMapping ORIG_ResetToneMapping;
+	_DetectAndHandlePortalTeleportation ORIG_DetectAndHandlePortalTeleportation;
 
 	uintptr_t* pgpGlobals;
 	ptrdiff_t offM_pCommands;

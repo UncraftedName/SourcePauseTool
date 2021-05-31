@@ -185,6 +185,7 @@ void ClientDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CViewEffects__Shake);
 	DEF_FUTURE(CHudDamageIndicator__GetDamagePosition);
 	DEF_FUTURE(ResetToneMapping);
+	DEF_FUTURE(DetectAndHandlePortalTeleportation);
 
 	GET_HOOKEDFUTURE(HudUpdate);
 	GET_HOOKEDFUTURE(GetButtonBits);
@@ -205,6 +206,7 @@ void ClientDLL::Hook(const std::wstring& moduleName,
 	GET_HOOKEDFUTURE(CViewEffects__Shake);
 	GET_FUTURE(CHudDamageIndicator__GetDamagePosition);
 	GET_HOOKEDFUTURE(ResetToneMapping);
+	GET_HOOKEDFUTURE(DetectAndHandlePortalTeleportation);
 
 	if (DoesGameLookLikeHLS())
 	{
@@ -531,6 +533,7 @@ void ClientDLL::Clear()
 	ORIG_UTIL_TraceRay = nullptr;
 	ORIG_MainViewOrigin = nullptr;
 	ORIG_ResetToneMapping = nullptr;
+	ORIG_DetectAndHandlePortalTeleportation = nullptr;
 
 	pgpGlobals = nullptr;
 	off1M_nOldButtons = 0;
@@ -1191,4 +1194,9 @@ void ClientDLL::HOOKED_ResetToneMapping(float value)
 {
 	if (!y_spt_disable_tone_map_reset.GetBool())
 		clientDLL.ORIG_ResetToneMapping(value);
+}
+
+bool __fastcall ClientDLL::HOOKED_DetectAndHandlePortalTeleportation(void* thisptr, int edx)
+{
+	return false; // this function is bad, whoever made this is bad
 }

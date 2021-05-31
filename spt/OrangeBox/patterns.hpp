@@ -281,6 +281,7 @@ namespace patterns
 		    "8B 0D ?? ?? ?? ?? 8B 01 8B 90 7C 01 00 00 56 FF D2 8B F0 85 F6 74 09 8B 06 8B 50 08 8B CE FF D2 8B 06 D9 44 24 08",
 		    "1910503",
 		    "55 8B EC 8B 0D ?? ?? ?? ?? 8B 01 8B 90 88 01 00 00 56 FF D2 8B F0 85 F6 74 09 8B 06 8B 50 08 8B CE FF D2 8B 06 F3 0F 10 45 08");
+		PATTERNS(DetectAndHandlePortalTeleportation, "5135", "83 EC 0C 53 55 8B E9 80 BD 34 15 00 00 00 56 57");
 	} // namespace client
 
 	namespace server
