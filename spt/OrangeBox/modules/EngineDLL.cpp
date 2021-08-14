@@ -147,8 +147,10 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CEngineTrace__PointOutsideWorld);
 	DEF_FUTURE(_Host_RunFrame);
 	DEF_FUTURE(Host_AccumulateTime);
+	DEF_FUTURE(DebugDrawPhysCollide);
 	DEF_FUTURE(CDebugOverlay_AddTriangleOverlay);
 	DEF_FUTURE(CDebugOverlay_AddLineOverlay);
+	DEF_FUTURE(CStaticPropMgr__DrawStaticProps);
 
 	GET_HOOKEDFUTURE(SV_ActivateServer);
 	GET_HOOKEDFUTURE(FinishRestore);
@@ -159,9 +161,11 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 	GET_FUTURE(CEngineTrace__PointOutsideWorld);
 	GET_FUTURE(_Host_RunFrame);
 	GET_HOOKEDFUTURE(Host_AccumulateTime);
+	GET_FUTURE(DebugDrawPhysCollide);
 	// don't hook these, the patterns are just after the function start
 	GET_FUTURE(CDebugOverlay_AddTriangleOverlay);
 	GET_FUTURE(CDebugOverlay_AddLineOverlay);
+	GET_HOOKEDFUTURE(CStaticPropMgr__DrawStaticProps);
 
 	// m_bLoadgame and pGameServer (&sv)
 	if (ORIG_SpawnPlayer)
@@ -344,6 +348,8 @@ void EngineDLL::Clear()
 	ORIG_Cbuf_Execute = nullptr;
 	ORIG_VGui_Paint = nullptr;
 	ORIG_CDebugOverlay_AddTriangleOverlay = nullptr;
+	ORIG_DebugDrawPhysCollide = nullptr;
+	ORIG_CStaticPropMgr__DrawStaticProps = nullptr;
 	pGameServer = nullptr;
 	pM_bLoadgame = nullptr;
 	shouldPreventNextUnpause = false;
@@ -542,4 +548,17 @@ void __fastcall EngineDLL::HOOKED_VGui_Paint_Func(void* thisptr, int edx, int mo
 #endif
 
 	ORIG_VGui_Paint(thisptr, edx, mode);
+}
+
+void __fastcall EngineDLL::HOOKED_CStaticPropMgr__DrawStaticProps(void* thisPtr,
+                                                                  int edx,
+                                                                  void** pProps,
+                                                                  int count,
+                                                                  bool bShadowDepth,
+                                                                  bool drawVCollideWireframe)
+{
+	engineDLL.ORIG_CStaticPropMgr__DrawStaticProps(thisPtr, edx, pProps, count, bShadowDepth, drawVCollideWireframe);
+	const char* cmdName = "_y_spt_draw_portal_collision";
+	CCommand cmd(1, &cmdName);
+	DrawPortalCollisionFunc(cmd);
 }

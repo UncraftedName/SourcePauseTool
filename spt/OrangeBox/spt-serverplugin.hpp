@@ -94,6 +94,7 @@ public:
 IServerUnknown* GetServerPlayer();
 IVEngineServer* GetEngine();
 IVDebugOverlay* GetDebugOverlay();
+IMaterialSystem* GetMaterialSystem();
 void* GetGamemovement();
 ICvar* GetCvarInterface();
 std::string GetGameDir();
@@ -123,3 +124,5 @@ struct ArgsWrapper
 	};
 };
 #endif
+
+void DrawPortalCollisionFunc(const CCommand& args);

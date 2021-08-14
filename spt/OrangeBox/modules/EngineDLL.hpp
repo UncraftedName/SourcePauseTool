@@ -10,6 +10,7 @@
 #else
 #include "mathlib/mathlib.h"
 #endif
+#include "cdll_int.h"
 
 using std::size_t;
 using std::uintptr_t;
@@ -44,6 +45,17 @@ typedef void(__cdecl* _CDebugOverlay_AddLineOverlay)(const Vector& origin,
                                                      int a,
                                                      bool noDepthTest,
                                                      float flDuration);
+typedef void(__cdecl* _DebugDrawPhysCollide)(const CPhysCollide* pCollide,
+                                             IMaterial* pMaterial,
+                                             matrix3x4_t& transform,
+                                             const color32& color,
+                                             bool drawAxes);
+typedef void(__fastcall* _CStaticPropMgr__DrawStaticProps)(void* thisPtr,
+                                                           int edx,
+                                                           void** pProps,
+                                                           int count,
+                                                           bool bShadowDepth,
+                                                           bool drawVCollideWireframe);
 
 class EngineDLL : public IHookableNameFilter
 {
@@ -66,6 +78,12 @@ public:
 	static void __cdecl HOOKED_Host_AccumulateTime(float dt);
 	static void __cdecl HOOKED_Cbuf_Execute();
 	static void __fastcall HOOKED_VGui_Paint(void* thisptr, int edx, int mode);
+	static void __fastcall HOOKED_CStaticPropMgr__DrawStaticProps(void* thisPtr,
+                                                           int edx,
+                                                           void** pProps,
+                                                           int count,
+                                                           bool bShadowDepth,
+                                                           bool drawVCollideWireframe);
 	bool __cdecl HOOKED_SV_ActivateServer_Func();
 	void __fastcall HOOKED_FinishRestore_Func(void* thisptr, int edx);
 	void __fastcall HOOKED_SetPaused_Func(void* thisptr, int edx, bool paused);
@@ -83,8 +101,10 @@ public:
 	bool Demo_IsPlayingBack() const;
 	bool Demo_IsPlaybackPaused() const;
 	_CEngineTrace__PointOutsideWorld ORIG_CEngineTrace__PointOutsideWorld;
+	_DebugDrawPhysCollide ORIG_DebugDrawPhysCollide;
 	_CDebugOverlay_AddTriangleOverlay ORIG_CDebugOverlay_AddTriangleOverlay; // one-sided triangle
 	_CDebugOverlay_AddLineOverlay ORIG_CDebugOverlay_AddLineOverlay;
+	_CStaticPropMgr__DrawStaticProps ORIG_CStaticPropMgr__DrawStaticProps;
 
 protected:
 	PatternContainer patternContainer;

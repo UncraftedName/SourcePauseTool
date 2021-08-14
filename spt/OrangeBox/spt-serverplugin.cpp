@@ -59,6 +59,7 @@ IVEngineServer* engine_server = nullptr;
 IMatSystemSurface* surface = nullptr;
 vgui::ISchemeManager* scheme = nullptr;
 IVDebugOverlay* debugOverlay = nullptr;
+IMaterialSystem* materialSystem = nullptr;
 void* gm = nullptr;
 
 int lastSeed = 0;
@@ -139,6 +140,11 @@ IVEngineServer* GetEngine()
 IVDebugOverlay* GetDebugOverlay()
 {
 	return debugOverlay;
+}
+
+IMaterialSystem* GetMaterialSystem()
+{
+	return materialSystem;
 }
 
 void* GetGamemovement()
@@ -361,6 +367,7 @@ bool CSourcePauseTool::Load(CreateInterfaceFn interfaceFactory, CreateInterfaceF
 	IClientEntityList* entList = (IClientEntityList*)clientFactory(VCLIENTENTITYLIST_INTERFACE_VERSION, NULL);
 	IVModelInfo* modelInfo = (IVModelInfo*)interfaceFactory(VMODELINFO_SERVER_INTERFACE_VERSION, NULL);
 	IBaseClientDLL* clientInterface = (IBaseClientDLL*)clientFactory(CLIENT_DLL_INTERFACE_VERSION, NULL);
+	materialSystem = (IMaterialSystem*)interfaceFactory(MATERIAL_SYSTEM_INTERFACE_VERSION, NULL);
 
 	if (entList)
 	{
@@ -1293,6 +1300,12 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc, bool noDe
 		DevMsg("CPhysCollide %s is null, not drawing\n", collideName);
 		return;
 	}
+	matrix3x4_t mat;
+	AngleMatrix(vec3_angle, vec3_origin, mat);
+	IMaterial* pMaterial = GetMaterialSystem()->FindMaterial("shadertest/wireframevertexcolor", TEXTURE_GROUP_OTHER);
+	engineDLL.ORIG_DebugDrawPhysCollide(pCollide, pMaterial, mat, cc, false);
+	return;
+
 	DevMsg("draw CPhysCollide stats for %s: ", collideName);
 	int lines = 0;
 	Tri_t* tris;
@@ -1374,6 +1387,11 @@ static int lastPortalIndex = -1;
 // draws the geo for 10s
 CON_COMMAND(_y_spt_draw_portal_collision,
             "auto|blue|orange|<index> (if auto but not in bubble, will use the portal which you were last in)")
+{
+	DrawPortalCollisionFunc(args);
+}
+
+void DrawPortalCollisionFunc(const CCommand& args)
 {
 	if (!GetEngine()->PEntityOfEntIndex(0))
 	{
@@ -1542,7 +1560,7 @@ findPortal:
 
 	auto endTime = std::chrono::steady_clock::now();
 	DevMsg("generating debug meshes for portal geometry took %dus\n",
-	    std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime));
+		std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime));
 	// TODO:
 	// look at the dynamic stuff
 	// look at stuff that only has IPhysicsObject's e.g. Simulation.Static.Wall.RemoteTransformedToLocal.Brushes
