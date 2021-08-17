@@ -124,5 +124,3 @@ struct ArgsWrapper
 	};
 };
 #endif
-
-void DrawPortalCollisionFunc(const CCommand& args);

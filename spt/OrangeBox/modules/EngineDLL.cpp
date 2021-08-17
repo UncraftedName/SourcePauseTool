@@ -12,6 +12,7 @@
 #include "..\overlay\overlay-renderer.hpp"
 #include "..\patterns.hpp"
 #include "vguimatsurfaceDLL.hpp"
+#include "..\overlay\sg-collision.h"
 
 using std::size_t;
 using std::uintptr_t;
@@ -558,7 +559,6 @@ void __fastcall EngineDLL::HOOKED_CStaticPropMgr__DrawStaticProps(void* thisPtr,
                                                                   bool drawVCollideWireframe)
 {
 	engineDLL.ORIG_CStaticPropMgr__DrawStaticProps(thisPtr, edx, pProps, count, bShadowDepth, drawVCollideWireframe);
-	const char* cmdName = "_y_spt_draw_portal_collision";
-	CCommand cmd(1, &cmdName);
-	DrawPortalCollisionFunc(cmd);
+	MDLCACHE_CRITICAL_SECTION_(g_pMDLCache); // idk if this does anything
+	// DrawPortalCollisionFunc();
 }

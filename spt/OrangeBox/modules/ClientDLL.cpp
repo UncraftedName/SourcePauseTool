@@ -15,6 +15,7 @@
 #include "..\scripts\tests\test.hpp"
 #include "..\..\aim.hpp"
 #include "bspflags.h"
+#include "..\overlay\sg-collision.h"
 
 #ifdef max
 #undef max
@@ -184,6 +185,7 @@ void ClientDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CViewEffects__Fade);
 	DEF_FUTURE(CViewEffects__Shake);
 	DEF_FUTURE(CHudDamageIndicator__GetDamagePosition);
+	DEF_FUTURE(CRendering3dView__DrawOpaqueRenderables);
 
 	GET_HOOKEDFUTURE(HudUpdate);
 	GET_HOOKEDFUTURE(GetButtonBits);
@@ -203,6 +205,7 @@ void ClientDLL::Hook(const std::wstring& moduleName,
 	GET_HOOKEDFUTURE(CViewEffects__Fade);
 	GET_HOOKEDFUTURE(CViewEffects__Shake);
 	GET_FUTURE(CHudDamageIndicator__GetDamagePosition);
+	GET_HOOKEDFUTURE(CRendering3dView__DrawOpaqueRenderables);
 
 	if (DoesGameLookLikeHLS())
 	{
@@ -525,6 +528,7 @@ void ClientDLL::Clear()
 	ORIG_CViewRender__Render = nullptr;
 	ORIG_UTIL_TraceRay = nullptr;
 	ORIG_MainViewOrigin = nullptr;
+	ORIG_CRendering3dView__DrawOpaqueRenderables = nullptr;
 
 	pgpGlobals = nullptr;
 	off1M_nOldButtons = 0;
@@ -1179,4 +1183,9 @@ void ClientDLL::HOOKED_CViewRender__Render_Func(void* thisptr, int edx, void* re
 		renderingOverlay = false;
 	}
 #endif
+}
+
+void ClientDLL::HOOKED_CRendering3dView__DrawOpaqueRenderables(void* thisptr, int edx, bool bShadowDepth) {
+	clientDLL.ORIG_CRendering3dView__DrawOpaqueRenderables(thisptr, edx, bShadowDepth);
+	DrawPortalCollisionFunc();
 }

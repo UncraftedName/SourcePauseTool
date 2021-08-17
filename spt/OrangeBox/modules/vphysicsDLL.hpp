@@ -33,9 +33,17 @@ public:
 	int CreateDebugMesh(const CPhysCollide* pCollisionModel, Tri_t** outTriangles); // returns triangle count
 	void DestroyDebugMesh(Tri_t* triangles);
 
+	float normalEps;
+
 	bool* isgFlagPtr;
 
 protected:
 	PatternContainer patternContainer;
+
+	static int __fastcall HOOKED_CPhysicsCollision__CreateDebugMesh(IPhysicsCollision* thisptr,
+	                                                                int dummy,
+	                                                                const CPhysCollide* pCollisionModel,
+	                                                                Vector** outVerts);
+
 	_CPhysicsCollision__CreateDebugMesh ORIG_CPhysicsCollision__CreateDebugMesh;
 };

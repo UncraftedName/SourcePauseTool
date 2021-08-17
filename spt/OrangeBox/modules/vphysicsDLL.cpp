@@ -73,7 +73,7 @@ void VPhysicsDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CPhysicsCollision__CreateDebugMesh);
 
 	GET_FUTURE(MiddleOfRecheck_ov_element);
-	GET_FUTURE(CPhysicsCollision__CreateDebugMesh);
+	GET_HOOKEDFUTURE(CPhysicsCollision__CreateDebugMesh);
 
 	if (ORIG_MiddleOfRecheck_ov_element)
 		this->isgFlagPtr = *(bool**)(ORIG_MiddleOfRecheck_ov_element + 2);
@@ -94,8 +94,30 @@ void VPhysicsDLL::Clear()
 	IHookableNameFilter::Clear();
 	ORIG_CPhysicsCollision__CreateDebugMesh = nullptr;
 	isgFlagPtr = nullptr;
+	normalEps = 0;
 }
 
+int __fastcall VPhysicsDLL::HOOKED_CPhysicsCollision__CreateDebugMesh(IPhysicsCollision* thisptr,
+                                                         int dummy,
+                                                         const CPhysCollide* pCollisionModel,
+                                                         Vector** outVerts)
+{
+	int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(thisptr, dummy, pCollisionModel, outVerts);
+	if (vphysicsDLL.normalEps != 0)
+	{
+		for (int i = 0; i < vertCount; i += 3)
+		{
+			Vector* v = *outVerts;
+			Vector norm = (v[i] - v[i + 1]).Cross(v[i + 2] - v[i]);
+			norm.NormalizeInPlace();
+			norm *= vphysicsDLL.normalEps;
+			v[i] += norm;
+			v[i + 1] += norm;
+			v[i + 2] += norm;
+		}
+	}
+	return vertCount;
+}
 
 
 bool VPhysicsDLL::IsCreateDebugMeshHooked()

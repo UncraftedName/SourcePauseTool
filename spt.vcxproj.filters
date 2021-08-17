@@ -145,6 +145,9 @@
     <ClCompile Include="spt\OrangeBox\modules\vphysicsDLL.cpp">
       <Filter>spt\OrangeBox\modules</Filter>
     </ClCompile>
+    <ClCompile Include="spt\OrangeBox\overlay\sg-collision.cpp">
+      <Filter>spt\OrangeBox\overlay</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -377,6 +380,9 @@
     </ClInclude>
     <ClInclude Include="spt\OrangeBox\modules\vphysicsDLL.hpp">
       <Filter>spt\OrangeBox\modules</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\OrangeBox\overlay\sg-collision.h">
+      <Filter>spt\OrangeBox\overlay</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

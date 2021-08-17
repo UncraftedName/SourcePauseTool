@@ -291,6 +291,9 @@ namespace patterns
 		    CHudDamageIndicator__GetDamagePosition,
 		    "5135",
 		    "83 EC 18 E8 ?? ?? ?? ?? e8 ?? ?? ?? ?? 8B 08 89 4C 24 0C 8B 50 04 6A 00 89 54 24 14 8B 40 08 6A 00 8D 4C 24 08 51 8D 54 24 18 52 89 44 24 24");
+		PATTERNS(CRendering3dView__DrawOpaqueRenderables,
+		         "5135",
+		         "55 8D 6C 24 8C 81 EC 94 00 00 00 53 56 57 6A 04 6A 00");
 	} // namespace client
 
 	namespace server
