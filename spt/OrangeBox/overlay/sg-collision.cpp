@@ -42,8 +42,6 @@
 #include "portal_camera.hpp"
 #include "..\..\utils\property_getter.hpp"
 
-// clang-format off
-
 // these structs are here in case I need to use them later, but I don't think I'll need them for anything
 /*struct Polyhedron_IndexedLine_t
 {
@@ -81,14 +79,14 @@ public:
 
 ConVar y_spt_draw_collision_wireframe("y_spt_draw_collision_wireframe", "1");
 
-
 void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc)
 {
 	if (!pCollide)
 		return;
 	matrix3x4_t mat;
 	AngleMatrix(vec3_angle, vec3_origin, mat);
-	IMaterial* pMaterial = GetMaterialSystem()->FindMaterial("debug/debugtranslucentvertexcolor", TEXTURE_GROUP_OTHER);
+	IMaterial* pMaterial =
+	    GetMaterialSystem()->FindMaterial("debug/debugtranslucentvertexcolor", TEXTURE_GROUP_OTHER);
 	vphysicsDLL.normalEps = 0.01f;
 	engineDLL.ORIG_DebugDrawPhysCollide(pCollide, pMaterial, mat, cc, false);
 	if (y_spt_draw_collision_wireframe.GetBool())
@@ -97,8 +95,6 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc)
 	return;
 }
 
-// clang-format on
-
 static int lastPortalIndex = -1;
 
 static ConVar y_spt_draw_portal_collision(
@@ -106,10 +102,10 @@ static ConVar y_spt_draw_portal_collision(
     "",
     FCVAR_DONTRECORD,
     "collide|auto|blue|orange|<index>\n"
-    "  - collide: draw what the player has collision with\n"
-    "  - auto: prioritize what the player has collision with, otherwise use the last drawn portal\n"
-    "  - blue/orange: look for a specific portal color\n"
-    "  - index: specific the entity index of the portal");
+    "   - collide: draw what the player has collision with\n"
+    "   - auto: prioritize what the player has collision with, otherwise use the last drawn portal\n"
+    "   - blue/orange: look for a specific portal color\n"
+    "   - index: specific the entity index of the portal");
 
 void DrawPortalCollisionFunc()
 {
@@ -234,7 +230,6 @@ findPortal:
 	DevMsg("pushing normals by %f\n", collide_eps);*/
 
 	// okay now we can finally start drawing stuff
-	GetDebugOverlay()->ClearAllOverlays();
 
 	uint32_t* simulator = (uint32_t*)portal + 327;
 	// this is just a sanity check if the sim ptr makes sense
