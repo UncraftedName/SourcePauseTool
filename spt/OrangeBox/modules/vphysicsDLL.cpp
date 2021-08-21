@@ -71,9 +71,11 @@ void VPhysicsDLL::Hook(const std::wstring& moduleName,
 
 	DEF_FUTURE(MiddleOfRecheck_ov_element);
 	DEF_FUTURE(CPhysicsCollision__CreateDebugMesh);
+	DEF_FUTURE(CPhysicsObject__GetPosition);
 
 	GET_FUTURE(MiddleOfRecheck_ov_element);
 	GET_HOOKEDFUTURE(CPhysicsCollision__CreateDebugMesh);
+	GET_FUTURE(CPhysicsObject__GetPosition);
 
 	if (ORIG_MiddleOfRecheck_ov_element)
 		this->isgFlagPtr = *(bool**)(ORIG_MiddleOfRecheck_ov_element + 2);
@@ -92,6 +94,7 @@ void VPhysicsDLL::Unhook()
 void VPhysicsDLL::Clear()
 {
 	IHookableNameFilter::Clear();
+	ORIG_CPhysicsObject__GetPosition = nullptr;
 	ORIG_CPhysicsCollision__CreateDebugMesh = nullptr;
 	isgFlagPtr = nullptr;
 	adjustDebugMesh = false;
@@ -124,24 +127,4 @@ int __fastcall VPhysicsDLL::HOOKED_CPhysicsCollision__CreateDebugMesh(IPhysicsCo
 		}
 	}
 	return vertCount;
-}
-
-
-bool VPhysicsDLL::IsCreateDebugMeshHooked()
-{
-	return ORIG_CPhysicsCollision__CreateDebugMesh;
-}
-
-int VPhysicsDLL::CreateDebugMesh(const CPhysCollide* pCollide, Tri_t** outTriangles)
-{
-	if (!IsCreateDebugMeshHooked() || !pCollide)
-		return -1;
-	// I don't think the physics collision is actually used in this function
-	return ORIG_CPhysicsCollision__CreateDebugMesh(g_pPhysicsCollision, 0, pCollide, (Vector**)outTriangles) / 3;
-}
-
-void VPhysicsDLL::DestroyDebugMesh(Tri_t* triangles)
-{
-	if (triangles && IsCreateDebugMeshHooked())
-		g_pMemAlloc->Free(triangles);
 }

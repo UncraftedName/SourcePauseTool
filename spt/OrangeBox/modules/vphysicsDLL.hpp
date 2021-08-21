@@ -6,15 +6,11 @@
 #include "engine\iserverplugin.h"
 #include "tier3\tier3.h"
 
-struct Tri_t
-{
-	Vector v1, v2, v3;
-};
-
 typedef int(__fastcall* _CPhysicsCollision__CreateDebugMesh)(IPhysicsCollision* thisptr,
                                                              int dummy,
                                                              const CPhysCollide* pCollisionModel,
                                                              Vector** outVerts);
+typedef void(__fastcall* _CPhysicsObject__GetPosition)(const void* thisptr, int dummy, Vector* worldPosition, QAngle* angles);
 
 class VPhysicsDLL : public IHookableNameFilter
 {
@@ -29,9 +25,7 @@ public:
 	virtual void Unhook();
 	virtual void Clear();
 
-	bool IsCreateDebugMeshHooked();
-	int CreateDebugMesh(const CPhysCollide* pCollisionModel, Tri_t** outTriangles); // returns triangle count
-	void DestroyDebugMesh(Tri_t* triangles);
+	_CPhysicsObject__GetPosition ORIG_CPhysicsObject__GetPosition;
 
 	bool adjustDebugMesh;
 

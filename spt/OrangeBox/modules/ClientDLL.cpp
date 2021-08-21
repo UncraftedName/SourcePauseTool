@@ -1188,5 +1188,5 @@ void ClientDLL::HOOKED_CViewRender__Render_Func(void* thisptr, int edx, void* re
 // the cphyscollide drawing needs to be done at a specific time during rendering as far as I can tell, this seems to be a good place
 void ClientDLL::HOOKED_CRendering3dView__DrawOpaqueRenderables(void* thisptr, int edx, bool bShadowDepth) {
 	clientDLL.ORIG_CRendering3dView__DrawOpaqueRenderables(thisptr, edx, bShadowDepth);
-	DrawPortalCollisionFunc();
+	DrawSgCollision();
 }

@@ -79,21 +79,68 @@ public:
 
 ConVar y_spt_draw_collision_wireframe("y_spt_draw_collision_wireframe", "1");
 
-void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc)
+void DrawCPhysCollide(const CPhysCollide* pCollide, const color32& c, const matrix3x4_t& mat, bool drawWireframe)
 {
 	if (!pCollide)
 		return;
-	matrix3x4_t mat;
-	AngleMatrix(vec3_angle, vec3_origin, mat);
 	IMaterial* pMaterial =
 	    GetMaterialSystem()->FindMaterial("debug/debugtranslucentvertexcolor", TEXTURE_GROUP_OTHER);
 	// DebugDrawPhysCollide uses CreateDebugMesh from vphysics, edit the mesh there
 	vphysicsDLL.adjustDebugMesh = true;
-	engineDLL.ORIG_DebugDrawPhysCollide(pCollide, pMaterial, mat, cc, false);
-	if (y_spt_draw_collision_wireframe.GetBool())
-		engineDLL.ORIG_DebugDrawPhysCollide(pCollide, nullptr, mat, color32{0, 0, 0, 100}, false);
+	engineDLL.ORIG_DebugDrawPhysCollide(pCollide, pMaterial, mat, c, false);
+	if (drawWireframe)
+		engineDLL.ORIG_DebugDrawPhysCollide(pCollide, nullptr, mat, color32{0, 0, 0, 250}, false);
 	vphysicsDLL.adjustDebugMesh = false;
 	return;
+}
+
+void DrawCPhysicsObject(const void* pPhysicsObject, const color32& c, bool drawWireframe)
+{
+	if (!pPhysicsObject)
+		return;
+	Vector pos;
+	QAngle ang;
+	vphysicsDLL.ORIG_CPhysicsObject__GetPosition(pPhysicsObject, 0, &pos, &ang);
+	matrix3x4_t mat;
+	AngleMatrix(ang, pos, mat);
+	DrawCPhysCollide(*((CPhysCollide**)pPhysicsObject + 3), c, mat, drawWireframe);
+}
+
+void DrawCollisionForPortal(CBaseEntity* portal)
+{
+	bool wire = y_spt_draw_collision_wireframe.GetBool();
+	matrix3x4_t mat;
+	AngleMatrix(vec3_angle, vec3_origin, mat);
+	uint32_t* simulator = (uint32_t*)portal + 327;
+
+	// world brushes - wall geo in front of portal (red)
+	DrawCPhysCollide(*(CPhysCollide**)(simulator + 76), color32{255, 20, 20, 70}, mat, wire);
+	// local wall tube - the portal hole itself (probably not actually used for collision) (green)
+	DrawCPhysCollide(*(CPhysCollide**)(simulator + 94), color32{0, 255, 0, 200}, mat, wire);
+	// local wall brushes - wall geo behind the portal (blue)
+	DrawCPhysCollide(*(CPhysCollide**)(simulator + 101), color32{40, 40, 255, 60}, mat, wire);
+
+	// static props (piss colored)
+	const CUtlVector<char[28]>& clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 83);
+	for (int i = 0; i < clippedStaticProps.Count(); i++)
+		DrawCPhysCollide(*((CPhysCollide**)clippedStaticProps[i] + 2), color32{255, 255, 40, 50}, mat, wire);
+
+	uint32_t* linkedSim = *(uint32_t**)(simulator + 1);
+	if (linkedSim)
+	{
+		AssertMsg(*(uint32_t**)(linkedSim + 1), "pointer to linked simulator makes no sense");
+		// remote brushes (white)
+		DrawCPhysicsObject(*(void**)(simulator + 103), color32{200, 200, 200, 20}, wire);
+		// remote static props (light-yellow)
+		const CUtlVector<void*>& remoteStaticProps = *(CUtlVector<void*>*)(simulator + 104);
+		for (int i = 0; i < remoteStaticProps.Count(); i++)
+			DrawCPhysicsObject(remoteStaticProps[i], color32{255, 255, 100, 20}, wire);
+	}
+
+	// TODO:
+	// look at the dynamic stuff
+	// look at stuff that only has IPhysicsObject's e.g. Simulation.Static.Wall.RemoteTransformedToLocal.Brushes
+	// look at the whole physics environment?
 }
 
 static int lastPortalIndex = -1;
@@ -108,7 +155,7 @@ static ConVar y_spt_draw_portal_collision(
     "   - blue/orange: look for a specific portal color\n"
     "   - index: specific the entity index of the portal");
 
-void DrawPortalCollisionFunc()
+void DrawSgCollision()
 {
 	if (!GetEngine()->PEntityOfEntIndex(0))
 		return; // playing a demo (I think)
@@ -216,35 +263,5 @@ findPortal:
 	if (!portal)
 		return;
 
-	// push the normals further away if the player is further, this reduces z fighting but also makes the mesh look good up close
-	/*if (GetServerPlayer())
-	{
-		// hack
-		const Vector* player_origin = (Vector*)(GetServerPlayer() + 179);
-		const Vector* portal_origin = (Vector*)(portal + 179);
-		collide_eps = pow(player_origin->DistTo(*portal_origin), 0.6) / 500;
-	}
-	else
-	{
-		collide_eps = 0.1;
-	}
-	DevMsg("pushing normals by %f\n", collide_eps);*/
-
-	// sanity check if this ptr makes sense: *(uint32_t**)(simulator + 1) is the linked sim (and the linked of that should give you this again)
-	uint32_t* simulator = (uint32_t*)portal + 327;
-
-	uint32_t offsets[] = {76, 94, 101}; // world brushes, local wall tube, local wall brushes
-	color32 colors[] = {{255, 10, 10, 70}, {20, 255, 0, 150}, {40, 40, 255, 60}};
-
-	for (int idx = 0; idx < 3; idx++)
-		drawCPhysCollide(*(CPhysCollide**)(simulator + offsets[idx]), colors[idx]);
-
-	const CUtlVector<char[28]>& clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 83);
-	for (int i = 0; i < clippedStaticProps.Count(); i++)
-		drawCPhysCollide(*((CPhysCollide**)clippedStaticProps[i] + 2), color32{255, 255, 0, 60});
-
-	// TODO:
-	// look at the dynamic stuff
-	// look at stuff that only has IPhysicsObject's e.g. Simulation.Static.Wall.RemoteTransformedToLocal.Brushes
-	// look at the whole physics environment?
+	DrawCollisionForPortal(portal->GetBaseEntity());
 }

@@ -47,7 +47,7 @@ typedef void(__cdecl* _CDebugOverlay_AddLineOverlay)(const Vector& origin,
                                                      float flDuration);
 typedef void(__cdecl* _DebugDrawPhysCollide)(const CPhysCollide* pCollide,
                                              IMaterial* pMaterial,
-                                             matrix3x4_t& transform,
+                                             const matrix3x4_t& transform,
                                              const color32& color,
                                              bool drawAxes);
 typedef void(__fastcall* _CStaticPropMgr__DrawStaticProps)(void* thisPtr,

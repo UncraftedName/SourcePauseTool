@@ -560,5 +560,5 @@ void __fastcall EngineDLL::HOOKED_CStaticPropMgr__DrawStaticProps(void* thisPtr,
 {
 	engineDLL.ORIG_CStaticPropMgr__DrawStaticProps(thisPtr, edx, pProps, count, bShadowDepth, drawVCollideWireframe);
 	MDLCACHE_CRITICAL_SECTION_(g_pMDLCache); // idk if this does anything
-	// DrawPortalCollisionFunc();
+	// DrawSgCollision();
 }

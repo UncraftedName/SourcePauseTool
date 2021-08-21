@@ -2,7 +2,7 @@
 
 // clang-format off
 
-void DrawPortalCollisionFunc();
+void DrawSgCollision();
 
 enum IVP_BOOL {
 	IVP_FALSE = 0,

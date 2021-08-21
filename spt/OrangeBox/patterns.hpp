@@ -511,6 +511,9 @@ namespace patterns
 		PATTERNS(CPhysicsCollision__CreateDebugMesh,
 		         "5135",
 		         "83 EC 10 8B 4C 24 14 8B 01 8B 40 08 55 56 57 33 ED 8D 54 24 10 52");
+		PATTERNS(CPhysicsObject__GetPosition,
+		         "5135",
+		         "8B 49 08 81 EC 80 00 00 00 8D 04 24 50 E8 ?? ?? ?? ?? 8B 84 24 84 00 00 00 85 C0");
 	} // namespace vphysics
 
 } // namespace patterns
