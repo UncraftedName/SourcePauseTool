@@ -33,7 +33,7 @@ public:
 	int CreateDebugMesh(const CPhysCollide* pCollisionModel, Tri_t** outTriangles); // returns triangle count
 	void DestroyDebugMesh(Tri_t* triangles);
 
-	float normalEps;
+	bool adjustDebugMesh;
 
 	bool* isgFlagPtr;
 

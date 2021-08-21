@@ -94,7 +94,7 @@ void VPhysicsDLL::Clear()
 	IHookableNameFilter::Clear();
 	ORIG_CPhysicsCollision__CreateDebugMesh = nullptr;
 	isgFlagPtr = nullptr;
-	normalEps = 0;
+	adjustDebugMesh = false;
 }
 
 int __fastcall VPhysicsDLL::HOOKED_CPhysicsCollision__CreateDebugMesh(IPhysicsCollision* thisptr,
@@ -103,14 +103,21 @@ int __fastcall VPhysicsDLL::HOOKED_CPhysicsCollision__CreateDebugMesh(IPhysicsCo
                                                          Vector** outVerts)
 {
 	int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(thisptr, dummy, pCollisionModel, outVerts);
-	if (vphysicsDLL.normalEps != 0)
+	if (vphysicsDLL.adjustDebugMesh)
 	{
+		Vector* v = *outVerts;
+		const Vector* player_origin = (Vector*)(GetServerPlayer() + 179);
+		// determine the furthest vert from the player
+		float maxDistSqr = 0;
+		for (int i = 0; i < vertCount; i++)
+			maxDistSqr = MAX(maxDistSqr, player_origin->DistToSqr(v[i]));
+		float normEps = MAX(pow(maxDistSqr, 0.6) / 50000, 0.0001);
+		// expand the debug mesh by some epsilon - we want the mesh to look good up close but prevent z fighting when it's far
 		for (int i = 0; i < vertCount; i += 3)
 		{
-			Vector* v = *outVerts;
 			Vector norm = (v[i] - v[i + 1]).Cross(v[i + 2] - v[i]);
 			norm.NormalizeInPlace();
-			norm *= vphysicsDLL.normalEps;
+			norm *= normEps;
 			v[i] += norm;
 			v[i + 1] += norm;
 			v[i + 2] += norm;

@@ -87,11 +87,12 @@ void drawCPhysCollide(const CPhysCollide* pCollide, const color32& cc)
 	AngleMatrix(vec3_angle, vec3_origin, mat);
 	IMaterial* pMaterial =
 	    GetMaterialSystem()->FindMaterial("debug/debugtranslucentvertexcolor", TEXTURE_GROUP_OTHER);
-	vphysicsDLL.normalEps = 0.01f;
+	// DebugDrawPhysCollide uses CreateDebugMesh from vphysics, edit the mesh there
+	vphysicsDLL.adjustDebugMesh = true;
 	engineDLL.ORIG_DebugDrawPhysCollide(pCollide, pMaterial, mat, cc, false);
 	if (y_spt_draw_collision_wireframe.GetBool())
 		engineDLL.ORIG_DebugDrawPhysCollide(pCollide, nullptr, mat, color32{0, 0, 0, 100}, false);
-	vphysicsDLL.normalEps = 0;
+	vphysicsDLL.adjustDebugMesh = false;
 	return;
 }
 
@@ -229,54 +230,19 @@ findPortal:
 	}
 	DevMsg("pushing normals by %f\n", collide_eps);*/
 
-	// okay now we can finally start drawing stuff
-
+	// sanity check if this ptr makes sense: *(uint32_t**)(simulator + 1) is the linked sim (and the linked of that should give you this again)
 	uint32_t* simulator = (uint32_t*)portal + 327;
-	// this is just a sanity check if the sim ptr makes sense
-	/*uint32_t* other = *(uint32_t**)(simulator + 1);
-	if (!other)
-	{
-		Msg("other sim null?\n");
-		return;
-	}
-	if (*(uint32_t**)(other + 1) == simulator)
-	{
-		Msg("good job you found the simulator\n");
-	}
-	else
-	{
-		Msg("linked doesn't match\n");
-		return;
-	}*/
-	// "shadertest/wireframevertexcolor", "Other textures"
-
-	auto startTime = std::chrono::steady_clock::now();
 
 	uint32_t offsets[] = {76, 94, 101}; // world brushes, local wall tube, local wall brushes
-	color32 colors[] = {{255, 20, 50, 40}, {40, 255, 0, 35}, {70, 100, 255, 50}};
+	color32 colors[] = {{255, 10, 10, 70}, {20, 255, 0, 150}, {40, 40, 255, 60}};
 
 	for (int idx = 0; idx < 3; idx++)
-	{
-		CPhysCollide* pCollide = *(CPhysCollide**)(simulator + offsets[idx]);
-		drawCPhysCollide(pCollide, colors[idx]);
-	}
+		drawCPhysCollide(*(CPhysCollide**)(simulator + offsets[idx]), colors[idx]);
 
-	// clipped - 328 / 4
-
-	CUtlVector<char[28]>& clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 83);
-
-	char name[30];
+	const CUtlVector<char[28]>& clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 83);
 	for (int i = 0; i < clippedStaticProps.Count(); i++)
-	{
-		sprintf(name, "clipped static prop #%d", i + 1);
-		char* elem = clippedStaticProps[i];
-		CPhysCollide* pCollide = *((CPhysCollide**)elem + 2);
-		drawCPhysCollide(pCollide, color32{200, 200, 0, 100});
-	}
+		drawCPhysCollide(*((CPhysCollide**)clippedStaticProps[i] + 2), color32{255, 255, 0, 60});
 
-	auto endTime = std::chrono::steady_clock::now();
-	/*DevMsg("generating debug meshes for portal geometry took %dus\n",
-	       std::chrono::duration_cast<std::chrono::microseconds>(endTime - startTime));*/
 	// TODO:
 	// look at the dynamic stuff
 	// look at stuff that only has IPhysicsObject's e.g. Simulation.Static.Wall.RemoteTransformedToLocal.Brushes
