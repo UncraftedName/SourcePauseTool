@@ -26,25 +26,6 @@ typedef void(__fastcall* _VGui_Paint)(void* thisptr, int edx, int mode);
 typedef int(__fastcall* DemoPlayer__Func)(void* thisptr);
 typedef bool(__fastcall* _CEngineTrace__PointOutsideWorld)(void* thisptr, int edx, const Vector& pt);
 typedef void(__cdecl* _Host_AccumulateTime)(float dt);
-
-typedef void(__cdecl* _CDebugOverlay_AddTriangleOverlay)(const Vector& p1,
-                                                         const Vector& p2,
-                                                         const Vector& p3,
-                                                         int r,
-                                                         int g,
-                                                         int b,
-                                                         int a,
-                                                         bool noDepthTest,
-                                                         float flDuration);
-
-typedef void(__cdecl* _CDebugOverlay_AddLineOverlay)(const Vector& origin,
-                                                     const Vector& dest,
-                                                     int r,
-                                                     int g,
-                                                     int b,
-                                                     int a,
-                                                     bool noDepthTest,
-                                                     float flDuration);
 typedef void(__cdecl* _DebugDrawPhysCollide)(const CPhysCollide* pCollide,
                                              IMaterial* pMaterial,
                                              const matrix3x4_t& transform,
@@ -78,12 +59,6 @@ public:
 	static void __cdecl HOOKED_Host_AccumulateTime(float dt);
 	static void __cdecl HOOKED_Cbuf_Execute();
 	static void __fastcall HOOKED_VGui_Paint(void* thisptr, int edx, int mode);
-	static void __fastcall HOOKED_CStaticPropMgr__DrawStaticProps(void* thisPtr,
-                                                           int edx,
-                                                           void** pProps,
-                                                           int count,
-                                                           bool bShadowDepth,
-                                                           bool drawVCollideWireframe);
 	bool __cdecl HOOKED_SV_ActivateServer_Func();
 	void __fastcall HOOKED_FinishRestore_Func(void* thisptr, int edx);
 	void __fastcall HOOKED_SetPaused_Func(void* thisptr, int edx, bool paused);
@@ -102,9 +77,6 @@ public:
 	bool Demo_IsPlaybackPaused() const;
 	_CEngineTrace__PointOutsideWorld ORIG_CEngineTrace__PointOutsideWorld;
 	_DebugDrawPhysCollide ORIG_DebugDrawPhysCollide;
-	_CDebugOverlay_AddTriangleOverlay ORIG_CDebugOverlay_AddTriangleOverlay; // one-sided triangle
-	_CDebugOverlay_AddLineOverlay ORIG_CDebugOverlay_AddLineOverlay;
-	_CStaticPropMgr__DrawStaticProps ORIG_CStaticPropMgr__DrawStaticProps;
 
 protected:
 	PatternContainer patternContainer;

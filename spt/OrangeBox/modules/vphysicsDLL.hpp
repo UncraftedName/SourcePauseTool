@@ -6,7 +6,7 @@
 #include "engine\iserverplugin.h"
 #include "tier3\tier3.h"
 
-typedef int(__fastcall* _CPhysicsCollision__CreateDebugMesh)(IPhysicsCollision* thisptr,
+typedef int(__fastcall* _CPhysicsCollision__CreateDebugMesh)(const IPhysicsCollision* thisptr,
                                                              int dummy,
                                                              const CPhysCollide* pCollisionModel,
                                                              Vector** outVerts);
@@ -25,19 +25,17 @@ public:
 	virtual void Unhook();
 	virtual void Clear();
 
+	_CPhysicsCollision__CreateDebugMesh ORIG_CPhysicsCollision__CreateDebugMesh;
+	_CPhysicsCollision__CreateDebugMesh CPhysicsCollision__CreateDebugMesh_Func;
 	_CPhysicsObject__GetPosition ORIG_CPhysicsObject__GetPosition;
-
-	bool adjustDebugMesh;
 
 	bool* isgFlagPtr;
 
 protected:
 	PatternContainer patternContainer;
 
-	static int __fastcall HOOKED_CPhysicsCollision__CreateDebugMesh(IPhysicsCollision* thisptr,
+	static int __fastcall HOOKED_CPhysicsCollision__CreateDebugMesh(const IPhysicsCollision* thisptr,
 	                                                                int dummy,
 	                                                                const CPhysCollide* pCollisionModel,
 	                                                                Vector** outVerts);
-
-	_CPhysicsCollision__CreateDebugMesh ORIG_CPhysicsCollision__CreateDebugMesh;
 };

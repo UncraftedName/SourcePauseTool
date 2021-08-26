@@ -15,7 +15,7 @@
 #include "..\scripts\tests\test.hpp"
 #include "..\..\aim.hpp"
 #include "bspflags.h"
-#include "..\overlay\sg-collision.h"
+#include "..\overlay\phys-vis.h"
 
 #ifdef max
 #undef max

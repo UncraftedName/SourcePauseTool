@@ -96,35 +96,17 @@ void VPhysicsDLL::Clear()
 	IHookableNameFilter::Clear();
 	ORIG_CPhysicsObject__GetPosition = nullptr;
 	ORIG_CPhysicsCollision__CreateDebugMesh = nullptr;
+	CPhysicsCollision__CreateDebugMesh_Func = nullptr;
 	isgFlagPtr = nullptr;
-	adjustDebugMesh = false;
 }
 
-int __fastcall VPhysicsDLL::HOOKED_CPhysicsCollision__CreateDebugMesh(IPhysicsCollision* thisptr,
-                                                         int dummy,
-                                                         const CPhysCollide* pCollisionModel,
-                                                         Vector** outVerts)
+int __fastcall VPhysicsDLL::HOOKED_CPhysicsCollision__CreateDebugMesh(const IPhysicsCollision* thisptr,
+                                                                      int dummy,
+                                                                      const CPhysCollide* pCollisionModel,
+                                                                      Vector** outVerts)
 {
-	int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(thisptr, dummy, pCollisionModel, outVerts);
-	if (vphysicsDLL.adjustDebugMesh)
-	{
-		Vector* v = *outVerts;
-		const Vector* player_origin = (Vector*)(GetServerPlayer() + 179);
-		// determine the furthest vert from the player
-		float maxDistSqr = 0;
-		for (int i = 0; i < vertCount; i++)
-			maxDistSqr = MAX(maxDistSqr, player_origin->DistToSqr(v[i]));
-		float normEps = MAX(pow(maxDistSqr, 0.6) / 50000, 0.0001);
-		// expand the debug mesh by some epsilon - we want the mesh to look good up close but prevent z fighting when it's far
-		for (int i = 0; i < vertCount; i += 3)
-		{
-			Vector norm = (v[i] - v[i + 1]).Cross(v[i + 2] - v[i]);
-			norm.NormalizeInPlace();
-			norm *= normEps;
-			v[i] += norm;
-			v[i + 1] += norm;
-			v[i + 2] += norm;
-		}
-	}
-	return vertCount;
+	if (vphysicsDLL.CPhysicsCollision__CreateDebugMesh_Func)
+		return vphysicsDLL.CPhysicsCollision__CreateDebugMesh_Func(thisptr, dummy, pCollisionModel, outVerts);
+	else
+		return vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(thisptr, dummy, pCollisionModel, outVerts);
 }
