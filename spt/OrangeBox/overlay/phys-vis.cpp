@@ -1,43 +1,9 @@
 #include "stdafx.h"
 
 #include "phys-vis.h"
-
-#include <chrono>
-#include <unordered_set>
-#include "..\modules.hpp"
-#include "..\spt-serverplugin.hpp"
-
-#include "..\custom_interfaces.hpp"
-#include "eiface.h"
-#include "engine\iserverplugin.h"
-#include "engine\ivdebugoverlay.h"
-#include "icvar.h"
-#include "vgui\ischeme.h"
-#include "vguimatsurface\imatsystemsurface.h"
-
-#include "..\..\sptlib-wrapper.hpp"
-#include "..\..\utils\ent_utils.hpp"
-#include "..\..\utils\math.hpp"
-#include "..\..\utils\string_parsing.hpp"
-#include "..\custom_interfaces.hpp"
-#include "..\cvars.hpp"
-#include "..\modules.hpp"
-#include "..\scripts\srctas_reader.hpp"
-#include "..\scripts\tests\test.hpp"
-#include "..\..\ipc\ipc-spt.hpp"
-#include "vstdlib\random.h"
-
-#include "cdll_int.h"
-#include "eiface.h"
-#include "engine\iserverplugin.h"
-#include "icliententitylist.h"
-#include "tier2\tier2.h"
-#include "tier3\tier3.h"
-#include "vgui\iinput.h"
-#include "vgui\isystem.h"
-#include "vgui\ivgui.h"
-
 #include "portal_camera.hpp"
+#include "..\modules.hpp"
+#include "..\..\utils\ent_utils.hpp"
 #include "..\..\utils\property_getter.hpp"
 
 /*
@@ -52,7 +18,7 @@ int __fastcall PushFacesTowardsNormals(const IPhysicsCollision* thisptr,
 	int vertCount = vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh(thisptr, dummy, pCollisionModel, outVerts);
 	Vector* v = *outVerts;
 	const Vector camPos = clientDLL.GetCameraOrigin();
-	// determine the furthest vert from the player
+	// determine the furthest vert from the camera
 	float maxDistSqr = 0;
 	for (int i = 0; i < vertCount; i++)
 		maxDistSqr = MAX(maxDistSqr, camPos.DistToSqr(v[i]));
@@ -187,18 +153,15 @@ void DrawSgCollision()
 	if (!GetEngine()->PEntityOfEntIndex(0) || !y_spt_draw_portal_env.GetBool())
 		return; // playing a demo (I think) or drawing is disabled
 
-	const char* type = y_spt_draw_portal_env_type.GetString();
+	const char* typeStr = y_spt_draw_portal_env_type.GetString();
 
-	if (!strlen(type))
+	if (!strlen(typeStr))
 		return;
 
-	bool want_blue = !strcmp(type, "blue");
-	bool want_orange = !strcmp(type, "orange");
-	bool want_auto = !strcmp(type, "auto");
-	bool want_collide = !strcmp(type, "collide");
-
-	if (!want_auto && !want_collide && !want_blue && !want_orange && !atoi(type))
-		return;
+	bool want_blue = !strcmp(typeStr, "blue");
+	bool want_orange = !strcmp(typeStr, "orange");
+	bool want_auto = !strcmp(typeStr, "auto");
+	bool want_collide = !strcmp(typeStr, "collide");
 
 findPortal:
 	int portalIdx = -1;
@@ -275,8 +238,8 @@ findPortal:
 	}
 	else
 	{
-		portalIdx = atoi(type);
-		if (portalIdx < 1 || portalIdx >= MAX_EDICTS - 1 || invalidPortal(utils::GetClientEntity(portalIdx)))
+		portalIdx = atoi(typeStr);
+		if (invalidPortal(utils::GetClientEntity(portalIdx - 1)))
 			return; // given portal index isn't valid
 	}
 	lastPortalIndex = portalIdx;
