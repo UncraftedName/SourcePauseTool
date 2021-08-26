@@ -121,15 +121,16 @@ void DrawCBaseEntity(const CBaseEntity* pEnt, const color32& c, bool limitZFight
 ConVar y_spt_draw_portal_env_wireframe("y_spt_draw_portal_env_wireframe", "1", FCVAR_CHEAT | FCVAR_DONTRECORD);
 ConVar y_spt_draw_portal_env_remote("y_spt_draw_portal_env_remote", "0", FCVAR_CHEAT | FCVAR_DONTRECORD);
 ConVar y_spt_draw_portal_env_ents("y_spt_draw_portal_env_ents", "0", FCVAR_CHEAT | FCVAR_DONTRECORD);
-ConVar y_spt_draw_portal_env(
-    "y_spt_draw_portal_env",
-    "",
+ConVar y_spt_draw_portal_env_type(
+    "y_spt_draw_portal_env_type",
+    "auto",
     FCVAR_CHEAT | FCVAR_DONTRECORD,
     "collide|auto|blue|orange|<index>; draw world collision and static props in a portal environment\n"
     "   - collide: draw what the player has collision with\n"
     "   - auto: prioritize what the player has collision with, otherwise use the last drawn portal\n"
     "   - blue/orange: look for a specific portal color\n"
     "   - index: specific the entity index of the portal");
+ConVar y_spt_draw_portal_env("y_spt_draw_portal_env", "0", FCVAR_CHEAT | FCVAR_DONTRECORD);
 
 void DrawPortalEnv(CBaseEntity* portal)
 {
@@ -168,11 +169,14 @@ void DrawPortalEnv(CBaseEntity* portal)
 	}
 	if (linkedSim && y_spt_draw_portal_env_ents.GetBool())
 	{
-		// owned entities + shadow clones (pink wireframe)
-		const CUtlVector<CBaseEntity*>& ents = *(CUtlVector<CBaseEntity*>*)(simulator + 2171);
-		for (int i = 0; i < ents.Count(); i++)
-			DrawCBaseEntity(ents[i], color32{255, 100, 255, 255}, false, false, true);
-		// there's an explicit list for shadow clones @ sim + 2166 but this ^ already draws those
+		// owned entities (pink wireframe)
+		const CUtlVector<CBaseEntity*>& ownedEnts = *(CUtlVector<CBaseEntity*>*)(simulator + 2171);
+		for (int i = 0; i < ownedEnts.Count(); i++)
+			DrawCBaseEntity(ownedEnts[i], color32{255, 100, 255, 255}, false, false, true);
+		// shadow clones (brown); the above list also contains shadow clones so this will just draw over that
+		const CUtlVector<CBaseEntity*>& shadowClones = *(CUtlVector<CBaseEntity*>*)(simulator + 2166);
+		for (int i = 0; i < shadowClones.Count(); i++)
+			DrawCBaseEntity(shadowClones[i], color32{120, 80, 30, 255}, false, false, true);
 	}
 }
 
@@ -180,20 +184,20 @@ static int lastPortalIndex = -1;
 
 void DrawSgCollision()
 {
-	if (!GetEngine()->PEntityOfEntIndex(0))
-		return; // playing a demo (I think)
+	if (!GetEngine()->PEntityOfEntIndex(0) || !y_spt_draw_portal_env.GetBool())
+		return; // playing a demo (I think) or drawing is disabled
 
-	const char* str = y_spt_draw_portal_env.GetString();
+	const char* type = y_spt_draw_portal_env_type.GetString();
 
-	if (!strlen(str))
+	if (!strlen(type))
 		return;
 
-	bool want_blue = !strcmp(str, "blue");
-	bool want_orange = !strcmp(str, "orange");
-	bool want_auto = !strcmp(str, "auto");
-	bool want_collide = !strcmp(str, "collide");
+	bool want_blue = !strcmp(type, "blue");
+	bool want_orange = !strcmp(type, "orange");
+	bool want_auto = !strcmp(type, "auto");
+	bool want_collide = !strcmp(type, "collide");
 
-	if (!want_auto && !want_collide && !want_blue && !want_orange && !atoi(str))
+	if (!want_auto && !want_collide && !want_blue && !want_orange && !atoi(type))
 		return;
 
 findPortal:
@@ -271,7 +275,7 @@ findPortal:
 	}
 	else
 	{
-		portalIdx = atoi(str);
+		portalIdx = atoi(type);
 		if (portalIdx < 1 || portalIdx >= MAX_EDICTS - 1 || invalidPortal(utils::GetClientEntity(portalIdx)))
 			return; // given portal index isn't valid
 	}
