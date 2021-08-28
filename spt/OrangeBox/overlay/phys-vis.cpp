@@ -6,6 +6,9 @@
 #include "..\..\utils\ent_utils.hpp"
 #include "..\..\utils\property_getter.hpp"
 
+const matrix3x4_t matrix3x4_identity(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+const matrix3x4_t* curPhysCollideMat = nullptr;
+
 /*
 * This is a vphysicsDLL.CPhysicsCollision__CreateDebugMesh_Func, it mostly prevents z-fighting by pushing the faces
 * away from the surface that they're on; the push amount depends on the distance from the mesh to the camera.
@@ -21,7 +24,21 @@ int __fastcall PushFacesTowardsNormals(const IPhysicsCollision* thisptr,
 	// determine the furthest vert from the camera
 	float maxDistSqr = 0;
 	for (int i = 0; i < vertCount; i++)
-		maxDistSqr = MAX(maxDistSqr, camPos.DistToSqr(v[i]));
+	{
+		float distSqr;
+		if (curPhysCollideMat)
+		{
+			// outVerts doesn't have the transform applied yet
+			Vector out;
+			VectorTransform(v[i].Base(), *curPhysCollideMat, out.Base());
+			distSqr = camPos.DistToSqr(out);
+		}
+		else
+		{
+			distSqr = camPos.DistToSqr(v[i]);
+		}
+		maxDistSqr = MAX(maxDistSqr, distSqr);
+	}
 	// expand the debug mesh by some epsilon - we still want the mesh to look good up close
 	float normEps = MAX(pow(maxDistSqr, 0.6f) / 50000, 0.0001f);
 	for (int i = 0; i < vertCount; i += 3)
@@ -36,9 +53,10 @@ int __fastcall PushFacesTowardsNormals(const IPhysicsCollision* thisptr,
 	return vertCount;
 }
 
+// pass in null for the matrix to use the identity matrix
 void DrawCPhysCollide(const CPhysCollide* pCollide,
                       const color32& c,
-                      const matrix3x4_t& mat,
+                      const matrix3x4_t* mat,
                       bool limitZFighting,
                       bool drawFaces,
                       bool drawWireframe)
@@ -47,15 +65,21 @@ void DrawCPhysCollide(const CPhysCollide* pCollide,
 		return;
 	const char* faceMatName = "debug/debugtranslucentvertexcolor";
 	IMaterial* faceMat = GetMaterialSystem()->FindMaterial(faceMatName, TEXTURE_GROUP_OTHER);
-	// DebugDrawPhysCollide uses CreateDebugMesh from vphysics, edit the mesh there
 	if (limitZFighting)
+	{
+		// DebugDrawPhysCollide will call CreateDebugMesh, edit the mesh there
 		vphysicsDLL.CPhysicsCollision__CreateDebugMesh_Func = PushFacesTowardsNormals;
+		// don't pass the matrix to the push function if it's identity since we can save some frames by not applying the transform
+		curPhysCollideMat = mat;
+	}
+	if (!mat)
+		mat = &matrix3x4_identity;
 	if (drawFaces)
-		engineDLL.ORIG_DebugDrawPhysCollide(pCollide, faceMat, mat, c, false);
+		engineDLL.ORIG_DebugDrawPhysCollide(pCollide, faceMat, *mat, c, false);
 	if (drawWireframe)
 	{
 		const color32& wireColor = drawFaces ? color32{0, 0, 0, 250} : c;
-		engineDLL.ORIG_DebugDrawPhysCollide(pCollide, nullptr, mat, wireColor, false);
+		engineDLL.ORIG_DebugDrawPhysCollide(pCollide, nullptr, *mat, wireColor, false);
 	}
 	vphysicsDLL.CPhysicsCollision__CreateDebugMesh_Func = nullptr;
 	return;
@@ -74,7 +98,7 @@ void DrawCPhysicsObject(const void* pPhysicsObject,
 	vphysicsDLL.ORIG_CPhysicsObject__GetPosition(pPhysicsObject, 0, &pos, &ang);
 	matrix3x4_t mat;
 	AngleMatrix(ang, pos, mat);
-	DrawCPhysCollide(*((CPhysCollide**)pPhysicsObject + 3), c, mat, limitZFighting, drawFaces, drawWireframe);
+	DrawCPhysCollide(*((CPhysCollide**)pPhysicsObject + 3), c, &mat, limitZFighting, drawFaces, drawWireframe);
 }
 
 void DrawCBaseEntity(const CBaseEntity* pEnt, const color32& c, bool limitZFighting, bool drawFaces, bool drawWireframe)
@@ -101,30 +125,28 @@ ConVar y_spt_draw_portal_env("y_spt_draw_portal_env", "0", FCVAR_CHEAT | FCVAR_D
 void DrawPortalEnv(CBaseEntity* portal)
 {
 	bool wire = y_spt_draw_portal_env_wireframe.GetBool();
-	matrix3x4_t mat;
-	AngleMatrix(vec3_angle, vec3_origin, mat);
 	uint32_t* simulator = (uint32_t*)portal + 327;
 
 	// portal hole - not directly used for collision (green wireframe)
-	DrawCPhysCollide(*(CPhysCollide**)(simulator + 70), color32{20, 255, 20, 255}, mat, false, false, true);
+	DrawCPhysCollide(*(CPhysCollide**)(simulator + 70), color32{20, 255, 20, 255}, nullptr, false, false, true);
 	// world brushes - wall geo in front of portal (red)
-	DrawCPhysCollide(*(CPhysCollide**)(simulator + 76), color32{255, 20, 20, 70}, mat, true, true, wire);
+	DrawCPhysCollide(*(CPhysCollide**)(simulator + 76), color32{255, 20, 20, 70}, nullptr, true, true, wire);
 	// local wall tube - edge of portal (green)
-	DrawCPhysCollide(*(CPhysCollide**)(simulator + 94), color32{0, 255, 0, 200}, mat, true, true, wire);
+	DrawCPhysCollide(*(CPhysCollide**)(simulator + 94), color32{0, 255, 0, 200}, nullptr, false, true, wire);
 	// local wall brushes - wall geo behind the portal (blue)
-	DrawCPhysCollide(*(CPhysCollide**)(simulator + 101), color32{40, 40, 255, 60}, mat, true, true, wire);
+	DrawCPhysCollide(*(CPhysCollide**)(simulator + 101), color32{40, 40, 255, 60}, nullptr, true, true, wire);
 	// static props (piss colored)
 	const CUtlVector<char[28]>& clippedStaticProps = *(CUtlVector<char[28]>*)(simulator + 83);
 	for (int i = 0; i < clippedStaticProps.Count(); i++)
 	{
 		const color32 c = color32{255, 255, 40, 50};
-		DrawCPhysCollide(*((CPhysCollide**)clippedStaticProps[i] + 2), c, mat, true, true, wire);
+		DrawCPhysCollide(*((CPhysCollide**)clippedStaticProps[i] + 2), c, nullptr, true, true, wire);
 	}
 	// if the linked sim is set we will have geo from the other portal
 	uint32_t* linkedSim = *(uint32_t**)(simulator + 1);
 	if (linkedSim)
 		AssertMsg(*(uint32_t**)(linkedSim + 1), "pointer to linked simulator makes no sense");
-	if (linkedSim && y_spt_draw_portal_env_remote.GetBool())
+	if (y_spt_draw_portal_env_remote.GetBool())
 	{
 		// remote brushes (light pink); z-fighting adjustment is set since this frequently overlaps with local world geo
 		DrawCPhysicsObject(*(void**)(simulator + 103), color32{255, 150, 150, 15}, true, true, wire);
@@ -133,7 +155,7 @@ void DrawPortalEnv(CBaseEntity* portal)
 		for (int i = 0; i < remoteStaticProps.Count(); i++)
 			DrawCPhysicsObject(remoteStaticProps[i], color32{255, 255, 150, 15}, false, true, wire);
 	}
-	if (linkedSim && y_spt_draw_portal_env_ents.GetBool())
+	if (y_spt_draw_portal_env_ents.GetBool())
 	{
 		// owned entities (pink wireframe)
 		const CUtlVector<CBaseEntity*>& ownedEnts = *(CUtlVector<CBaseEntity*>*)(simulator + 2171);
