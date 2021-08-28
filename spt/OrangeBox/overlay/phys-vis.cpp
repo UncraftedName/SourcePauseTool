@@ -108,9 +108,21 @@ void DrawCBaseEntity(const CBaseEntity* pEnt, const color32& c, bool limitZFight
 	DrawCPhysicsObject(*((void**)pEnt + 106), c, limitZFighting, drawFaces, drawWireframe);
 }
 
-ConVar y_spt_draw_portal_env_wireframe("y_spt_draw_portal_env_wireframe", "1", FCVAR_CHEAT | FCVAR_DONTRECORD);
-ConVar y_spt_draw_portal_env_remote("y_spt_draw_portal_env_remote", "0", FCVAR_CHEAT | FCVAR_DONTRECORD);
-ConVar y_spt_draw_portal_env_ents("y_spt_draw_portal_env_ents", "0", FCVAR_CHEAT | FCVAR_DONTRECORD);
+ConVar y_spt_draw_portal_env_wireframe("y_spt_draw_portal_env_wireframe",
+                                       "1",
+                                       FCVAR_CHEAT | FCVAR_DONTRECORD,
+                                       "draw the wireframe for static geometry");
+
+ConVar y_spt_draw_portal_env_remote("y_spt_draw_portal_env_remote",
+                                    "0",
+                                    FCVAR_CHEAT | FCVAR_DONTRECORD,
+                                    "draw geometry from the other portal");
+
+ConVar y_spt_draw_portal_env_ents("y_spt_draw_portal_env_ents",
+                                  "0",
+                                  FCVAR_CHEAT | FCVAR_DONTRECORD,
+                                  "draw entities owned by the portal and shadow clones from the other portal");
+
 ConVar y_spt_draw_portal_env_type(
     "y_spt_draw_portal_env_type",
     "auto",
@@ -120,7 +132,11 @@ ConVar y_spt_draw_portal_env_type(
     "   - auto: prioritize what the player has collision with, otherwise use the last drawn portal\n"
     "   - blue/orange: look for a specific portal color\n"
     "   - index: specific the entity index of the portal");
-ConVar y_spt_draw_portal_env("y_spt_draw_portal_env", "0", FCVAR_CHEAT | FCVAR_DONTRECORD);
+
+ConVar y_spt_draw_portal_env("y_spt_draw_portal_env",
+                             "0",
+                             FCVAR_CHEAT | FCVAR_DONTRECORD,
+                             "draw the geometry in a portal's physics environment");
 
 void DrawPortalEnv(CBaseEntity* portal)
 {
