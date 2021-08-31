@@ -320,6 +320,9 @@ void EngineDLL::Hook(const std::wstring& moduleName,
 		pHost_Realtime = *reinterpret_cast<float**>((uintptr_t)ORIG_Host_AccumulateTime + 5);
 	}
 
+	if (!ORIG_DebugDrawPhysCollide)
+		Warning("y_spt_draw_portal_env has no effect (engine.dll).\n");
+
 	patternContainer.Hook();
 }
 

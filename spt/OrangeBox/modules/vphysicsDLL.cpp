@@ -82,6 +82,9 @@ void VPhysicsDLL::Hook(const std::wstring& moduleName,
 	else
 		Warning("y_spt_hud_isg 1 and y_spt_set_isg have no effect\n");
 
+	if (!ORIG_CPhysicsCollision__CreateDebugMesh || !ORIG_CPhysicsObject__GetPosition)
+		Warning("y_spt_draw_portal_env has no effect (vphysics.dll).\n");
+
 	patternContainer.Hook();
 }
 

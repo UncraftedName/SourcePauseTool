@@ -69,9 +69,10 @@ void DrawCPhysCollide(const CPhysCollide* pCollide,
 	{
 		// DebugDrawPhysCollide will call CreateDebugMesh, edit the mesh there
 		vphysicsDLL.CPhysicsCollision__CreateDebugMesh_Func = PushFacesTowardsNormals;
-		// don't pass the matrix to the push function if it's identity since we can save some frames by not applying the transform
+		// if the matrix is null we can save some frames by not applying any transform during the push
 		curPhysCollideMat = mat;
 	}
+	// the drawPhysCollide function however applies the matrix no matter what
 	if (!mat)
 		mat = &matrix3x4_identity;
 	if (drawFaces)
@@ -158,10 +159,6 @@ void DrawPortalEnv(CBaseEntity* portal)
 		const color32 c = color32{255, 255, 40, 50};
 		DrawCPhysCollide(*((CPhysCollide**)clippedStaticProps[i] + 2), c, nullptr, true, true, wire);
 	}
-	// if the linked sim is set we will have geo from the other portal
-	uint32_t* linkedSim = *(uint32_t**)(simulator + 1);
-	if (linkedSim)
-		AssertMsg(*(uint32_t**)(linkedSim + 1), "pointer to linked simulator makes no sense");
 	if (y_spt_draw_portal_env_remote.GetBool())
 	{
 		// remote brushes (light pink); z-fighting adjustment is set since this frequently overlaps with local world geo
@@ -188,8 +185,12 @@ static int lastPortalIndex = -1;
 
 void DrawSgCollision()
 {
-	if (!GetEngine()->PEntityOfEntIndex(0) || !y_spt_draw_portal_env.GetBool())
-		return; // playing a demo (I think) or drawing is disabled
+	if (!vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh || !vphysicsDLL.ORIG_CPhysicsObject__GetPosition
+	    || !engineDLL.ORIG_DebugDrawPhysCollide || !y_spt_draw_portal_env.GetBool()
+	    || !GetEngine()->PEntityOfEntIndex(0) || !DoesGameLookLikePortal())
+	{
+		return;
+	}
 
 	const char* typeStr = y_spt_draw_portal_env_type.GetString();
 
