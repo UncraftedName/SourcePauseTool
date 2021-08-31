@@ -185,7 +185,7 @@ void ClientDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CViewEffects__Fade);
 	DEF_FUTURE(CViewEffects__Shake);
 	DEF_FUTURE(CHudDamageIndicator__GetDamagePosition);
-	DEF_FUTURE(CRendering3dView__DrawOpaqueRenderables);
+	DEF_FUTURE(CRendering3dView__DrawTranslucentRenderables);
 
 	GET_HOOKEDFUTURE(HudUpdate);
 	GET_HOOKEDFUTURE(GetButtonBits);
@@ -205,7 +205,7 @@ void ClientDLL::Hook(const std::wstring& moduleName,
 	GET_HOOKEDFUTURE(CViewEffects__Fade);
 	GET_HOOKEDFUTURE(CViewEffects__Shake);
 	GET_FUTURE(CHudDamageIndicator__GetDamagePosition);
-	GET_HOOKEDFUTURE(CRendering3dView__DrawOpaqueRenderables);
+	GET_HOOKEDFUTURE(CRendering3dView__DrawTranslucentRenderables);
 
 	if (DoesGameLookLikeHLS())
 	{
@@ -528,7 +528,7 @@ void ClientDLL::Clear()
 	ORIG_CViewRender__Render = nullptr;
 	ORIG_UTIL_TraceRay = nullptr;
 	ORIG_MainViewOrigin = nullptr;
-	ORIG_CRendering3dView__DrawOpaqueRenderables = nullptr;
+	ORIG_CRendering3dView__DrawTranslucentRenderables = nullptr;
 
 	pgpGlobals = nullptr;
 	off1M_nOldButtons = 0;
@@ -1186,7 +1186,11 @@ void ClientDLL::HOOKED_CViewRender__Render_Func(void* thisptr, int edx, void* re
 }
 
 // the cphyscollide drawing needs to be done at a specific time during rendering as far as I can tell, this seems to be a good place
-void ClientDLL::HOOKED_CRendering3dView__DrawOpaqueRenderables(void* thisptr, int edx, bool bShadowDepth) {
-	clientDLL.ORIG_CRendering3dView__DrawOpaqueRenderables(thisptr, edx, bShadowDepth);
+void ClientDLL::HOOKED_CRendering3dView__DrawTranslucentRenderables(void* thisptr,
+                                                                    int edx,
+                                                                    bool bInSkybox,
+                                                                    bool bShadowDepth)
+{
+	clientDLL.ORIG_CRendering3dView__DrawTranslucentRenderables(thisptr, edx, bInSkybox, bShadowDepth);
 	DrawSgCollision();
 }

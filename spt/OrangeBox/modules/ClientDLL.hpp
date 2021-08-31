@@ -51,7 +51,10 @@ typedef bool(__fastcall* _CGameMovement__CanUnDuckJump)(void* thisptr, int edx, 
 typedef void(__fastcall* _CViewEffects__Fade)(void* thisptr, int edx, void* data);
 typedef void(__fastcall* _CViewEffects__Shake)(void* thisptr, int edx, void* data);
 typedef const Vector&(__cdecl* _MainViewOrigin)();
-typedef void(__fastcall* _CRendering3dView__DrawOpaqueRenderables)(void* thisptr, int edx, bool bShadowDepth);
+typedef void(__fastcall* _CRendering3dView__DrawTranslucentRenderables)(void* thisptr,
+                                                                        int edx,
+                                                                        bool bInSkybox,
+                                                                        bool bShadowDepth);
 
 struct afterframes_entry_t
 {
@@ -118,7 +121,10 @@ public:
 	                                                    int nClearFlags,
 	                                                    int whatToDraw);
 	void __fastcall HOOKED_CViewRender__Render_Func(void* thisptr, int edx, void* rect);
-	static void __fastcall HOOKED_CRendering3dView__DrawOpaqueRenderables(void* thisptr, int edx, bool bShadowDepth);
+	static void __fastcall HOOKED_CRendering3dView__DrawTranslucentRenderables(void* thisptr,
+	                                                                           int edx,
+	                                                                           bool bInSkybox,
+	                                                                           bool bShadowDepth);
 
 	void DelayAfterframesQueue(int delay);
 	void AddIntoAfterframesQueue(const afterframes_entry_t& entry);
@@ -195,7 +201,7 @@ protected:
 	_CViewEffects__Fade ORIG_CViewEffects__Fade;
 	_CViewEffects__Shake ORIG_CViewEffects__Shake;
 	_MainViewOrigin ORIG_MainViewOrigin;
-	_CRendering3dView__DrawOpaqueRenderables ORIG_CRendering3dView__DrawOpaqueRenderables;
+	_CRendering3dView__DrawTranslucentRenderables ORIG_CRendering3dView__DrawTranslucentRenderables;
 
 	uintptr_t* pgpGlobals;
 	ptrdiff_t offM_pCommands;

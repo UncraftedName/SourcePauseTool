@@ -7,7 +7,7 @@
  * there, so you can only draw CPhysCollides/CPhysicsObjects. That being said, it should be easy to hook the
  * Create/Destroy DebugMesh functions so that way you can draw arbtirary meshes when you call DebugDrawPhysCollide.
  * Note that unlike the DebugOverlay, DebugDrawPhysCollide needs to be called at a specific time during rendering,
- * see: ClientDLL::HOOKED_CRendering3dView__DrawOpaqueRenderables.
+ * see: ClientDLL::HOOKED_CRendering3dView__DrawTranslucentRenderables.
  */
 
 void DrawSgCollision();
