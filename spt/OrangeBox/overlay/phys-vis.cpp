@@ -115,6 +115,8 @@ void DrawCBaseEntity(const CBaseEntity* pEnt, const color32& c, bool limitZFight
 	DrawCPhysicsObject(*((void**)pEnt + 106 + extraBaseEntOff), c, limitZFighting, drawFaces, drawWireframe);
 }
 
+#if defined(SSDK2007) || defined(SSDK2013)
+
 ConVar y_spt_draw_portal_env_wireframe("y_spt_draw_portal_env_wireframe",
                                        "1",
                                        FCVAR_CHEAT | FCVAR_DONTRECORD,
@@ -187,10 +189,14 @@ void DrawPortalEnv(CBaseEntity* portal)
 	}
 }
 
+#endif // SSDK2007 || SSDK2013
+
 static int lastPortalIndex = -1;
 
 void DrawSgCollision()
 {
+#if defined(SSDK2007) || defined(SSDK2013)
+
 	if (!vphysicsDLL.ORIG_CPhysicsCollision__CreateDebugMesh || !vphysicsDLL.ORIG_CPhysicsObject__GetPosition
 	    || !engineDLL.ORIG_DebugDrawPhysCollide || !y_spt_draw_portal_env.GetBool()
 	    || !GetEngine()->PEntityOfEntIndex(0) || !DoesGameLookLikePortal())
@@ -298,4 +304,8 @@ findPortal:
 		return;
 
 	DrawPortalEnv(portal->GetBaseEntity());
+
+#else // SSDK2007 || SSDK2013
+	return;
+#endif
 }

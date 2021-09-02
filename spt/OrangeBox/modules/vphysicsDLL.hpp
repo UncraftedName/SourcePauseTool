@@ -6,11 +6,18 @@
 #include "engine\iserverplugin.h"
 #include "tier3\tier3.h"
 
+#ifdef OE
+class IPhysicsCollision; // just so we can compile
+#endif
+
 typedef int(__fastcall* _CPhysicsCollision__CreateDebugMesh)(const IPhysicsCollision* thisptr,
                                                              int dummy,
                                                              const CPhysCollide* pCollisionModel,
                                                              Vector** outVerts);
-typedef void(__fastcall* _CPhysicsObject__GetPosition)(const void* thisptr, int dummy, Vector* worldPosition, QAngle* angles);
+typedef void(__fastcall* _CPhysicsObject__GetPosition)(const void* thisptr,
+                                                       int dummy,
+                                                       Vector* worldPosition,
+                                                       QAngle* angles);
 
 class VPhysicsDLL : public IHookableNameFilter
 {
