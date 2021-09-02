@@ -279,7 +279,9 @@ namespace patterns
 		PATTERNS(
 		    CHudDamageIndicator__GetDamagePosition,
 		    "5135",
-		    "83 EC 18 E8 ?? ?? ?? ?? e8 ?? ?? ?? ?? 8B 08 89 4C 24 0C 8B 50 04 6A 00 89 54 24 14 8B 40 08 6A 00 8D 4C 24 08 51 8D 54 24 18 52 89 44 24 24");
+		    "83 EC 18 E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 08 89 4C 24 0C 8B 50 04 6A 00 89 54 24 14 8B 40 08 6A 00 8D 4C 24 08 51 8D 54 24 18 52 89 44 24 24",
+		    "1910503",
+		    "55 8B EC 83 EC 18 56 8B F1 E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? F3 0F 7E 00 6A 00 6A 00 8D 4D F4 66 0F D6 45 E8");
 		PATTERNS(CRendering3dView__DrawTranslucentRenderables,
 		         "5135",
 		         "55 8B EC 83 EC 34 53 8B D9 8B 83 94 00 00 00 8B 13 56 8D B3 94 00 00 00",
