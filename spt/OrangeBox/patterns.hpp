@@ -96,7 +96,9 @@ namespace patterns
 		    "51 F3 0F 10 ?? ?? ?? ?? ?? F3 0F ?? ?? ?? ?? 8B ?? ?? ?? ?? ?? F3 0F 11 ?? ?? ?? ?? ?? 8B 01 8B 50");
 		PATTERNS(DebugDrawPhysCollide,
 		         "5135",
-		         "81 EC 38 02 00 00 53 55 33 DB 39 9C 24 48 02 00 00 56 57 75 24");
+		         "81 EC 38 02 00 00 53 55 33 DB 39 9C 24 48 02 00 00 56 57 75 24",
+		         "1910503",
+		         "55 8B EC 81 EC 3C 02 00 00 53 33 DB 56 57 39 5D 0C 75 20");
 	} // namespace engine
 
 	namespace client
@@ -280,7 +282,9 @@ namespace patterns
 		    "83 EC 18 E8 ?? ?? ?? ?? e8 ?? ?? ?? ?? 8B 08 89 4C 24 0C 8B 50 04 6A 00 89 54 24 14 8B 40 08 6A 00 8D 4C 24 08 51 8D 54 24 18 52 89 44 24 24");
 		PATTERNS(CRendering3dView__DrawTranslucentRenderables,
 		         "5135",
-		         "55 8B EC 83 EC 34 53 8B D9 8B 83 94 00 00 00 8B 13 56 8D B3 94 00 00 00");
+		         "55 8B EC 83 EC 34 53 8B D9 8B 83 94 00 00 00 8B 13 56 8D B3 94 00 00 00",
+		         "1910503",
+		         "55 8B EC 81 EC 9C 00 00 00 53 56 8B F1 8B 86 E8 00 00 00 8B 16 57 8D BE E8 00 00 00");
 	} // namespace client
 
 	namespace server
@@ -497,10 +501,14 @@ namespace patterns
 		         "C6 05 ?? ?? ?? ?? 01 4E 3B 75 F0 7D D3 8B 8D DC FD FF FF");
 		PATTERNS(CPhysicsCollision__CreateDebugMesh,
 		         "5135",
-		         "83 EC 10 8B 4C 24 14 8B 01 8B 40 08 55 56 57 33 ED 8D 54 24 10 52");
+		         "83 EC 10 8B 4C 24 14 8B 01 8B 40 08 55 56 57 33 ED 8D 54 24 10 52",
+		         "1910503",
+		         "55 8B EC 83 EC 14 8B 4D 08 8B 01 8B 40 08 53 56 57 33 DB 8D 55 EC");
 		PATTERNS(CPhysicsObject__GetPosition,
 		         "5135",
-		         "8B 49 08 81 EC 80 00 00 00 8D 04 24 50 E8 ?? ?? ?? ?? 8B 84 24 84 00 00 00 85 C0");
+		         "8B 49 08 81 EC 80 00 00 00 8D 04 24 50 E8 ?? ?? ?? ?? 8B 84 24 84 00 00 00 85 C0",
+		         "1910503",
+		         "55 8B EC 8B 49 08 81 EC 80 00 00 00 8D 45 80 50 E8 ?? ?? ?? ?? 8B 45 08 85 C0");
 	} // namespace vphysics
 
 } // namespace patterns
