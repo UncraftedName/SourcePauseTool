@@ -6,8 +6,14 @@
 #include "..\..\utils\ent_utils.hpp"
 #include "..\..\utils\property_getter.hpp"
 
-const matrix3x4_t matrix3x4_identity(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
-const matrix3x4_t* curPhysCollideMat = nullptr;
+#ifdef SSDK2007
+static const int extraBaseEntOff = 0;
+#else
+static const int extraBaseEntOff = 14; // SSDK2013
+#endif
+
+static const matrix3x4_t matrix3x4_identity(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0);
+static const matrix3x4_t* curPhysCollideMat = nullptr;
 
 /*
 * This is a vphysicsDLL.CPhysicsCollision__CreateDebugMesh_Func, it mostly prevents z-fighting by pushing the faces
@@ -106,7 +112,7 @@ void DrawCBaseEntity(const CBaseEntity* pEnt, const color32& c, bool limitZFight
 {
 	if (!pEnt)
 		return;
-	DrawCPhysicsObject(*((void**)pEnt + 106), c, limitZFighting, drawFaces, drawWireframe);
+	DrawCPhysicsObject(*((void**)pEnt + 106 + extraBaseEntOff), c, limitZFighting, drawFaces, drawWireframe);
 }
 
 ConVar y_spt_draw_portal_env_wireframe("y_spt_draw_portal_env_wireframe",
@@ -142,7 +148,7 @@ ConVar y_spt_draw_portal_env("y_spt_draw_portal_env",
 void DrawPortalEnv(CBaseEntity* portal)
 {
 	bool wire = y_spt_draw_portal_env_wireframe.GetBool();
-	uint32_t* simulator = (uint32_t*)portal + 327;
+	uint32_t* simulator = (uint32_t*)portal + 327 + extraBaseEntOff;
 
 	// portal hole - not directly used for collision (green wireframe)
 	DrawCPhysCollide(*(CPhysCollide**)(simulator + 70), color32{20, 255, 20, 255}, nullptr, false, false, true);
