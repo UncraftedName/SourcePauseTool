@@ -686,7 +686,7 @@ Strafe::PlayerData ClientDLL::GetPlayerData()
 	data.UnduckedOrigin =
 	    *reinterpret_cast<Vector*>(reinterpret_cast<uintptr_t>(GetServerPlayer()) + offServerAbsOrigin);
 	data.Velocity = GetPlayerVelocity();
-	data.Basevelocity = Vector();
+	data.Basevelocity = vec3_origin;
 
 	if (data.Ducking)
 	{
@@ -702,7 +702,7 @@ Strafe::PlayerData ClientDLL::GetPlayerData()
 Vector ClientDLL::GetPlayerVelocity()
 {
 	if (!ORIG_GetLocalPlayer)
-		return Vector();
+		return vec3_origin;
 	auto player = ORIG_GetLocalPlayer();
 	ORIG_CalcAbsoluteVelocity(player, 0);
 	float* vel = reinterpret_cast<float*>(reinterpret_cast<uintptr_t>(player) + offAbsVelocity);
@@ -731,7 +731,7 @@ Vector ClientDLL::GetPlayerEyePos()
 Vector ClientDLL::GetCameraOrigin()
 {
 	if (!ORIG_MainViewOrigin)
-		return Vector();
+		return vec3_origin;
 	return ORIG_MainViewOrigin();
 }
 

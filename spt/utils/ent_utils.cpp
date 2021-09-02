@@ -257,7 +257,7 @@ namespace utils
 			return ply->GetAbsOrigin() + offset;
 		}
 		else
-			return Vector();
+			return vec3_origin;
 	}
 
 	QAngle GetPlayerEyeAngles()
