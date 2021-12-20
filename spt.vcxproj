@@ -1365,9 +1365,13 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug blank|Win32'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="spt\aim.cpp" />
+    <ClCompile Include="spt\fcps\fcps_animation.cpp" />
+    <ClCompile Include="spt\fcps\fcps_override.cpp" />
+    <ClCompile Include="spt\fcps\fcps_memory_repr.cpp" />
     <ClCompile Include="spt\ipc\ipc-commands.cpp" />
     <ClCompile Include="spt\ipc\ipc-spt.cpp" />
     <ClCompile Include="spt\ipc\ipc.cpp" />
+    <ClCompile Include="spt\miniz\miniz.c" />
     <ClCompile Include="spt\OrangeBox\modules\inputSystemDLL.cpp" />
     <ClCompile Include="spt\OrangeBox\modules\vphysicsDLL.cpp" />
     <ClCompile Include="spt\OrangeBox\module_hooks.cpp" />
@@ -1770,8 +1774,12 @@
     <ClInclude Include="SPTLib\patterns_macros.hpp" />
     <ClInclude Include="SPTLib\Windows\DetoursUtils.hpp" />
     <ClInclude Include="spt\aim.hpp" />
+    <ClInclude Include="spt\fcps\fcps_animation.hpp" />
+    <ClInclude Include="spt\fcps\fcps_override.hpp" />
+    <ClInclude Include="spt\fcps\fcps_memory_repr.hpp" />
     <ClInclude Include="spt\ipc\ipc-spt.hpp" />
     <ClInclude Include="spt\ipc\ipc.hpp" />
+    <ClInclude Include="spt\miniz\miniz.h" />
     <ClInclude Include="spt\OrangeBox\modules\inputSystemDLL.hpp" />
     <ClInclude Include="spt\OrangeBox\modules\vphysicsDLL.hpp" />
     <ClInclude Include="spt\OrangeBox\module_hooks.hpp" />

@@ -148,6 +148,18 @@
     <ClCompile Include="spt\OrangeBox\overlay\phys-vis.cpp">
       <Filter>spt\OrangeBox\overlay</Filter>
     </ClCompile>
+    <ClCompile Include="spt\fcps\fcps_override.cpp">
+      <Filter>spt\fcps</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\fcps\fcps_animation.cpp">
+      <Filter>spt\fcps</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\fcps\fcps_memory_repr.cpp">
+      <Filter>spt\fcps</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\miniz\miniz.c">
+      <Filter>spt\miniz</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -384,6 +396,18 @@
     <ClInclude Include="spt\OrangeBox\overlay\phys-vis.h">
       <Filter>spt\OrangeBox\overlay</Filter>
     </ClInclude>
+    <ClInclude Include="spt\fcps\fcps_override.hpp">
+      <Filter>spt\fcps</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\fcps\fcps_animation.hpp">
+      <Filter>spt\fcps</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\fcps\fcps_memory_repr.hpp">
+      <Filter>spt\fcps</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\miniz\miniz.h">
+      <Filter>spt\miniz</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\lib\public\mathlib.lib">
@@ -444,6 +468,12 @@
     </Filter>
     <Filter Include="thirdparty">
       <UniqueIdentifier>{20f959c6-2185-4a22-af30-a22417e39297}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="spt\fcps">
+      <UniqueIdentifier>{540e8274-c878-4932-b2a6-b5168788cf5e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="spt\miniz">
+      <UniqueIdentifier>{f88a2b2e-58ab-4e30-a8e1-963ad0852300}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

@@ -9,6 +9,10 @@
 #include "..\overlay\overlays.hpp"
 #include "..\patterns.hpp"
 #include "ServerDLL.hpp"
+#include "..\..\fcps\fcps_override.hpp"
+#include "..\..\fcps\fcps_memory_repr.hpp"
+#include <chrono>
+using namespace std::chrono;
 
 #ifdef OE
 #include "SDK\usercmd.h"
@@ -254,6 +258,8 @@ void ServerDLL::Hook(const std::wstring& moduleName,
 	DEF_FUTURE(CGameMovement__GetPlayerMins);
 	DEF_FUTURE(SetPredictionRandomSeed);
 	DEF_FUTURE(CGameMovement__DecayPunchAngle);
+	DEF_FUTURE(FindClosestPassableSpace);
+	DEF_FUTURE(UTIL_TraceRay);
 	GET_HOOKEDFUTURE(FinishGravity);
 	GET_HOOKEDFUTURE(PlayerRunCommand);
 	GET_HOOKEDFUTURE(CheckStuck);
@@ -272,6 +278,8 @@ void ServerDLL::Hook(const std::wstring& moduleName,
 	GET_HOOKEDFUTURE(CGameMovement__GetPlayerMins);
 	GET_HOOKEDFUTURE(SetPredictionRandomSeed);
 	GET_FUTURE(CGameMovement__DecayPunchAngle);
+	GET_HOOKEDFUTURE(FindClosestPassableSpace);
+	GET_FUTURE(UTIL_TraceRay);
 
 	if (DoesGameLookLikePortal())
 	{
@@ -592,6 +600,10 @@ void ServerDLL::Hook(const std::wstring& moduleName,
 		patternContainer.AddHook(HOOKED_TraceFirePortal, (PVOID*)&ORIG_TraceFirePortal);
 	}
 #endif
+
+	if (!ORIG_FindClosestPassableSpace || !ORIG_UTIL_TraceRay)
+		Warning("FCPS visualization/overriding may not be available\n");
+
 	patternContainer.Hook();
 }
 
@@ -613,6 +625,8 @@ void ServerDLL::Clear()
 	ORIG_MiddleOfSlidingFunction = nullptr;
 	ORIG_MiddleOfTeleportTouchingEntity = nullptr;
 	ORIG_EndOfTeleportTouchingEntity = nullptr;
+	ORIG_FindClosestPassableSpace = nullptr;
+	ORIG_UTIL_TraceRay = nullptr;
 	off1M_nOldButtons = 0;
 	off2M_nOldButtons = 0;
 	cantJumpNextTime = false;
@@ -1043,5 +1057,71 @@ int ServerDLL::GetEnviromentPortalHandle() const
 		int offset = *m_hPortalEnvironmentOffsetPtr;
 
 		return *reinterpret_cast<int*>(((int)GetServerPlayer() + offset));
+	}
+}
+
+// clang-format off
+
+ConVar fcps_override("fcps_override", "0", FCVAR_CHEAT | FCVAR_DONTRECORD, "override types:\n\t1 - overrides the default FCPS implementation with one that records the steps of the algorithm\
+\n\t2 - overrides the default FCPS implementation but does not record events (for debugging)");
+
+bool __cdecl ServerDLL::HOOKED_FindClosestPassableSpace_Func(CBaseEntity* pEntity, const Vector& vIndecisivePush, unsigned int fMask, void* retAddress) {
+	if (fcps_override.GetInt() > 0) {
+		using namespace fcps;
+		FcpsCaller caller;
+		switch ((uint32_t)retAddress - (uint32_t)serverDLL.m_Base) {
+			case 0x0040FC69:
+				caller = CheckStuck;
+				break;
+			case 0x0041B822:
+				caller = VPhysicsShadowUpdate;
+				break;
+			case 0x00422345:
+				caller = Debug_FixMyPosition;
+				break;
+			case 0x004259FB:
+				caller = RemoveEntityFromPortalHole;
+				break;
+			case 0x00427e24:
+				caller = PortalSimulator__MoveTo;
+				break;
+			case 0x0042F076:
+				caller = TeleportTouchingEntity;
+				break;
+			default:
+				caller = Unknown;
+				break;
+		}
+		auto start = high_resolution_clock::now();
+		FcpsCallResult eventResult = fcps_override.GetInt() == 1
+			? FcpsOverrideFuncAndRecord(pEntity, vIndecisivePush, fMask, caller)
+			: FcpsOverrideFunc(pEntity, vIndecisivePush, fMask);
+
+		bool returnVal = eventResult == FCPS_Success || eventResult == FCPS_NotRun;
+		bool showTimeStats = eventResult == FCPS_Success || eventResult == FCPS_Fail;
+
+		if (eventResult != FCPS_NotRun && fcps_override.GetInt() == 1) {
+			auto e = fcps::RecordedFcpsQueue->getLastEvent();
+			Assert(e);
+			Msg("spt: recorded FCPS event - ");
+			e->print();
+		}
+		if (showTimeStats)
+			DevMsg("FCPS override took %dus\n", duration_cast<microseconds>(high_resolution_clock::now() - start));
+		return returnVal;
+	}
+	return serverDLL.ORIG_FindClosestPassableSpace(pEntity, vIndecisivePush, fMask);
+}
+
+__declspec(naked) bool ServerDLL::HOOKED_FindClosestPassableSpace(CBaseEntity* pEntity, const Vector& vIndecisivePush, unsigned int fMask) {
+	// I want to pass in the return address to figure out what called this
+	__asm {
+		push [esp]      // caller return address
+		push [esp+0x10] // fMask
+		push [esp+0x10] // vIndecisivePush
+		push [esp+0x10] // pEntity
+		call HOOKED_FindClosestPassableSpace_Func
+		add esp, 0x10   // clean stack
+		ret
 	}
 }

@@ -203,7 +203,6 @@ protected:
 	_MainViewOrigin ORIG_MainViewOrigin;
 	_CRendering3dView__DrawTranslucentRenderables ORIG_CRendering3dView__DrawTranslucentRenderables;
 
-	uintptr_t* pgpGlobals;
 	ptrdiff_t offM_pCommands;
 	ptrdiff_t off1M_nOldButtons;
 	ptrdiff_t off2M_nOldButtons;
@@ -220,6 +219,7 @@ protected:
 
 public:
 	ptrdiff_t offServerAbsOrigin;
+	uintptr_t* pgpGlobals;
 
 protected:
 	uintptr_t pCmd;
