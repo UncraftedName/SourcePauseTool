@@ -1371,7 +1371,6 @@
     <ClCompile Include="spt\ipc\ipc-commands.cpp" />
     <ClCompile Include="spt\ipc\ipc-spt.cpp" />
     <ClCompile Include="spt\ipc\ipc.cpp" />
-    <ClCompile Include="spt\miniz\miniz.c" />
     <ClCompile Include="spt\OrangeBox\modules\inputSystemDLL.cpp" />
     <ClCompile Include="spt\OrangeBox\modules\vphysicsDLL.cpp" />
     <ClCompile Include="spt\OrangeBox\module_hooks.cpp" />
@@ -1731,6 +1730,7 @@
     <ClCompile Include="spt\utils\string_parsing.cpp" />
     <ClCompile Include="spt\vgui\vgui_utils.cpp" />
     <ClCompile Include="thirdparty\md5.cpp" />
+    <ClCompile Include="thirdparty\miniz.c" />
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\lib\public\mathlib.lib" />
@@ -1778,7 +1778,6 @@
     <ClInclude Include="spt\fcps\fcps_memory_repr.hpp" />
     <ClInclude Include="spt\ipc\ipc-spt.hpp" />
     <ClInclude Include="spt\ipc\ipc.hpp" />
-    <ClInclude Include="spt\miniz\miniz.h" />
     <ClInclude Include="spt\OrangeBox\modules\inputSystemDLL.hpp" />
     <ClInclude Include="spt\OrangeBox\modules\vphysicsDLL.hpp" />
     <ClInclude Include="spt\OrangeBox\module_hooks.hpp" />
@@ -1820,6 +1819,7 @@
     <ClInclude Include="thirdparty\Delegate.h" />
     <ClInclude Include="thirdparty\json.hpp" />
     <ClInclude Include="thirdparty\md5.hpp" />
+    <ClInclude Include="thirdparty\miniz.h" />
     <ClInclude Include="thirdparty\Signal.h" />
   </ItemGroup>
   <ItemGroup>

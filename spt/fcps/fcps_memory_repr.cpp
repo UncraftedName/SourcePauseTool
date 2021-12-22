@@ -2,7 +2,7 @@
 
 #include "fcps_memory_repr.hpp"
 #include "..\OrangeBox\spt-serverplugin.hpp"
-#include "..\miniz\miniz.h"
+#include "..\..\thirdparty\miniz.h"
 #include <chrono>
 #include <thread>
 
