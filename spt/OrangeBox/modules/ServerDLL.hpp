@@ -193,6 +193,7 @@ public:
 	int GetPlayerCollisionGroup() const;
 	int GetEnviromentPortalHandle() const;
 
+	PatternContainer patternContainer;
 	_SnapEyeAngles SnapEyeAngles;
 	_FirePortal FirePortal;
 	trace_t lastPortalTrace;
@@ -219,7 +220,6 @@ public:
 	ptrdiff_t offM_vecPunchAngleVel;
 
 protected:
-	PatternContainer patternContainer;
 	_CheckJumpButton ORIG_CheckJumpButton;
 	_FinishGravity ORIG_FinishGravity;
 	_PlayerRunCommand ORIG_PlayerRunCommand;

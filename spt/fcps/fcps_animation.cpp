@@ -4,6 +4,7 @@
 #include "fcps_animation.hpp"
 #include "fcps_override.hpp"
 #include "..\OrangeBox\spt-serverplugin.hpp"
+#include "..\OrangeBox\modules.hpp"
 
 // clang-format off
 
@@ -172,7 +173,7 @@ namespace fcps {
 	}
 
 
-	void FcpsAnimator::drawRaysFromCorners(float duration) const {
+	void FcpsAnimator::drawRaysFromCorners(float duration, float textDuration) const {
 
 		auto vdo = GetDebugOverlay();
 		auto& loopInfo = curQueue->getEventWithId(curId)->loops[curLoopIdx];
@@ -180,7 +181,7 @@ namespace fcps {
 		// last substep - don't draw rays, just draw the total validation values
 		if (curTwcIdx == 28) {
 			for (int i = 0; i < 8; i++)
-				vdo->AddTextOverlay(loopInfo.corners[i], duration, "%d: %.2f", i + 1, loopInfo.cornerWeights[i]);
+				vdo->AddTextOverlay(loopInfo.corners[i], textDuration, "%d: %.2f", i + 1, loopInfo.cornerWeights[i]);
 			return;
 		}
 
@@ -218,9 +219,9 @@ namespace fcps {
 			}
 			// draw weight for both corners
 			if (twc.checks[i].weightDelta > 0)
-				vdo->AddTextOverlay(corner[i], duration, "%d: %.2f + %.2f", twc.checks[i].cornerIdx + 1, twc.checks[i].oldWeight, twc.checks[i].weightDelta);
+				vdo->AddTextOverlay(corner[i], textDuration, "%d: %.2f + %.2f", twc.checks[i].cornerIdx + 1, twc.checks[i].oldWeight, twc.checks[i].weightDelta);
 			else
-				vdo->AddTextOverlay(corner[i], duration, "%d: 0.00", twc.checks[i].cornerIdx + 1);
+				vdo->AddTextOverlay(corner[i], textDuration, "%d: 0.00", twc.checks[i].cornerIdx + 1);
 		}
 		// part of the trace after the impact
 		if (exceededThresholdFromEnd[0] || exceededThresholdFromEnd[1]) {
@@ -268,6 +269,9 @@ namespace fcps {
 		// This is a problem since the bbox of the ents get drawn every time (and have an alpha component), so just keep track if we've done that already.
 		bool hasDrawnBBoxThisFrame = false;
 		bool hasDrawnCollidedEntsThisFrame = false;
+		// HACK: text seems to flicker on 3420 specifically, so don't use persist_till_next_server
+		int gameVersion = serverDLL.patternContainer.FindPatternIndex((PVOID*)serverDLL.ORIG_FindClosestPassableSpace);
+		float textDur = gameVersion == 0 ? 0.015f * 2 : dur;
 		for (;;) {
 			Assert(curQueue);
 			FcpsEvent* fe = curQueue->getEventWithId(curId);
@@ -286,7 +290,7 @@ namespace fcps {
 					for (int i = 0; i < fe->collidingEntsCount; i++) {
 						auto& cEnt = fe->collidingEnts[i];
 						vdo->AddBoxOverlay(cEnt.center, -cEnt.extents, cEnt.extents, cEnt.angles, 200, 0, 200, 25, dur);
-						vdo->AddTextOverlay(cEnt.center, dur, "(%d) Name: %s (%s)", cEnt.entIdx, cEnt.debugName, cEnt.className);
+						vdo->AddTextOverlay(cEnt.center, textDur, "(%d) Name: %s (%s)", cEnt.entIdx, cEnt.debugName, cEnt.className);
 					}
 					hasDrawnCollidedEntsThisFrame = true;
 				}
@@ -302,10 +306,10 @@ namespace fcps {
 					}
 					case AS_CornerValidation:
 						for (int i = 0; i <= cornerIdx; i++)
-							vdo->AddTextOverlay(curLoop.corners[i], dur, "%d: %s", i + 1, curLoop.cornersOob[i] ? "OOB" : "INBOUNDS");
+							vdo->AddTextOverlay(curLoop.corners[i], textDur, "%d: %s", i + 1, curLoop.cornersOob[i] ? "OOB" : "INBOUNDS");
 						break;
 					case AS_CornerRays:
-						drawRaysFromCorners(dur);
+						drawRaysFromCorners(dur, textDur);
 						break;
 					case AS_Revert:
 						vdo->AddBoxOverlay(fe->origCenter, fe->origMins, fe->origMaxs, vec3_angle, 255, 0, 0, 50, dur);

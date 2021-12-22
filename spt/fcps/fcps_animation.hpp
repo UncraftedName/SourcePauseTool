@@ -55,7 +55,7 @@ namespace fcps {
 		bool nextSubStepIsTrace;
 
 		void calcSubStepDurations(double seconds);
-		void drawRaysFromCorners(float duration) const;
+		void drawRaysFromCorners(float duration, float textDuration) const;
 		bool canManualStep() const;
 
 	public:

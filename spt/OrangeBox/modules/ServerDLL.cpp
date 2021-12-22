@@ -1066,36 +1066,53 @@ ConVar fcps_override("fcps_override", "0", FCVAR_CHEAT | FCVAR_DONTRECORD, "over
 \n\t2 - overrides the default FCPS implementation but does not record events (for debugging)");
 
 bool __cdecl ServerDLL::HOOKED_FindClosestPassableSpace_Func(CBaseEntity* pEntity, const Vector& vIndecisivePush, unsigned int fMask, void* retAddress) {
+
 	if (fcps_override.GetInt() > 0) {
 		using namespace fcps;
-		FcpsCaller caller;
-		switch ((uint32_t)retAddress - (uint32_t)serverDLL.m_Base) {
-			case 0x0040FC69:
-				caller = CheckStuck;
+
+		uint32_t funcOffs5135[6] = {
+			0x41B822,
+			0x4259FB,
+			0x40FC69,
+			0x42F076,
+			0x427e24,
+			0x422345
+		};
+		uint32_t funcOffs3420[6] = {
+			0x3D7864,
+			0x3E0C6B,
+			0x3CBC89,
+			0x3EA2C6,
+			0x3E3074,
+			0x3DD595
+		};
+		
+		int gameVersion = serverDLL.patternContainer.FindPatternIndex((PVOID*)&serverDLL.ORIG_FindClosestPassableSpace);
+		FcpsCaller caller = Unknown;
+		uint32_t* funcOffs;
+		switch (gameVersion) {
+			case 0:
+				funcOffs = funcOffs3420;
 				break;
-			case 0x0041B822:
-				caller = VPhysicsShadowUpdate;
-				break;
-			case 0x00422345:
-				caller = Debug_FixMyPosition;
-				break;
-			case 0x004259FB:
-				caller = RemoveEntityFromPortalHole;
-				break;
-			case 0x00427e24:
-				caller = PortalSimulator__MoveTo;
-				break;
-			case 0x0042F076:
-				caller = TeleportTouchingEntity;
+			case 1:
+				funcOffs = funcOffs5135;
 				break;
 			default:
-				caller = Unknown;
-				break;
+				funcOffs = nullptr;
 		}
+		if (funcOffs) {
+			for (int i = 0; i < 6; i++) {
+				if (funcOffs[i] == (uint32_t)retAddress - (uint32_t)serverDLL.m_Base) {
+					caller = (FcpsCaller)i;
+					break;
+				}
+			}
+		}
+		
 		auto start = high_resolution_clock::now();
 		FcpsCallResult eventResult = fcps_override.GetInt() == 1
-			? FcpsOverrideFuncAndRecord(pEntity, vIndecisivePush, fMask, caller)
-			: FcpsOverrideFunc(pEntity, vIndecisivePush, fMask);
+			? FcpsOverrideFuncAndRecord(pEntity, vIndecisivePush, fMask, gameVersion, caller)
+			: FcpsOverrideFunc(pEntity, vIndecisivePush, fMask, gameVersion);
 
 		bool returnVal = eventResult == FCPS_Success || eventResult == FCPS_NotRun;
 		bool showTimeStats = eventResult == FCPS_Success || eventResult == FCPS_Fail;

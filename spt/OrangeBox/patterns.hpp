@@ -181,7 +181,7 @@ namespace patterns
 		PATTERNS(
 		    AdjustAngles,
 		    "5135",
-		    "83 EC 0C D9 44 24 10 56 51 D9 1C 24 8B F1 E8 ?? ?? ?? ?? D9 54 24 14 D9 EE DE D9 DF E0 F6 C4 01 0F 84 90 00 00 00 8B 0D",
+		    "83 EC 0C D9 44 24 10 56 51 D9 1C 24 8B F1 E8 ?? ?? ?? ?? D9 54 24 14 D9 EE DE D9 DF E0 F6 C4 01 0F 84 ?? ?? ?? ?? 8B 0D",
 		    "5135-hl2",
 		    "83 EC 0C D9 44 24 10 56 51 D9 1C 24 8B F1 E8 ?? ?? ?? ?? D9 54 24 14 D9 EE DE D9 DF E0 F6 C4 01 74 5D 8B 0D",
 		    "4104",
@@ -476,6 +476,8 @@ namespace patterns
 		         "8B 80 24 27 00 00 8B CD 8B A9 24 27 00 00 89 44 24 3C");
 		PATTERNS(EndOfTeleportTouchingEntity, "5135", "E8 E3 CC DB FF 8D 8C 24 B8 00 00 00 E8 17 45 F5 FF");
 		PATTERNS(FindClosestPassableSpace,
+		         "3420",
+		         "55 8B EC 83 E4 F0 A1 ?? ?? ?? ?? 81 EC 74 02 00 00 83 78 30 00 53 56 57",
 		         "5135",
 		         "55 8B EC 83 E4 F0 A1 ?? ?? ?? ?? 81 EC 84 02 00 00 83 78 30 00 53 56 57");
 		// same as the client patterns
