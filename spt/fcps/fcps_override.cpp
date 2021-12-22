@@ -73,13 +73,20 @@ namespace fcps {
 			__asm call [edx + byteOffset] \
 		}
 
-		inline void __cdecl Teleport(CBaseEntity* pEntity, const Vector* newPosition, const QAngle* newAngles, const Vector* newVelocity) {
+		inline void __cdecl Teleport(CBaseEntity* pEntity, const Vector* newPosition, const QAngle* newAngles, const Vector* newVelocity, int gameVersion) {
 			__asm {
 				push newVelocity
 				push newAngles
 				push newPosition
 			}
-			VIRTUAL_CALL(pEntity, 0x1a4)
+			switch (gameVersion) {
+				case 0:
+					VIRTUAL_CALL(pEntity, 0x18c)
+					break;
+				case 1:
+					VIRTUAL_CALL(pEntity, 0x1a4)
+					break;
+			}
 		}
 
 		inline unsigned short __cdecl GetGameFlags(IPhysicsObject* pPhys) {
@@ -131,7 +138,7 @@ namespace fcps {
 
 
 	// a ripoff of the regular fcps for debugging
-	FcpsCallResult FcpsOverrideFunc(CBaseEntity* pEntity, const Vector& vIndecisivePush, unsigned int fMask) {
+	FcpsCallResult FcpsOverrideFunc(CBaseEntity* pEntity, const Vector& vIndecisivePush, unsigned int fMask, int gameVersion) {
 
 		if (!g_pCVar->FindVar("sv_use_find_closest_passable_space")->GetBool()) {
 			DevMsg("FCPS override not run, sv_use_find_closest_passable_space is set to 0\n");
@@ -187,7 +194,7 @@ namespace fcps {
 			hacks::UTIL_TraceRay(entRay, fMask, pEntity, iEntityCollisionGroup, &traces[0]);
 			if( traces[0].startsolid == false ) {
 				Vector vNewPos = traces[0].endpos + (hacks::GetAbsOrigin(pEntity) - ptEntityOriginalCenter);
-				hacks::Teleport(pEntity, &vNewPos, nullptr, nullptr);
+				hacks::Teleport(pEntity, &vNewPos, nullptr, nullptr, gameVersion);
 				return FCPS_Success; // current placement worked
 			}
 
@@ -254,14 +261,14 @@ namespace fcps {
 				// see comment in overrideAndRecord
 				vEntityMaxs = vOriginalExtents;
 				vEntityMins = -vEntityMaxs;
-			}		
+			}
 		}
 		return FCPS_Fail;
 	}
 
 
 	// in this version we record the process of the algorithm as an fcps event
-	FcpsCallResult FcpsOverrideFuncAndRecord(CBaseEntity *pEntity, const Vector &vIndecisivePush, unsigned int fMask, FcpsCaller caller) {
+	FcpsCallResult FcpsOverrideFuncAndRecord(CBaseEntity *pEntity, const Vector &vIndecisivePush, unsigned int fMask, int gameVersion, FcpsCaller caller) {
 
 		if (!g_pCVar->FindVar("sv_use_find_closest_passable_space")->GetBool()) {
 			DevMsg("FCPS override not run, sv_use_find_closest_passable_space is set to 0\n");
@@ -354,7 +361,7 @@ namespace fcps {
 
 			if(thisLoop.entTrace.startsolid == false) {
 				Vector vNewPos = thisLoop.entTrace.endpos + (hacks::GetAbsOrigin(pEntity) - ptEntityOriginalCenter);
-				hacks::Teleport(pEntity, &vNewPos, nullptr, nullptr);
+				hacks::Teleport(pEntity, &vNewPos, nullptr, nullptr, gameVersion);
 				thisEvent.wasSuccess = true; // current placement worked
 				thisEvent.newOrigin = vNewPos;
 				thisEvent.newCenter = thisLoop.entTrace.endpos;
