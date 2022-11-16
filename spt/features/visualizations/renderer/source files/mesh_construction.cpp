@@ -156,8 +156,22 @@ void MeshBuilderDelegate::AddQuad(const Vector& v1,
                                   const Vector& v4,
                                   const MeshColor& c)
 {
-	Vector v[] = {v1, v2, v3, v4};
-	AddPolygon(v, 4, c);
+	size_t firstVert = Faces().verts.size();
+
+	Faces().verts.push_back({v1, c.faceColor, 0, 0});
+	Faces().verts.push_back({v2, c.faceColor, 0, 1});
+	Faces().verts.push_back({v3, c.faceColor, 1, 1});
+	Faces().verts.push_back({v4, c.faceColor, 1, 0});
+
+	Faces().indices.push_back(firstVert);
+	Faces().indices.push_back(firstVert + 1);
+	Faces().indices.push_back(firstVert + 2);
+	Faces().indices.push_back(firstVert + 0);
+	Faces().indices.push_back(firstVert + 2);
+	Faces().indices.push_back(firstVert + 3);
+
+	/*Vector v[] = {v1, v2, v3, v4};
+	AddPolygon(v, 4, c);*/
 }
 
 void MeshBuilderDelegate::AddQuads(const Vector* verts, int numFaces, const MeshColor& c)

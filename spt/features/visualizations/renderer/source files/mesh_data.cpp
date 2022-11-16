@@ -49,11 +49,19 @@ IMesh* MeshComponentData::CreateIMesh(IMaterial* material,
 	for (size_t i = 0; i < verts.size(); i++)
 	{
 		*(Vector*)((uintptr_t)desc.m_pPosition + i * desc.m_VertexSize_Position) = verts[i].pos;
+
 		unsigned char* pColor = desc.m_pColor + i * desc.m_VertexSize_Color;
 		pColor[0] = verts[i].col.b;
 		pColor[1] = verts[i].col.g;
 		pColor[2] = verts[i].col.r;
 		pColor[3] = verts[i].col.a;
+
+		if (desc.m_pTexCoord[0])
+		{
+			float* pTex = (float*)((uintptr_t)desc.m_pTexCoord[0] + i * desc.m_VertexSize_TexCoord[0]);
+			pTex[0] = verts[i].u;
+			pTex[1] = verts[i].v;
+		}
 	}
 
 	int descIdx = 0;

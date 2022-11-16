@@ -617,7 +617,7 @@ BEGIN_TEST_CASE("Reusing static/dynamic meshes", VEC_WRAP(400, -300, 0))
 }
 END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddCPolyhedron", VEC_WRAP(600, -300, 0))
+BEGIN_TEST_CASE("AddCPolyhedron", Vector(600, -300, 0))
 {
 	static std::vector<VPlane> planes;
 	planes.clear();
@@ -660,6 +660,18 @@ BEGIN_TEST_CASE("AddCPolyhedron", VEC_WRAP(600, -300, 0))
 	            [this](auto&, CallbackInfoOut& infoOut) { MatrixSetColumn(testPos, 3, infoOut.mat); });
 
 	polyhedron->Release();
+}
+END_TEST_CASE()
+
+BEGIN_TEST_CASE("penis", Vector(800, -300, 0))
+{
+	float w = 40;
+	Vector v1 = testPos;
+	Vector v2 = testPos + Vector{0, w, 0};
+	Vector v3 = testPos + Vector{w, w, 0};
+	Vector v4 = testPos + Vector{w, 0, 0};
+
+	RENDER_DYNAMIC(mr, mb.AddQuad(v1, v2, v3, v4, MeshColor::Face({255, 255, 255, 254})););
 }
 END_TEST_CASE()
 

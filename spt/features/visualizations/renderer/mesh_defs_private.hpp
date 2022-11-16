@@ -69,6 +69,7 @@
 #pragma warning(disable : 5054)
 #include "materialsystem\imesh.h"
 #pragma warning(pop)
+#include "materialsystem\itexture.h"
 
 #define VPROF_LEVEL 1
 #ifndef SSDK2007
@@ -89,6 +90,10 @@ struct VertexData
 {
 	Vector pos;
 	color32 col;
+	float u, v;
+
+	VertexData(Vector pos, color32 col) : pos(pos), col(col), u(0), v(0) {}
+	VertexData(Vector pos, color32 col, float u, float v) : pos(pos), col(col), u(u), v(v) {}
 };
 
 // list of verts + indices
@@ -179,10 +184,38 @@ struct MeshBuilderInternal
 
 inline MeshBuilderInternal g_meshBuilderInternal;
 
+struct PenisRegenerator : ITextureRegenerator
+{
+	virtual void RegenerateTextureBits(ITexture* pTexture, IVTFTexture* pVTFTexture, Rect_t* pRect) override;
+	virtual void Release() override {}
+};
+
+#define SPT_TEXTURE_GROUP "spt textures"
+
+#define FONT_PAGE_SIZE 512
+#define NUM_FONT_PAGES 64
+
+struct GlyphMaterialInfo
+{
+	IMaterial* material;
+	ITexture* texture;
+	uint8_t textureBuffer[FONT_PAGE_SIZE * FONT_PAGE_SIZE * 4];
+
+	GlyphMaterialInfo();
+	GlyphMaterialInfo(GlyphMaterialInfo&) = delete;
+	GlyphMaterialInfo(GlyphMaterialInfo&&);
+	~GlyphMaterialInfo();
+};
+
 struct MeshBuilderMatMgr
 {
 	IMaterial *matOpaque = nullptr, *matAlpha = nullptr, *matAlphaNoZ = nullptr;
 	bool materialsInitialized = false;
+
+	// std::vector<GlyphMaterialInfo> glyphMaterialInfos;
+	uint8_t texBuf[FONT_PAGE_SIZE * FONT_PAGE_SIZE * 4];
+	ITexture* tex;
+	PenisRegenerator regen;
 
 	void Load();
 	void Unload();
