@@ -124,7 +124,16 @@ private:
 	MeshBuilderDelegate(MeshBuilderDelegate&) = delete;
 };
 
+class GlyphMeshBuilderDelegate
+{
+public:
+	// @mlugg - does this need to be a pointer?
+	bool AddSingleChar(wchar_t* ch, const GlyphParams& params, GlyphLayout* out);
+	bool AddString(wchar_t* ch, int count, const GlyphParams& params, GlyphLayout* out);
+};
+
 typedef std::function<void(MeshBuilderDelegate& mb)> MeshCreateFunc;
+typedef std::function<void(GlyphMeshBuilderDelegate& mb)> GlyphMeshCreateFunc;
 
 // give this guy a function which accepts a mesh builder delegate -
 // it'll be executed immediately so you can capture stuff by reference if you're using a lambda
@@ -133,12 +142,14 @@ class MeshBuilderPro
 public:
 	DynamicMesh CreateDynamicMesh(const MeshCreateFunc& createFunc, const CreateMeshParams& params = {});
 	StaticMesh CreateStaticMesh(const MeshCreateFunc& createFunc, const CreateMeshParams& params = {});
+	DynamicGlyphMesh CreateGlyphMesh(const GlyphMeshCreateFunc& createFunc, const CreateMeshParams& params = {});
 };
 
 inline MeshBuilderPro spt_meshBuilder;
 
 #define MB_DYNAMIC(func, ...) spt_meshBuilder.CreateDynamicMesh([&](MeshBuilderDelegate& mb) { func }, {__VA_ARGS__})
 #define MB_STATIC(func, ...) spt_meshBuilder.CreateStaticMesh([&](MeshBuilderDelegate& mb) { func }, {__VA_ARGS__})
+#define MB_GLYPH(func, ...) spt_meshBuilder.CreateGlyphMesh([&](GlyphMeshBuilderDelegate& mb) { func }, {__VA_ARGS__})
 
 #endif
 

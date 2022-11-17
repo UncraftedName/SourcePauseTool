@@ -192,28 +192,31 @@ struct PenisRegenerator : ITextureRegenerator
 
 #define SPT_TEXTURE_GROUP "spt textures"
 
-#define FONT_PAGE_SIZE 512
-#define NUM_FONT_PAGES 64
+#define GLYPH_ATLAS_SIZE 512
+#define NUM_GLYPH_ATLASES 64
 
 struct GlyphMaterialInfo
 {
 	IMaterial* material;
 	ITexture* texture;
-	uint8_t textureBuffer[FONT_PAGE_SIZE * FONT_PAGE_SIZE * 4];
+	uint8_t textureBuffer[GLYPH_ATLAS_SIZE * GLYPH_ATLAS_SIZE * 4];
 
-	GlyphMaterialInfo();
+	Rect_t updateRect;
+
+	GlyphMaterialInfo(int index);
 	GlyphMaterialInfo(GlyphMaterialInfo&) = delete;
-	GlyphMaterialInfo(GlyphMaterialInfo&&);
+
+	void MarkRectAsUpdated(Rect_t r);
+	void DownloadTexture();
+
 	~GlyphMaterialInfo();
 };
 
 struct MeshBuilderMatMgr
 {
 	IMaterial *matOpaque = nullptr, *matAlpha = nullptr, *matAlphaNoZ = nullptr;
-	bool materialsInitialized = false;
 
-	// std::vector<GlyphMaterialInfo> glyphMaterialInfos;
-	uint8_t texBuf[FONT_PAGE_SIZE * FONT_PAGE_SIZE * 4];
+	uint8_t texBuf[GLYPH_ATLAS_SIZE * GLYPH_ATLAS_SIZE * 4];
 	ITexture* tex;
 	PenisRegenerator regen;
 

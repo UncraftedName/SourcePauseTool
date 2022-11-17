@@ -76,6 +76,15 @@ struct CreateMeshParams
 	const TranslucentSortType sortType = TranslucentSortType::AABB_Surface;
 };
 
+struct GlyphParams
+{
+	float fontSize;
+};
+
+struct GlyphLayout
+{
+};
+
 // typical use case - check Valid() and if it returns false recreate
 class StaticMesh
 {
@@ -104,6 +113,12 @@ public:
 struct DynamicMesh
 {
 	const size_t dynamicMeshIdx;
+	const int createdFrame;
+};
+
+struct DynamicGlyphMesh
+{
+	const size_t dynamicGlyphMeshIdx;
 	const int createdFrame;
 };
 

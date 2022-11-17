@@ -9,8 +9,42 @@
 void PenisRegenerator::RegenerateTextureBits(ITexture* pTexture, IVTFTexture* pVTFTexture, Rect_t* pRect)
 {
 	if (pVTFTexture->Format() != IMAGE_FORMAT_BGRA8888)
-		Error("spt: BAD!");
-	memcpy(pVTFTexture->ImageData(), g_meshMaterialMgr.texBuf, sizeof g_meshMaterialMgr.texBuf);
+		Error("spt: Invalid texture format");
+	Assert(pRect);
+	for (int y = pRect->y; y < pRect->y + pRect->height; y++)
+	{
+		int off = (y * GLYPH_ATLAS_SIZE + pRect->x) * 4;
+		memcpy(pVTFTexture->ImageData() + off, g_meshMaterialMgr.texBuf + off, pRect->width * 4);
+	}
+}
+
+void GlyphMaterialInfo::MarkRectAsUpdated(Rect_t r)
+{
+	if (r.width <= 0 && r.height <= 0)
+		return;
+	if (updateRect.width == 0 || updateRect.height == 0)
+	{
+		updateRect = r;
+	}
+	else
+	{
+		updateRect.width = MAX(updateRect.x + updateRect.width, r.x + r.width);
+		updateRect.height = MAX(updateRect.y + updateRect.height, r.y + r.height);
+		updateRect.x = MIN(updateRect.x, r.x);
+		updateRect.y = MIN(updateRect.y, r.y);
+	}
+}
+
+void GlyphMaterialInfo::DownloadTexture()
+{
+	if (texture && (updateRect.width > 0 || updateRect.height > 0))
+	{
+		// tex->Download();
+		// EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE
+		typedef void(__thiscall * _Download)(void* thisptr, Rect_t*, int);
+		((_Download**)texture)[0][0x34 / 4](texture, &updateRect, 0);
+	}
+	updateRect.width = updateRect.height = 0;
 }
 
 void MeshBuilderMatMgr::Load()
@@ -31,16 +65,16 @@ void MeshBuilderMatMgr::Load()
 
 	tex = interfaces::materialSystem->CreateProceduralTexture(texName,
 	                                                          SPT_TEXTURE_GROUP,
-	                                                          FONT_PAGE_SIZE,
-	                                                          FONT_PAGE_SIZE,
+	                                                          GLYPH_ATLAS_SIZE,
+	                                                          GLYPH_ATLAS_SIZE,
 	                                                          IMAGE_FORMAT_BGRA8888,
 	                                                          TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT
 	                                                              | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD
 	                                                              | TEXTUREFLAGS_SINGLECOPY);
 
-	for (int x = 0; x < FONT_PAGE_SIZE; x++)
+	for (int x = 0; x < GLYPH_ATLAS_SIZE; x++)
 	{
-		for (int y = 0; y < FONT_PAGE_SIZE; y++)
+		for (int y = 0; y < GLYPH_ATLAS_SIZE; y++)
 		{
 			int i = y * 512 + x;
 			texBuf[i * 4 + 0] = x / 2;
@@ -72,15 +106,10 @@ void MeshBuilderMatMgr::Load()
 	kv->SetInt("$vertexalpha", 1);
 	kv->SetInt("$ignorez", 1);
 	matAlphaNoZ = interfaces::materialSystem->CreateMaterial("_spt_UnlitTranslucentNoZ", kv);
-
-	materialsInitialized = matOpaque && matAlpha && matAlphaNoZ;
-	if (!materialsInitialized)
-		matOpaque = matAlpha = matAlphaNoZ = nullptr;
 }
 
 void MeshBuilderMatMgr::Unload()
 {
-	materialsInitialized = false;
 	if (matOpaque)
 		matOpaque->DecrementReferenceCount();
 	if (matAlpha)
@@ -94,12 +123,14 @@ void MeshBuilderMatMgr::Unload()
 
 IMaterial* MeshBuilderMatMgr::GetMaterial(bool opaque, bool zTest, color32 colorMod)
 {
-	if (!materialsInitialized || colorMod.a == 0)
+	if (colorMod.a == 0)
 		return nullptr;
 	IMaterial* mat = zTest ? (opaque && colorMod.a ? matOpaque : matAlpha) : matAlphaNoZ;
-	Assert(mat);
-	mat->ColorModulate(colorMod.r / 255.f, colorMod.g / 255.f, colorMod.b / 255.f);
-	mat->AlphaModulate(colorMod.a / 255.f);
+	if (mat)
+	{
+		mat->ColorModulate(colorMod.r / 255.f, colorMod.g / 255.f, colorMod.b / 255.f);
+		mat->AlphaModulate(colorMod.a / 255.f);
+	}
 	return mat;
 }
 
