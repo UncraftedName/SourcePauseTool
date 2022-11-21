@@ -9,13 +9,14 @@
 void PenisRegenerator::RegenerateTextureBits(ITexture* pTexture, IVTFTexture* pVTFTexture, Rect_t* pRect)
 {
 	if (pVTFTexture->Format() != IMAGE_FORMAT_BGRA8888)
-		Error("spt: Invalid texture format");
+		Error("spt: Invalid texture format in %s()", __FUNCTION__);
 	Assert(pRect);
 	for (int y = pRect->y; y < pRect->y + pRect->height; y++)
 	{
 		int off = (y * GLYPH_ATLAS_SIZE + pRect->x) * 4;
 		memcpy(pVTFTexture->ImageData() + off, g_meshMaterialMgr.texBuf + off, pRect->width * 4);
 	}
+	// mark rect as downloaded
 }
 
 void GlyphMaterialInfo::MarkRectAsUpdated(Rect_t r)
