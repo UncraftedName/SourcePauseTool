@@ -14,6 +14,7 @@
 #include "icliententitylist.h"
 #include "engine\ivmodelinfo.h"
 #include "engine\IEngineTrace.h"
+#include "engine\IStaticPropMgr.h"
 
 namespace interfaces
 {
@@ -35,4 +36,5 @@ namespace interfaces
 	extern IBaseClientDLL* clientInterface;
 	extern IEngineTrace* engineTraceClient;
 	extern IEngineTrace* engineTraceServer;
+	extern IStaticPropMgrServer* staticPropMgrServer;
 } // namespace interfaces

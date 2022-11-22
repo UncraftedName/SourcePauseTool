@@ -132,7 +132,8 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 
 		if (tr.hitbox != 0)
 		{
-			ICollideable* collideable = staticpropmgr->GetStaticPropByIndex(tr.hitbox - 1);
+			ICollideable* collideable =
+			    interfaces::staticPropMgrServer->GetStaticPropByIndex(tr.hitbox - 1);
 			vcollide = interfaces::modelInfo->GetVCollide(collideable->GetCollisionModel());
 		}
 		else

@@ -66,6 +66,7 @@ namespace interfaces
 	IBaseClientDLL* clientInterface;
 	IEngineTrace* engineTraceClient = nullptr;
 	IEngineTrace* engineTraceServer = nullptr;
+	IStaticPropMgrServer* staticPropMgrServer = nullptr;
 } // namespace interfaces
 
 ConVar* _viewmodel_fov = nullptr;
@@ -177,6 +178,8 @@ bool CSourcePauseTool::Load(CreateInterfaceFn interfaceFactory, CreateInterfaceF
 	interfaces::clientInterface = (IBaseClientDLL*)clientFactory(CLIENT_DLL_INTERFACE_VERSION, NULL);
 	interfaces::engineTraceClient = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_CLIENT, NULL);
 	interfaces::engineTraceServer = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_SERVER, NULL);
+	interfaces::staticPropMgrServer =
+	    (IStaticPropMgrServer*)interfaceFactory(INTERFACEVERSION_STATICPROPMGR_SERVER, NULL);
 
 	if (interfaces::gm)
 	{
