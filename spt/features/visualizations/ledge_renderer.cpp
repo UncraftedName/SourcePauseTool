@@ -1,10 +1,17 @@
 #include "stdafx.h"
 
+#define GAME_DLL
+#include "cbase.h"
+#include "shareddefs.h"
+#include "util_shared.h"
+#include "coordsize.h"
+
 #include "renderer\mesh_renderer.hpp"
 #include "interfaces.hpp"
 #include "spt\sptlib-wrapper.hpp"
 #include "spt\features\generic.hpp"
 #include "spt\features\ent_props.hpp"
+#include "spt\features\playerio.hpp"
 #include "spt\utils\ivp_maths.hpp"
 
 #include "iserverentity.h"
@@ -84,15 +91,16 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 		if (!y_spt_draw_ledges.GetBool())
 			return;
 
-		Vector pos, dir;
+		Vector serverEyes = spt_playerio.m_vecAbsOrigin.GetValue() + spt_playerio.m_vecViewOffset.GetValue();
+
+		Vector dir;
 		QAngle ang;
-		pos = spt_generic.GetCameraOrigin();
 		EngineGetViewAngles((float*)&ang);
 		AngleVectors(ang, &dir);
 
 		Ray_t r;
 		trace_t tr;
-		r.Init(pos, pos + dir * 10000);
+		r.Init(serverEyes, serverEyes + dir * 10000);
 
 		class CTraceIgnorePlayer : public CTraceFilter
 		{
@@ -107,16 +115,31 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 		mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
-			    mb.AddLine(tr.startpos, tr.endpos, {0, 255, 0, 255});
+			    Vector clientEyes =
+			        spt_entprops.GetPlayerField<Vector>("m_vecAbsOrigin", PropMode::Client).GetValue()
+			        + spt_entprops.GetPlayerField<Vector>("m_vecViewOffset", PropMode::Client).GetValue();
+
+			    if (spt_generic.GetCameraOrigin() != clientEyes)
+				    mb.AddLine(serverEyes, tr.endpos, {0, 255, 0, 255});
+
 			    mb.AddCross(tr.endpos, 10, {255, 0, 0, 255});
 		    }));
 
 		if (!tr.m_pEnt)
 			return;
 
-		// int off = spt_entprops.GetFieldOffset("CBaseEntity", "m_nModelIndex", false);
-		// int modelIdx = *((int*)tr.m_pEnt + off / 4);
-		vcollide_t* vcollide = interfaces::modelInfo->GetVCollide(((IServerEntity*)tr.m_pEnt)->GetModelIndex());
+		vcollide_t* vcollide;
+
+		if (tr.hitbox != 0)
+		{
+			ICollideable* collideable = staticpropmgr->GetStaticPropByIndex(tr.hitbox - 1);
+			vcollide = interfaces::modelInfo->GetVCollide(collideable->GetCollisionModel());
+		}
+		else
+		{
+			vcollide = interfaces::modelInfo->GetVCollide(((IServerEntity*)tr.m_pEnt)->GetModelIndex());
+		}
+
 		if (!vcollide)
 			return;
 
@@ -137,48 +160,11 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 
 		static std::vector<Vector> vecScratch;
 
-		/*for (int i = 0; i < vec.n_elems; i++)
-		{
-			void* ledge = vec.elems[i];
-			short num_triangles = *((short*)ledge + 6);
-
-			vecScratch.clear();
-			vecScratch.resize(num_triangles);
-
-			int cPointOff = *(int*)ledge;
-			IvpFloatPoint* pointArray = (IvpFloatPoint*)((uintptr_t)ledge + cPointOff);
-
-			for (short j = 0; j < num_triangles; j++)
-			{
-				uint* tri = (uint*)ledge + 4;
-				uint* edges = tri + 1;
-				for (int k = 0; k < 3; k++)
-				{
-					uint startPtIdx = edges[k] >> 16; // upper 16 bits
-					IvpFloatPoint pt = pointArray[startPtIdx];
-
-					Vector v = *reinterpret_cast<Vector*>(&pt);
-					v /= METERS_PER_INCH;
-					std::swap(v[1], v[2]);
-					v.z *= -1;
-					vecScratch.push_back(v);
-				}
-			}
-			MeshColor color = colors[i % _countof(colors)];
-
-			mr.DrawMesh(
-			    spt_meshBuilder.CreateDynamicMesh([&](MeshBuilderDelegate& mb)
-			                                      { mb.AddTris(vecScratch.data(), num_triangles, color); },
-			                                      {ZTEST_FACES | ZTEST_LINES, CullType::Reverse}));
-		}*/
-
 		for (int i = 0; i < vec.n_elems; i++)
 		{
-
 			IvpCompactLedge* ledge = (IvpCompactLedge*)vec.elems[i];
 			IvpCompactTri* tri = ledge->GetFirstTri();
 
-			
 			vecScratch.clear();
 			vecScratch.reserve(ledge->numTris);
 
@@ -202,7 +188,7 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 			mr.DrawMesh(
 			    spt_meshBuilder.CreateDynamicMesh([&](MeshBuilderDelegate& mb)
 			                                      { mb.AddTris(vecScratch.data(), ledge->numTris, color); },
-			                                      {ZTEST_FACES | ZTEST_LINES, CullType::Reverse}));
+			                                      {ZTEST_LINES, CullType::Reverse}));
 		}
 
 		delete vec.elems;
