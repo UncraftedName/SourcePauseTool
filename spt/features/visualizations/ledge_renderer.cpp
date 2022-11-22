@@ -148,12 +148,27 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 			return;
 
 		CPhysCollide* collide = vcollide->solids[0];
+
+		static CPhysCollide* lastCollide = nullptr;
+		static std::vector<StaticMesh> meshes;
+		if (collide != lastCollide || (!meshes.empty() && !meshes[0].Valid()))
+			meshes.clear();
+		if (!meshes.empty())
+		{
+			for (auto& mesh : meshes)
+				mr.DrawMesh(mesh);
+			return;
+		}
+
+		lastCollide = collide;
+
 		BigVector vec{0, 0, nullptr};
 
 		ORIG_IVP_Compact_Ledge_Solver__get_all_ledges(*(void**)((uintptr_t)collide + 4), vec);
 
 		// we really need to combine the meshes here if we want to view the world
 		// ideally the rendering system should handle this for us but whatever
+		// (also now I can just use static meshes xd)
 
 		static MeshColor colors[] = {
 		    MeshColor::Outline({255, 0, 0, 20}),
@@ -214,7 +229,7 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 			if (!ledge || (scratch.size() + ledge->numTris) * 6 > 32768)
 			{
 				// batch render all ledges together as a single mesh
-				mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
+				meshes.push_back(spt_meshBuilder.CreateStaticMesh(
 				    [&](MeshBuilderDelegate& mb)
 				    {
 					    for (size_t c = 0; c < scratchCheckpoints.size() - 1; c++)
@@ -248,6 +263,9 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 		}
 
 		delete vec.elems;
+
+		for (auto& mesh : meshes)
+			mr.DrawMesh(mesh);
 	}
 };
 
