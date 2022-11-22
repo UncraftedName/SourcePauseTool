@@ -23,6 +23,47 @@ struct BigVector
 	void** elems;
 };
 
+struct IvpCompactLedge
+{
+	int ptOff;
+	int _pad0;
+	uint _pad1;
+	short numTris;
+	short _pad2;
+
+	IvpFloatPoint* GetPtArr()
+	{
+		return (IvpFloatPoint*)((char*)this + ptOff);
+	}
+
+	struct IvpCompactTri* GetFirstTri()
+	{
+		return (IvpCompactTri*)(this + 1);
+	}
+};
+
+struct IvpCompactEdge
+{
+	uint startPtIdx : 16;
+	uint _pad : 16;
+
+	IvpFloatPoint* GetStartPt(IvpCompactLedge* ledge)
+	{
+		return &ledge->GetPtArr()[startPtIdx];
+	}
+};
+
+struct IvpCompactTri
+{
+	uint _pad;
+	IvpCompactEdge edges[3];
+
+	IvpCompactTri* GetNextTri()
+	{
+		return this + 1;
+	}
+};
+
 class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 {
 	DECL_MEMBER_CDECL(void, IVP_Compact_Ledge_Solver__get_all_ledges, void* surface, BigVector& vec);
@@ -96,7 +137,7 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 
 		static std::vector<Vector> vecScratch;
 
-		for (int i = 0; i < vec.n_elems; i++)
+		/*for (int i = 0; i < vec.n_elems; i++)
 		{
 			void* ledge = vec.elems[i];
 			short num_triangles = *((short*)ledge + 6);
@@ -128,6 +169,39 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 			mr.DrawMesh(
 			    spt_meshBuilder.CreateDynamicMesh([&](MeshBuilderDelegate& mb)
 			                                      { mb.AddTris(vecScratch.data(), num_triangles, color); },
+			                                      {ZTEST_FACES | ZTEST_LINES, CullType::Reverse}));
+		}*/
+
+		for (int i = 0; i < vec.n_elems; i++)
+		{
+
+			IvpCompactLedge* ledge = (IvpCompactLedge*)vec.elems[i];
+			IvpCompactTri* tri = ledge->GetFirstTri();
+
+			
+			vecScratch.clear();
+			vecScratch.reserve(ledge->numTris);
+
+			for (int j = 0; j < ledge->numTris; j++)
+			{
+				for (int k = 0; k < 3; k++)
+				{
+					IvpCompactEdge* edge = &tri->edges[k];
+					IvpFloatPoint* pt = edge->GetStartPt(ledge);
+
+					Vector v = *(Vector*)pt;
+					v /= METERS_PER_INCH;
+					std::swap(v[1], v[2]);
+					v.z *= -1;
+					vecScratch.push_back(v);
+				}
+				tri = tri->GetNextTri();
+			}
+			MeshColor color = colors[i % _countof(colors)];
+
+			mr.DrawMesh(
+			    spt_meshBuilder.CreateDynamicMesh([&](MeshBuilderDelegate& mb)
+			                                      { mb.AddTris(vecScratch.data(), ledge->numTris, color); },
 			                                      {ZTEST_FACES | ZTEST_LINES, CullType::Reverse}));
 		}
 
