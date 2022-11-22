@@ -1,5 +1,8 @@
 #include "stdafx.h"
 
+#include <map>
+#include <algorithm>
+
 #define GAME_DLL
 #include "cbase.h"
 #include "shareddefs.h"
@@ -149,7 +152,10 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 
 		ORIG_IVP_Compact_Ledge_Solver__get_all_ledges(*(void**)((uintptr_t)collide + 4), vec);
 
-		MeshColor colors[] = {
+		// we really need to combine the meshes here if we want to view the world
+		// ideally the rendering system should handle this for us but whatever
+
+		static MeshColor colors[] = {
 		    MeshColor::Outline({255, 0, 0, 20}),
 		    MeshColor::Outline({0, 255, 0, 20}),
 		    MeshColor::Outline({0, 0, 255, 20}),
@@ -159,16 +165,71 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 		    MeshColor::Outline({255, 255, 255, 20}),
 		};
 
-		static std::vector<Vector> vecScratch;
+		static std::vector<std::tuple<float, IvpCompactLedge*, MeshColor>> sortedLedgeIdxs;
+		sortedLedgeIdxs.clear();
+
+		IvpFloatPoint ivpCamPos{spt_generic.GetCameraOrigin(), true};
 
 		for (int i = 0; i < vec.n_elems; i++)
 		{
+			Vector mins{INFINITY};
+			Vector maxs{-INFINITY};
 			IvpCompactLedge* ledge = (IvpCompactLedge*)vec.elems[i];
 			IvpCompactTri* tri = ledge->GetFirstTri();
+			for (int j = 0; j < ledge->numTris; j++)
+			{
+				for (int k = 0; k < 3; k++)
+				{
+					IvpCompactEdge* edge = &tri->edges[k];
+					IvpFloatPoint* pt = edge->GetStartPt(ledge);
+					Vector* v = (Vector*)pt;
+					VectorMin(*v, mins, mins);
+					VectorMax(*v, maxs, maxs);
+				}
+				tri = tri->GetNextTri();
+			}
+			float dist = CalcDistanceToAABB(mins, maxs, *(Vector*)&ivpCamPos);
+			sortedLedgeIdxs.emplace_back(dist,
+			                             (IvpCompactLedge*)vec.elems[i],
+			                             colors[i % _countof(colors)]);
+		}
+		// add a dummy null ledge so we can render the last batch
+		sortedLedgeIdxs.emplace_back(INFINITY, nullptr, MeshColor::Face({0, 0, 0, 0}));
 
-			vecScratch.clear();
-			vecScratch.reserve(ledge->numTris);
+		std::sort(sortedLedgeIdxs.begin(),
+		          sortedLedgeIdxs.end(),
+		          [](auto& a, auto& b) { return std::get<0>(a) < std::get<0>(b); });
 
+		static std::vector<Vector> scratch;
+		static std::vector<std::pair<size_t, MeshColor>> scratchCheckpoints;
+		scratch.clear();
+		scratchCheckpoints.clear();
+
+		for (const auto& [_, ledge, ledgeColor] : sortedLedgeIdxs)
+		{
+			IvpCompactTri* tri = ledge ? ledge->GetFirstTri() : nullptr;
+			scratchCheckpoints.emplace_back(scratch.size(), ledgeColor);
+
+			// flush the scratch buffer if we have too many tris
+			if (!ledge || (scratch.size() + ledge->numTris) * 6 > 32768)
+			{
+				// batch render all ledges together as a single mesh
+				mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
+				    [&](MeshBuilderDelegate& mb)
+				    {
+					    for (size_t c = 0; c < scratchCheckpoints.size() - 1; c++)
+					    {
+						    auto [c1, color] = scratchCheckpoints[c];
+						    auto [c2, _] = scratchCheckpoints[c + 1];
+						    mb.AddTris(scratch.data() + c1, (c2 - c1) / 3, color);
+					    }
+				    },
+				    {ZTEST_LINES, CullType::Reverse}));
+				if (!ledge)
+					break; // break if on (last) dummy ledge
+				scratch.clear();
+				scratchCheckpoints.clear();
+			}
 			for (int j = 0; j < ledge->numTris; j++)
 			{
 				for (int k = 0; k < 3; k++)
@@ -180,16 +241,10 @@ class LedgeRenderer : public FeatureWrapper<LedgeRenderer>
 					v /= METERS_PER_INCH;
 					std::swap(v[1], v[2]);
 					v.z *= -1;
-					vecScratch.push_back(v);
+					scratch.push_back(v);
 				}
 				tri = tri->GetNextTri();
 			}
-			MeshColor color = colors[i % _countof(colors)];
-
-			mr.DrawMesh(
-			    spt_meshBuilder.CreateDynamicMesh([&](MeshBuilderDelegate& mb)
-			                                      { mb.AddTris(vecScratch.data(), ledge->numTris, color); },
-			                                      {ZTEST_LINES, CullType::Reverse}));
 		}
 
 		delete vec.elems;

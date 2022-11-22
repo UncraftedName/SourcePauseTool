@@ -23,6 +23,13 @@ struct MeshColor
 {
 	const color32 faceColor, lineColor;
 
+	MeshColor& operator=(const MeshColor& other)
+	{
+		*(int*)&faceColor = *(int*)&other.faceColor;
+		*(int*)&lineColor = *(int*)&other.lineColor;
+		return *this;
+	}
+
 	static MeshColor Face(const color32& faceColor)
 	{
 		return MeshColor{faceColor, {0, 0, 0, 0}};
