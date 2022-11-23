@@ -6,6 +6,9 @@
 
 #include "interfaces.hpp"
 
+#include <dwrite.h>
+#include <d2d1.h>
+
 void PenisRegenerator::RegenerateTextureBits(ITexture* pTexture, IVTFTexture* pVTFTexture, Rect_t* pRect)
 {
 	if (pVTFTexture->Format() != IMAGE_FORMAT_BGRA8888)
@@ -48,6 +51,79 @@ void GlyphMaterialInfo::DownloadTexture()
 	updateRect.width = updateRect.height = 0;
 }
 
+void DoStuff(uint8_t* buf)
+{
+	HRESULT hr;
+
+	const wchar_t* wstr = L"f";
+	size_t strLen = wcslen(wstr);
+
+	IDWriteFactory* pWriteFactory;
+	IDWriteTextFormat* pTextFormat;
+
+	hr = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), (IUnknown**)&pWriteFactory);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c0;
+	}
+
+	hr = pWriteFactory->CreateTextFormat(L"Gabroila",
+	                                     nullptr,
+	                                     DWRITE_FONT_WEIGHT_REGULAR,
+	                                     DWRITE_FONT_STYLE_NORMAL,
+	                                     DWRITE_FONT_STRETCH_NORMAL,
+	                                     72.f,
+	                                     L"en-us",
+	                                     &pTextFormat);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c1;
+	}
+
+	hr = pTextFormat->SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c2;
+	}
+
+	hr = pTextFormat->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c2;
+	}
+
+	ID2D1Factory* pD2DFactory;
+	ID2D1HwndRenderTarget* pRT;
+	ID2D1SolidColorBrush* pBlackBrush;
+
+	hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &pD2DFactory);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c2;
+	}
+
+	DWRITE_GLYPH_RUN glyphRun;
+
+c3:
+	pD2DFactory->Release();
+c2:
+	pTextFormat->Release();
+c1:
+	pWriteFactory->Release();
+c0:
+	return;
+}
+
 void MeshBuilderMatMgr::Load()
 {
 	KeyValues* kv;
@@ -84,6 +160,8 @@ void MeshBuilderMatMgr::Load()
 			texBuf[i * 4 + 3] = 255;
 		}
 	}
+
+	DoStuff(texBuf);
 
 	// tex->SetTextureRegenerator(&regen);
 	// EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE???????

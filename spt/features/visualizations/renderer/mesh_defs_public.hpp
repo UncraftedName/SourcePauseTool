@@ -79,6 +79,10 @@ struct CreateMeshParams
 struct GlyphParams
 {
 	float fontSize;
+	// font weight, style, & stretch
+	// maybe just expose IDWriteTextFormat? or probably just wrap all of the params
+	// use D2D1_TEXT_ANTIALIAS_MODE_GRAYSCALE
+	// D2D1_PIXEL_FORMAT for render target
 };
 
 struct GlyphLayout
