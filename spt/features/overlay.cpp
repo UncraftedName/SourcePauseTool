@@ -150,6 +150,8 @@ HOOK_THISCALL(void, Overlay, CViewRender__RenderView, CViewSetup* cameraView, in
 
 	auto& ovr = spt_overlay;
 
+	ovr.viewRender = (CViewRender*)thisptr;
+
 	if (callDepth == 1)
 	{
 		doBloomAndToneMapping = cameraView->m_bDoBloomAndToneMapping;

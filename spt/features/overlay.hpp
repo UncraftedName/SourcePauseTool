@@ -26,6 +26,7 @@ public:
 	// these point to the call stack, only valid while we're in RenderView()
 	CViewSetup* mainView = nullptr;
 	CViewSetup* overlayView = nullptr;
+	CViewRender* viewRender = nullptr;
 
 	DECL_HOOK_THISCALL(void, CViewRender__RenderView, CViewSetup* cameraView, int nClearFlags, int whatToDraw);
 	DECL_HOOK_THISCALL(void, CViewRender__RenderView_4044, CViewSetup* cameraView, bool drawViewmodel);
