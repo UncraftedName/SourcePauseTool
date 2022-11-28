@@ -170,6 +170,10 @@ void MeshBuilderDelegate::AddQuad(const Vector& v1,
 	Faces().indices.push_back(firstVert + 2);
 	Faces().indices.push_back(firstVert + 3);
 
+	Vector v[] = {v1, v2, v3, v4};
+
+	AddLineStrip(v, 4, true, {255, 255, 255, 255});
+
 	/*Vector v[] = {v1, v2, v3, v4};
 	AddPolygon(v, 4, c);*/
 }

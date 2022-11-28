@@ -192,7 +192,7 @@ struct PenisRegenerator : ITextureRegenerator
 
 #define SPT_TEXTURE_GROUP "spt textures"
 
-#define GLYPH_ATLAS_SIZE 512
+#define GLYPH_ATLAS_SIZE 1024
 #define NUM_GLYPH_ATLASES 64
 
 struct GlyphMaterialInfo

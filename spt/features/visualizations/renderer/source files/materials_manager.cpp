@@ -8,6 +8,12 @@
 
 #include <dwrite.h>
 #include <d2d1.h>
+#include <d2d1helper.h>
+#include <wincodec.h>
+
+#pragma comment(lib, "Dwrite")
+#pragma comment(lib, "ole32")
+#pragma comment(lib, "D2d1")
 
 void PenisRegenerator::RegenerateTextureBits(ITexture* pTexture, IVTFTexture* pVTFTexture, Rect_t* pRect)
 {
@@ -51,12 +57,11 @@ void GlyphMaterialInfo::DownloadTexture()
 	updateRect.width = updateRect.height = 0;
 }
 
-void DoStuff(uint8_t* buf)
+void DoStuff(uint8_t* textureBuf)
 {
 	HRESULT hr;
 
-	const wchar_t* wstr = L"f";
-	size_t strLen = wcslen(wstr);
+	const wchar_t* wstr = L"FUCK";
 
 	IDWriteFactory* pWriteFactory;
 	IDWriteTextFormat* pTextFormat;
@@ -69,12 +74,12 @@ void DoStuff(uint8_t* buf)
 		goto c0;
 	}
 
-	hr = pWriteFactory->CreateTextFormat(L"Gabroila",
+	hr = pWriteFactory->CreateTextFormat(L"Calibri",
 	                                     nullptr,
 	                                     DWRITE_FONT_WEIGHT_REGULAR,
 	                                     DWRITE_FONT_STYLE_NORMAL,
 	                                     DWRITE_FONT_STRETCH_NORMAL,
-	                                     72.f,
+	                                     72.f * 6,
 	                                     L"en-us",
 	                                     &pTextFormat);
 
@@ -100,11 +105,10 @@ void DoStuff(uint8_t* buf)
 		goto c2;
 	}
 
-	ID2D1Factory* pD2DFactory;
-	ID2D1HwndRenderTarget* pRT;
-	ID2D1SolidColorBrush* pBlackBrush;
+	IDWriteTextLayout* pTextLayout;
 
-	hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &pD2DFactory);
+	pWriteFactory
+	    ->CreateTextLayout(wstr, wcslen(wstr), pTextFormat, GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE, &pTextLayout);
 
 	if (hr < 0)
 	{
@@ -112,14 +116,112 @@ void DoStuff(uint8_t* buf)
 		goto c2;
 	}
 
-	DWRITE_GLYPH_RUN glyphRun;
+	ID2D1Factory* pD2DFactory;
 
+	hr = D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, &pD2DFactory);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c3;
+	}
+
+	IWICImagingFactory* pWicFactory;
+	IWICBitmap* pWicBitMap;
+	ID2D1BitmapRenderTarget* pRT;
+
+	hr = CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pWicFactory));
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c4;
+	}
+
+	hr = pWicFactory->CreateBitmap(GLYPH_ATLAS_SIZE,
+	                               GLYPH_ATLAS_SIZE,
+	                               GUID_WICPixelFormat8bppAlpha,
+	                               WICBitmapCacheOnDemand,
+	                               &pWicBitMap);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c5;
+	}
+
+	hr = pD2DFactory
+	         ->CreateWicBitmapRenderTarget(pWicBitMap,
+	                                       D2D1_RENDER_TARGET_PROPERTIES{D2D1_RENDER_TARGET_TYPE_DEFAULT,
+	                                                                     D2D1_PIXEL_FORMAT{DXGI_FORMAT_UNKNOWN,
+	                                                                                       D2D1_ALPHA_MODE_UNKNOWN},
+	                                                                     0.f,
+	                                                                     0.f,
+	                                                                     D2D1_RENDER_TARGET_USAGE_NONE,
+	                                                                     D2D1_FEATURE_LEVEL_DEFAULT},
+	                                       (ID2D1RenderTarget**)&pRT);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c6;
+	}
+
+	ID2D1SolidColorBrush* pBrush;
+
+	hr = pRT->CreateSolidColorBrush({255, 255, 255, 255}, &pBrush);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c8;
+	}
+
+	pRT->BeginDraw();
+	pRT->SetTransform(D2D1::IdentityMatrix());
+	pRT->Clear({255, 255, 255, 0});
+	pRT->DrawTextLayout(D2D1_POINT_2F{0, 0}, pTextLayout, pBrush);
+	pRT->EndDraw(); // check return
+
+	uint8_t* glyphBytes;
+	glyphBytes = new uint8_t[GLYPH_ATLAS_SIZE * GLYPH_ATLAS_SIZE];
+	hr = pWicBitMap->CopyPixels(nullptr, GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE * GLYPH_ATLAS_SIZE, glyphBytes);
+
+	if (hr < 0)
+	{
+		Assert(0);
+		goto c9;
+	}
+
+	for (int i = 0; i < GLYPH_ATLAS_SIZE; i++)
+	{
+		for (int k = 0; k < GLYPH_ATLAS_SIZE; k++)
+		{
+			int idx = i * GLYPH_ATLAS_SIZE + k;
+			textureBuf[idx * 4 + 0] = 255;
+			textureBuf[idx * 4 + 1] = 255;
+			textureBuf[idx * 4 + 2] = 255;
+			textureBuf[idx * 4 + 3] = glyphBytes[i * GLYPH_ATLAS_SIZE + GLYPH_ATLAS_SIZE - k];
+		}
+	}
+c9:
+	delete[] glyphBytes;
+	SafeRelease(pBrush);
+c8:
+c7:
+	SafeRelease(pRT);
+c6:
+	SafeRelease(pWicBitMap);
+c5:
+	SafeRelease(pWicFactory);
+c4:
+	SafeRelease(pD2DFactory);
 c3:
-	pD2DFactory->Release();
+	SafeRelease(pTextLayout);
 c2:
-	pTextFormat->Release();
+	SafeRelease(pTextFormat);
 c1:
-	pWriteFactory->Release();
+	SafeRelease(pWriteFactory);
 c0:
 	return;
 }
@@ -148,18 +250,6 @@ void MeshBuilderMatMgr::Load()
 	                                                          TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT
 	                                                              | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD
 	                                                              | TEXTUREFLAGS_SINGLECOPY);
-
-	for (int x = 0; x < GLYPH_ATLAS_SIZE; x++)
-	{
-		for (int y = 0; y < GLYPH_ATLAS_SIZE; y++)
-		{
-			int i = y * 512 + x;
-			texBuf[i * 4 + 0] = x / 2;
-			texBuf[i * 4 + 1] = y / 2;
-			texBuf[i * 4 + 2] = 255;
-			texBuf[i * 4 + 3] = 255;
-		}
-	}
 
 	DoStuff(texBuf);
 

@@ -671,7 +671,7 @@ BEGIN_TEST_CASE("penis", Vector(800, -300, 0))
 	Vector v3 = testPos + Vector{w, w, 0};
 	Vector v4 = testPos + Vector{w, 0, 0};
 
-	RENDER_DYNAMIC(mr, mb.AddQuad(v1, v2, v3, v4, MeshColor::Face({255, 255, 255, 254})););
+	RENDER_DYNAMIC(mr, { mb.AddQuad(v1, v2, v3, v4, MeshColor::Outline({255, 255, 255, 254})); });
 }
 END_TEST_CASE()
 
