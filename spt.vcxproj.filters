@@ -307,6 +307,9 @@
     <ClCompile Include="spt\features\visualizations\portal_placement.cpp">
       <Filter>spt\features\visualizations</Filter>
     </ClCompile>
+    <ClCompile Include="spt\features\rng logging\logger.cpp">
+      <Filter>spt\features\rng logging</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -612,6 +615,9 @@
     <ClInclude Include="spt\features\property_getter.hpp">
       <Filter>spt\features</Filter>
     </ClInclude>
+    <ClInclude Include="spt\features\rng logging\logger.hpp">
+      <Filter>spt\features\rng logging</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\lib\public\mathlib.lib">
@@ -675,6 +681,9 @@
     </Filter>
     <Filter Include="spt\features\visualizations\renderer\source files">
       <UniqueIdentifier>{84814768-34cb-4968-8ef2-07312a178bc4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="spt\features\rng logging">
+      <UniqueIdentifier>{3f49b87b-5bcf-41e1-8b54-a7aa6a898700}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>

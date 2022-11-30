@@ -1171,6 +1171,7 @@
     <ClCompile Include="spt\features\playerio.cpp" />
     <ClCompile Include="spt\features\property_getter.cpp" />
     <ClCompile Include="spt\features\restart.cpp" />
+    <ClCompile Include="spt\features\rng logging\logger.cpp" />
     <ClCompile Include="spt\features\rng.cpp" />
     <ClCompile Include="spt\features\shadow.cpp" />
     <ClCompile Include="spt\features\stucksave.cpp" />
@@ -1389,6 +1390,7 @@
     <ClInclude Include="spt\features\overlay.hpp" />
     <ClInclude Include="spt\features\playerio.hpp" />
     <ClInclude Include="spt\features\property_getter.hpp" />
+    <ClInclude Include="spt\features\rng logging\logger.hpp" />
     <ClInclude Include="spt\features\rng.hpp" />
     <ClInclude Include="spt\features\shadow.hpp" />
     <ClInclude Include="spt\features\tas.hpp" />

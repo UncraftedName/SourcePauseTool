@@ -22,15 +22,17 @@ typedef void(__thiscall* _beam_object_to_new_position)(void* thisptr,
 // This feature allows access to the Havok hitbox location (aka physics shadow (aka vphysics bbox))
 class ShadowPosition : public FeatureWrapper<ShadowPosition>
 {
-protected:
+public:
 	static int __fastcall HOOKED_GetShadowPosition(void* thisptr, int _, Vector* worldPosition, QAngle* angles);
 	_GetShadowPosition ORIG_GetShadowPosition = nullptr;
 
+private:
 	_beam_object_to_new_position ORIG_beam_object_to_new_position = nullptr;
 
 	Vector PlayerHavokPos;
 	QAngle PlayerHavokAngles;
 
+protected:
 	virtual bool ShouldLoadFeature() override;
 
 	virtual void InitHooks() override;
