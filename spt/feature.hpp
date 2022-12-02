@@ -41,6 +41,8 @@
 	               reinterpret_cast<void*>(HOOKED_##name##));
 #define InitCommand(command) InitConcommandBase(command##_command)
 
+using json = nlohmann::json;
+
 struct VFTableHook
 {
 	VFTableHook(void** vftable, int index, void* functionToHook, void** origPtr);
@@ -71,6 +73,7 @@ struct PatternHook
 	const char* patternName;
 	void** origPtr;
 	void* functionHook;
+	std::string md5Digest;
 };
 
 struct MatchAllPattern
@@ -107,6 +110,74 @@ struct RawHook
 	void* functionHook;
 };
 
+namespace pc // pattern cache
+{
+	struct PatternCacheEntry
+	{
+		std::string digest;
+		size_t offset;
+		size_t patternIdx;
+	};
+
+	inline void to_json(json& j, const PatternCacheEntry& p)
+	{
+		j = json{{"digest", p.digest}, {"offset", p.offset}, {"pattern index", p.patternIdx}};
+	}
+
+	inline void from_json(const json& j, PatternCacheEntry& p)
+	{
+		if (j.contains("digest") && j.contains("offset") && j.contains("pattern index"))
+		{
+			j.at("digest").get_to(p.digest);
+			j.at("offset").get_to(p.offset);
+			j.at("pattern index").get_to(p.patternIdx);
+		}
+	}
+
+	struct PatternCacheModule
+	{
+		std::string digest;
+		::std::unordered_map<::std::string, PatternCacheEntry> patterns;
+	};
+
+	inline void to_json(json& j, const PatternCacheModule& p)
+	{
+		j = {{"digest", p.digest}, {"patterns", p.patterns}};
+	}
+
+	inline void from_json(const json& j, PatternCacheModule& p)
+	{
+		if (j.contains("digest") && j.contains("patterns"))
+		{
+			j.at("digest").get_to(p.digest);
+			j.at("patterns").get_to(p.patterns);
+		}
+	}
+
+	struct PatternCache
+	{
+		// {module_name -> {pattern_name -> entry}}
+		::std::unordered_map<::std::string, PatternCacheModule> modules;
+		bool updated = false;
+
+		bool empty()
+		{
+			return modules.empty();
+		}
+	};
+
+	inline void to_json(json& j, const PatternCache& p)
+	{
+		j = {"pattern cache", p.modules};
+	}
+
+	inline void from_json(const json& j, PatternCache& p)
+	{
+		if (j.contains("pattern cache"))
+			j.at("pattern cache").get_to(p.modules);
+	}
+} // namespace pc
+
 struct ModuleHookData
 {
 	std::vector<PatternHook> patternHooks;
@@ -117,7 +188,7 @@ struct ModuleHookData
 	std::vector<std::pair<void**, void*>> funcPairs;
 	std::vector<void**> hookedFunctions;
 	std::vector<VFTableHook> existingVTableHooks;
-	void InitModule(const std::wstring& moduleName);
+	void InitModule(const std::wstring& moduleName, pc::PatternCache& cache);
 	void HookModule(const std::wstring& moduleName);
 	void UnhookModule(const std::wstring& moduleName);
 };

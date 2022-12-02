@@ -1,5 +1,8 @@
 #include "stdafx.h"
 #include <future>
+#include <fstream>
+#include <libloaderapi.h>
+#include <iomanip>
 #include "convar.hpp"
 #include "feature.hpp"
 #include "interfaces.hpp"
@@ -10,6 +13,8 @@
 #include "SPTLib\Windows\detoursutils.hpp"
 #include "SPTLib\Hooks.hpp"
 #include "cvars.hpp"
+#include "spt\utils\file.hpp"
+#include "thirdparty\md5.hpp"
 
 static std::unordered_map<std::string, ModuleHookData> moduleHookData;
 static std::unordered_map<uintptr_t, int> patternIndices;
@@ -123,9 +128,30 @@ Feature::Feature()
 
 void Feature::InitModules()
 {
+	pc::PatternCache cache;
+
+	std::string cachePath = GetGameDir() + "\\spt_pattern_cache.json";
+	std::fstream f(cachePath, std::ios::in | std::ios::out | std::ios::app);
+	if (f)
+	{
+		f.close();
+		f.open(cachePath, std::ios::in | std::ios::out);
+		json jd = json::parse(f, nullptr, false);
+		jd.get_to(cache);
+		if (cache.empty())
+			DevMsg("spt: pattern cache is empty!\n");
+	}
+
 	for (auto& pair : moduleHookData)
 	{
-		pair.second.InitModule(Convert(pair.first + ".dll"));
+		pair.second.InitModule(Convert(pair.first + ".dll"), cache);
+	}
+
+	if (f && cache.updated)
+	{
+		f.close();
+		f.open(cachePath, std::ios::out | std::ios::trunc);
+		f << std::setw(2) << json{cache};
 	}
 }
 
@@ -238,20 +264,49 @@ void ModuleHookData::UnhookModule(const std::wstring& moduleName)
 		MemUtils::HookVTable(vft_hook.vftable, vft_hook.index, *vft_hook.origPtr);
 }
 
-void ModuleHookData::InitModule(const std::wstring& moduleName)
+void ModuleHookData::InitModule(const std::wstring& moduleName, pc::PatternCache& cache)
 {
 	void* handle;
 	void* moduleStart;
 	size_t moduleSize;
 
+	std::string moduleNameA = Convert(moduleName);
+
 	if (MemUtils::GetModuleInfo(moduleName, &handle, &moduleStart, &moduleSize))
 	{
-		DevMsg("Hooking %s (start: %p; size: %x)...\n", Convert(moduleName).c_str(), moduleStart, moduleSize);
+		DevMsg("Hooking %s (start: %p; size: %x)...\n", moduleNameA.c_str(), moduleStart, moduleSize);
 	}
 	else
 	{
-		DevMsg("Couldn't hook %s, not loaded\n", Convert(moduleName).c_str());
+		DevMsg("Couldn't hook %s, not loaded\n", moduleNameA.c_str());
 		return;
+	}
+
+	pc::PatternCacheModule& cachedModule = cache.modules[moduleNameA];
+	MD5 md5{};
+
+	char modulePath[MAX_PATH + 1];
+	GetModuleFileNameA(reinterpret_cast<HMODULE>(handle), modulePath, sizeof modulePath);
+	std::fstream f(modulePath, std::ios::in | std::ios::binary);
+	if (f)
+	{
+		// f.rdbuf()->pubsetbuf(0, 0);
+		char buf[1024 * 16];
+		while (!f.eof())
+		{
+			f.read(buf, sizeof buf);
+			md5.update(buf, f.gcount());
+		}
+		md5.finalize();
+		f.close();
+	}
+
+	if (cachedModule.digest != md5.hexdigest())
+	{
+		DevMsg("[%s] Pattern cache doesn't match for module, clearing...\n", moduleNameA.c_str());
+		cachedModule.digest = md5.hexdigest();
+		cachedModule.patterns.clear();
+		cache.updated = true;
 	}
 
 	std::vector<std::future<patterns::PatternWrapper*>> hooks;
@@ -266,13 +321,68 @@ void ModuleHookData::InitModule(const std::wstring& moduleName)
 		                                                       mpattern.patternArr + mpattern.size));
 	}
 
+	std::vector<size_t> patternIdxRef;
+
 	for (auto& pattern : patternHooks)
 	{
-		hooks.emplace_back(MemUtils::find_unique_sequence_async(*pattern.origPtr,
-		                                                        moduleStart,
-		                                                        moduleSize,
-		                                                        pattern.patternArr,
-		                                                        pattern.patternArr + pattern.size));
+		md5 = MD5{};
+		for (size_t i = 0; i < pattern.size; i++)
+		{
+			const auto& pw = pattern.patternArr[i];
+			md5.update(pw.bytes(), pw.length());
+		}
+		md5.finalize();
+		pattern.md5Digest = md5.hexdigest();
+
+		auto it = cachedModule.patterns.find(pattern.patternName);
+		bool cachedPatternValid = it != cachedModule.patterns.end();
+		if (cachedPatternValid)
+		{
+			// digest matches
+			cachedPatternValid = it->second.digest == pattern.md5Digest;
+		}
+		if (cachedPatternValid)
+		{
+			// the pattern index makes sense
+			cachedPatternValid = it->second.patternIdx < pattern.size;
+		}
+		if (cachedPatternValid)
+		{
+			// the corresponding pattern is somewhere inside the module
+			const auto& pw = pattern.patternArr[it->second.patternIdx];
+
+			cachedPatternValid = UINT32_MAX - pw.length() > it->second.offset
+			                     && it->second.offset + pw.length() < moduleSize;
+		}
+		if (cachedPatternValid)
+		{
+			// the pattern actually matches at the cached offset
+			const auto& pw = pattern.patternArr[it->second.patternIdx];
+			cachedPatternValid = pw.match((uchar*)moduleStart + it->second.offset);
+		}
+		if (cachedPatternValid)
+		{
+			DevMsg("[%s] Using cached offset %p for pattern %s", it->second.offset, pattern.patternName);
+			*pattern.origPtr = reinterpret_cast<char*>(moduleStart) + it->second.offset;
+
+			if (pattern.functionHook)
+			{
+				funcPairs.emplace_back(pattern.origPtr, pattern.functionHook);
+				hookedFunctions.emplace_back(pattern.origPtr);
+			}
+		}
+		else
+		{
+			patternIdxRef.push_back(&pattern - patternHooks.data());
+			cache.updated = true;
+			if (it != cachedModule.patterns.end())
+				cachedModule.patterns.erase(it);
+			hooks.emplace_back(MemUtils::find_unique_sequence_async(*pattern.origPtr,
+			                                                        moduleStart,
+			                                                        moduleSize,
+			                                                        pattern.patternArr,
+			                                                        pattern.patternArr + pattern.size));
+		}
 	}
 
 	funcPairs.reserve(funcPairs.size() + patternHooks.size());
@@ -283,7 +393,7 @@ void ModuleHookData::InitModule(const std::wstring& moduleName)
 		auto modulePattern = matchAllPatterns[i];
 		*modulePattern.foundVec = std::move(mhooks[i].get());
 		DevMsg("[%s] Found %u instances of pattern %s\n",
-		       Convert(moduleName).c_str(),
+		       moduleNameA.c_str(),
 		       modulePattern.foundVec->size(),
 		       modulePattern.patternName);
 	}
@@ -291,7 +401,7 @@ void ModuleHookData::InitModule(const std::wstring& moduleName)
 	for (std::size_t i = 0; i < hooks.size(); ++i)
 	{
 		auto foundPattern = hooks[i].get();
-		auto modulePattern = patternHooks[i];
+		auto modulePattern = patternHooks[patternIdxRef[i]];
 
 		if (*modulePattern.origPtr)
 		{
@@ -302,16 +412,23 @@ void ModuleHookData::InitModule(const std::wstring& moduleName)
 			}
 
 			DevMsg("[%s] Found %s at %p (using the %s pattern).\n",
-			       Convert(moduleName).c_str(),
+			       moduleNameA.c_str(),
 			       modulePattern.patternName,
 			       *modulePattern.origPtr,
 			       foundPattern->name());
 			patternIndices[reinterpret_cast<uintptr_t>(modulePattern.origPtr)] =
 			    foundPattern - modulePattern.patternArr;
+
+			cachedModule.patterns.emplace(std::piecewise_construct,
+			                              std::forward_as_tuple(modulePattern.patternName),
+			                              std::forward_as_tuple(modulePattern.md5Digest,
+			                                                    (size_t)*modulePattern.origPtr
+			                                                        - (size_t)moduleStart,
+			                                                    foundPattern - modulePattern.patternArr));
 		}
 		else
 		{
-			DevWarning("[%s] Could not find %s.\n", Convert(moduleName).c_str(), modulePattern.patternName);
+			DevWarning("[%s] Could not find %s.\n", moduleNameA.c_str(), modulePattern.patternName);
 		}
 	}
 
@@ -320,7 +437,7 @@ void ModuleHookData::InitModule(const std::wstring& moduleName)
 		*offset.origPtr = reinterpret_cast<char*>(moduleStart) + offset.offset;
 
 		DevMsg("[%s] Found %s at %p via a fixed offset.\n",
-		       Convert(moduleName).c_str(),
+		       moduleNameA.c_str(),
 		       offset.patternName,
 		       *offset.origPtr);
 
