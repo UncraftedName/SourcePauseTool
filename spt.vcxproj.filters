@@ -310,6 +310,9 @@
     <ClCompile Include="spt\features\rng logging\logger.cpp">
       <Filter>spt\features\rng logging</Filter>
     </ClCompile>
+    <ClCompile Include="spt\features\rng logging\logger_hooks.cpp">
+      <Filter>spt\features\rng logging</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">

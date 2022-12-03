@@ -72,29 +72,15 @@ void LoggerFeature::LoadFeature()
 	InitCommand(un_begin_rng_tracking_on_load);
 	InitCommand(un_end_rng_tracking);
 	InitCommand(un_dump_rng_logs);
-	SetPausedSignal.Connect(this, &LoggerFeature::SetPaused);
 	if (TickSignal.Works)
-		TickSignal.Connect(this, &LoggerFeature::OnTick);
-	if (FinishRestoreSignal.Works)
-		FinishRestoreSignal.Connect(this, &LoggerFeature::OnRestore);
+		TickSignal.Connect(this, &LoggerFeature::OnTickSignal);
 }
 
-void LoggerFeature::SetPaused(void*, bool paused)
-{
-	URINATE_WITH_INFO(false, { uu.Spew("paused: %d", paused); });
-}
-
-void LoggerFeature::OnTick()
+void LoggerFeature::OnTickSignal()
 {
 	if (rngLogState != RNG_LOG_STATE_NONE)
 		rngLogs[rngLogState].tick++;
-	// URINATE_SIMPLE(false);
-	URINATE_WITH_VPHYS(false);
-}
-
-void LoggerFeature::OnRestore(void*)
-{
-	URINATE_BEGIN_ON_LOAD();
+	URINATE_SIMPLE(false);
 }
 
 void LoggerFeature::LogRngLineAtTick(const char* fmt, ...)

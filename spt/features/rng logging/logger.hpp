@@ -33,12 +33,10 @@ class LoggerFeature : public FeatureWrapper<LoggerFeature>
 {
 protected:
 	virtual void LoadFeature() override;
-
 	virtual void UnloadFeature() override{};
 
-	void SetPaused(void*, bool paused);
-	void OnTick();
-	void OnRestore(void*);
+private:
+	void OnTickSignal();
 
 public: // public, but not meant to be used from elsewhere
 	void SetRngLogState(RngLogState state)
@@ -52,7 +50,6 @@ public: // public, but not meant to be used from elsewhere
 			Warning("spt: started logging\n");
 			break;
 		}
-
 	}
 
 	void LogRngLineAtTick(const char* fmt, ...);
