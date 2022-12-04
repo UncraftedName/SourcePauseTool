@@ -30,8 +30,11 @@ CON_COMMAND_F(un_begin_rng_tracking_on_load, "Starts tracking rng stuff as soon 
 CON_COMMAND_F(un_end_rng_tracking, "Finishes logging stuff to track rng", FCVAR_DONTRECORD)
 {
 	URINATE_SIMPLE(false);
+	if (spt_logger.rngLogState == RNG_LOG_STATE_NONE)
+		Msg("spt-rng: we've already stopped logging\n");
+	else
+		Msg("fine then...\n");
 	spt_logger.EndRngLogging();
-	Msg("fine then...\n");
 }
 
 CON_COMMAND_F(un_dump_rng_logs, "Dumps the reference and new rng tracking logs to a file", FCVAR_DONTRECORD)
@@ -150,6 +153,19 @@ void LoggerFeature::ShowRngLogMismatch(int maxLines)
 			Warning("spt-rng: new logs are longer!\n");
 		else
 			Warning("spt-rng: new logs are shorter!\n");
+
+		Warning("Reference:\n");
+		size_t start = MAX(0, (int)compLogs.lines.size() - maxLines + 1);
+		size_t end = MIN(start + maxLines, MIN(refLogs.lines.size(), compLogs.lines.size()));
+		for (size_t i = start; i < end; i++)
+		{
+			_sleep(0);
+			Msg("line %d: %s\n", i + 1, refLogs.lines[i].c_str());
+		}
+		_sleep(0);
+		Warning("Actual:\n");
+		_sleep(0);
+		Msg("line %d: %s\n", compLogs.lines.size(), compLogs.lines.back().c_str());
 	}
 	else if (compLogs.lines.empty())
 	{
@@ -171,18 +187,7 @@ void LoggerFeature::ShowRngLogMismatch(int maxLines)
 	}
 	else
 	{
-		Warning("spt-rng: Log mismatch, reference:\n");
-		size_t start = MAX(0, (int)compLogs.lines.size() - maxLines + 1);
-		size_t end = MIN(start + maxLines, MIN(refLogs.lines.size(), compLogs.lines.size()));
-		for (size_t i = start; i < end; i++)
-		{
-			_sleep(0);
-			Msg("line %d: %s\n", i + 1, refLogs.lines[i].c_str());
-		}
-		_sleep(0);
-		Warning("Actual:\n");
-		_sleep(0);
-		Msg("line %d: %s\n", compLogs.lines.size(), compLogs.lines.back().c_str());
+		Warning("spt-rng: I think we should never get here!!!!!!!!");
 	}
 }
 
