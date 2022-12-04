@@ -6,9 +6,7 @@
 #include "interfaces.hpp"
 #include "spt\features\shadow.hpp"
 
-CON_COMMAND_F(un_begin_rng_tracking,
-              "Starts logging stuff on every tick to track rng, create a reference to track against first",
-              FCVAR_DONTRECORD)
+CON_COMMAND_F(un_begin_rng_tracking, "Starts logging stuff on every tick to track rng, create a reference to track against first", FCVAR_DONTRECORD)
 {
 	if (args.ArgC() < 2)
 	{
@@ -18,9 +16,7 @@ CON_COMMAND_F(un_begin_rng_tracking,
 	spt_logger.SetRngLogState((RngLogState)atoi(args[1]));
 }
 
-CON_COMMAND_F(un_begin_rng_tracking_on_load,
-              "Starts tracking rng stuff as soon as possible on the next load",
-              FCVAR_DONTRECORD)
+CON_COMMAND_F(un_begin_rng_tracking_on_load, "Starts tracking rng stuff as soon as possible on the next load", FCVAR_DONTRECORD)
 {
 	if (args.ArgC() < 2)
 	{
@@ -33,6 +29,7 @@ CON_COMMAND_F(un_begin_rng_tracking_on_load,
 
 CON_COMMAND_F(un_end_rng_tracking, "Finishes logging stuff to track rng", FCVAR_DONTRECORD)
 {
+	URINATE_SIMPLE(false);
 	spt_logger.EndRngLogging();
 	Msg("fine then...\n");
 }
@@ -59,11 +56,7 @@ CON_COMMAND_F(un_dump_rng_logs, "Dumps the reference and new rng tracking logs t
 			compChars += compLines[i].size() + 1;
 		}
 	}
-	Msg("wrote %d lines (%d chars) to (ref) & %d lines (%d chars) to (comp) files\n",
-	    refLines.size(),
-	    refChars,
-	    compLines.size(),
-	    compChars);
+	Msg("wrote %d lines (%d chars) to (ref) & %d lines (%d chars) to (comp) files\n", refLines.size(), refChars, compLines.size(), compChars);
 }
 
 void LoggerFeature::LoadFeature()
@@ -109,22 +102,13 @@ void LoggerFeature::LogRngLineAtTick(const char* fmt, ...)
 	int newLineLen = vsnprintf(nl1, sizeof(nl1), fmt, vargs);
 
 	// add tick and fill
-	newLineLen = snprintf(nl2,
-	                      sizeof(nl2),
-	                      "[%d %d]%.*s%.*s",
-	                      interfaces::engine_tool->ServerTick(),
-	                      curLogs.tick,
-	                      fillLen,
-	                      fill,
-	                      newLineLen,
-	                      nl1);
+	newLineLen = snprintf(nl2, sizeof(nl2), "[%d %d]%.*s%.*s", interfaces::engine_tool->ServerTick(), curLogs.tick, fillLen, fill, newLineLen, nl1);
 
 	curLogs.lines.emplace_back(nl2, newLineLen);
 
-	if (otherLogs.lines.size() == curLogs.lines.size())
-		EndRngLogging();
-	if (rngLogState == RNG_LOG_STATE_COMPARE && curLogs.lines.back() != otherLogs.lines[curLogs.lines.size() - 1])
-		EndRngLogging();
+	if (rngLogState == RNG_LOG_STATE_COMPARE)
+		if (curLogs.lines.size() > otherLogs.lines.size() || curLogs.lines.back() != otherLogs.lines[curLogs.lines.size() - 1])
+			EndRngLogging();
 	if (curLogs.lines.size() >= MAX_LOG_LINES)
 	{
 		Warning("spt: Logger has exceeded %d lines, ending\n", MAX_LOG_LINES);
@@ -160,9 +144,12 @@ void LoggerFeature::ShowRngLogMismatch(int maxLines)
 	auto& refLogs = rngLogs[RNG_LOG_STATE_REFERENCE];
 	auto& compLogs = rngLogs[RNG_LOG_STATE_COMPARE];
 
-	if (compLogs.lines.size() > refLogs.lines.size())
+	if (compLogs.lines.size() != refLogs.lines.size())
 	{
-		Warning("spt-rng: length of new logs exceeds reference length!\n");
+		if (compLogs.lines.size() > refLogs.lines.size())
+			Warning("spt-rng: new logs are longer!\n");
+		else
+			Warning("spt-rng: new logs are shorter!\n");
 	}
 	else if (compLogs.lines.empty())
 	{
@@ -231,10 +218,7 @@ void Urinator::Spew(const char* fmt, ...) const
 		return;
 	va_list vargs;
 	va_start(vargs, fmt);
-	spt_logger.RngLogFunc(funcName,
-	                      logPrePost ? (pre ? RNG_LOG_PRE_FUNC : RNG_LOG_POST_FUNC) : RNG_LOG_FUNC_NAME_ONLY,
-	                      fmt,
-	                      vargs);
+	spt_logger.RngLogFunc(funcName, logPrePost ? (pre ? RNG_LOG_PRE_FUNC : RNG_LOG_POST_FUNC) : RNG_LOG_FUNC_NAME_ONLY, fmt, vargs);
 }
 
 void Urinator::SpewWithVPhysInfo(const char* fmt, ...) const
@@ -298,12 +282,5 @@ void Urinator::SpewWithVPhysInfo(const char* fmt, ...) const
 	Vector s = pivp->Speed();
 	Vector sc = pivp->SpeedChange();
 
-	Spew("shadow pos/ang/vel/vel change: " V_FMT "/" V_FMT "/" V_FMT "/" V_FMT "%s%.*s",
-	     VEC_UNP(v),
-	     VEC_UNP(q),
-	     VEC_UNP(s),
-	     VEC_UNP(sc),
-	     fill,
-	     len,
-	     buf);
+	Spew("shadow pos/ang/vel/vel change: " V_FMT "/" V_FMT "/" V_FMT "/" V_FMT "%s%.*s", V_UNP(v), V_UNP(q), V_UNP(s), V_UNP(sc), fill, len, buf);
 }

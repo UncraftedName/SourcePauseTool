@@ -6,10 +6,8 @@
 #include "spt\features\shadow.hpp"
 #include "spt\utils\file.hpp"
 
-#define F_HUD_FMT "%.3f"
-#define V_HUD_FMT "<" F_HUD_FMT "," F_HUD_FMT "," F_HUD_FMT ">"
 #define V_FMT "<%f, %f, %f>"
-#define VEC_UNP(v) (v).x, (v).y, (v).z
+#define V_UNP(v) (v).x, (v).y, (v).z
 
 enum RngLogState
 {
@@ -106,8 +104,7 @@ private:
 
 public:
 	// the log bool param allows me to reuse the same macros if I don't want to log pre/post
-	Urinator(const char* funcName, bool logPrePost, UrinateFunc urinateFunc = nullptr)
-	    : pre(true), funcName(funcName), urinateFunc(urinateFunc), logPrePost(logPrePost)
+	Urinator(const char* funcName, bool logPrePost, UrinateFunc urinateFunc = nullptr) : pre(true), funcName(funcName), urinateFunc(urinateFunc), logPrePost(logPrePost)
 	{
 		SpewInternal();
 	}
@@ -126,12 +123,11 @@ public:
 
 #define URINATE_SIMPLE(logPrePost) Urinator urinator(__FUNCTION__, logPrePost)
 
-#define URINATE_WITH_INFO(logPrePost, urinate_body) \
-	Urinator urinator(__FUNCTION__, logPrePost, [&](const Urinator& uu) { urinate_body })
+#define URINATE_WITH_INFO(logPrePost, urinate_body) Urinator urinator(__FUNCTION__, logPrePost, [&](const Urinator& uu) { urinate_body })
 
 #define URINATE_WITH_VPHYS(logPrePost) URINATE_WITH_INFO(logPrePost, { uu.SpewWithVPhysInfo(nullptr); })
 
-#define URINATE_BEGIN_ON_LOAD() \
+#define URINATE_CHECK_LOAD_BEGIN() \
 	if (g_queuedLogState != RNG_LOG_STATE_NONE) \
 	{ \
 		spt_logger.SetRngLogState(g_queuedLogState); \
