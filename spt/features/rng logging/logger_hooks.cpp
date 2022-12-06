@@ -4,19 +4,13 @@
 #define GAME_DLL
 #include "cbase.h"
 #include "physics_collisionevent.h"
+#include "CommandBuffer.h"
 
 #include "logger.hpp"
 #include "signals.hpp"
 #include "interfaces.hpp"
 #include "..\ent_props.hpp"
-
-struct CPhysicsObject : public IPhysicsObject
-{
-};
-
-struct CPhysicsEnvironment : public IPhysicsEnvironment
-{
-};
+#include "spt\spt-serverplugin.hpp"
 
 class LoggerHooks : public FeatureWrapper<LoggerHooks>
 {
@@ -24,6 +18,7 @@ public:
 	std::vector<std::tuple<std::string, size_t, std::string, void**, void*>> queuedHooks;
 
 	CGlobalVars** gpGlobals;
+	uint* IVP_RAND_SEED;
 
 	struct
 	{
@@ -57,6 +52,7 @@ void LoggerHooks::InitHooks()
 		AddOffsetHook(moduleName, off, funcName.c_str(), origPtr, hookPtr);
 
 	AddOffsetHook("server", 0x6de068, "gpGlobals", (void**)&gpGlobals);
+	AddOffsetHook("vphysics", 0xd2400, "IVP_RAND_SEED", (void**)&IVP_RAND_SEED);
 }
 
 void LoggerHooks::LoadFeature()
@@ -91,6 +87,44 @@ void LoggerHooks::OnPauseSignal(void*, bool paused)
 
 /****************************** BASIC OFFSET HOOKS BELOW ******************************/
 
+struct CPhysicsObject : public IPhysicsObject
+{
+};
+
+struct CPhysicsEnvironment : public IPhysicsEnvironment
+{
+};
+
+struct CShadowController
+{
+	char _pad0[0xb0];
+	CPhysicsObject* m_pObject;
+};
+
+struct CGrabController
+{
+};
+
+struct IVP_Environment
+{
+};
+
+struct IVP_Real_Object
+{
+};
+
+struct IVP_U_Matrix
+{
+};
+
+struct CWeaponPhysCannon
+{
+};
+
+struct CPlayerPickupController
+{
+};
+
 #define BASIC_OFFSET_HOOK(moduleName, offset, retType, callType, funcName, params, hookBody) \
 	static retType(callType* ORIG_##funcName) params; \
 	static retType callType funcName params \
@@ -107,6 +141,41 @@ void LoggerHooks::OnPauseSignal(void*, bool paused)
 			} \
 		} _inst; \
 	}
+
+// a few helpful things for logging/hooking functions super high up the callstack e.g. _Host_RunFrame (where unloading normally would cause control flow to return into this unloaded plugin)
+
+bool g_deferPluginUnload = false;
+int g_hookCallDepth = 0;
+
+struct HighCallstackFuncScope
+{
+	HighCallstackFuncScope()
+	{
+		g_hookCallDepth++;
+	}
+
+	~HighCallstackFuncScope()
+	{
+		g_hookCallDepth--;
+		if (g_deferPluginUnload && g_hookCallDepth == 0)
+		{
+			extern CSourcePauseTool g_SourcePauseTool;
+			g_SourcePauseTool.Unload();
+		}
+	}
+};
+
+BASIC_OFFSET_HOOK(engine, 0x49620, void, __cdecl, _Host_RunFrame, (float time_), {
+	HighCallstackFuncScope _h{};
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame(time_);
+});
+
+BASIC_OFFSET_HOOK(engine, 0x48500, void, __cdecl, _Host_RunFrame_Server, (bool finalTick), {
+	HighCallstackFuncScope _h{};
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame_Server(finalTick);
+});
 
 // not logging, just getting ORIG ptr
 BASIC_OFFSET_HOOK(server, 0xd6220, int, __fastcall, CBaseEntity__VPhysicsGetObjectList, (CBaseEntity * thisptr, int edx, CPhysicsObject** pList, int listMax), {
@@ -131,7 +200,7 @@ BASIC_OFFSET_HOOK(server,
 	                  ORIG_CGrabController__AttachEntity(thisptr, edx, pPlayer, pEntity, pPhys, bIsMegaPhysCannon, vGrabPosition, bUseGrabPosition);
                   });
 
-BASIC_OFFSET_HOOK(server, 0x4361f0, void, __fastcall, CGrabController__DetachEntity, (void* thisptr, int edx, bool bClearVelocity), {
+BASIC_OFFSET_HOOK(server, 0x4361f0, void, __fastcall, CGrabController__DetachEntity, (CGrabController * thisptr, int edx, bool bClearVelocity), {
 	EHANDLE hAttached = ENT_PROP(thisptr, EHANDLE, m_attachedEntity);
 	URINATE_WITH_INFO(true, {
 		if (!hAttached.IsValid())
@@ -144,8 +213,14 @@ BASIC_OFFSET_HOOK(server, 0x4361f0, void, __fastcall, CGrabController__DetachEnt
 		if (pObj)
 		{
 			Vector vel;
-			pObj->GetVelocity(&vel, nullptr);
-			uu.Spew("clear vel: %d, vphys vel: " V_FMT, bClearVelocity, V_UNP(vel));
+			AngularImpulse impulse;
+			pObj->GetVelocity(&vel, &impulse);
+			uu.Spew("clear vel: %d, flags: %d, pos: " V_FMT ", vphys vel: " V_FMT ", vphys impulse: " V_FMT,
+			        bClearVelocity,
+			        *(ushort*)((uint32_t)pObj + 0x2c),
+			        V_UNP(ENT_POS(attached)),
+			        V_UNP(vel),
+			        V_UNP(impulse));
 		}
 		else
 		{
@@ -156,10 +231,10 @@ BASIC_OFFSET_HOOK(server, 0x4361f0, void, __fastcall, CGrabController__DetachEnt
 });
 
 BASIC_OFFSET_HOOK(server, 0x0193b30, penetrateevent_t&, __fastcall, CCollisionEvent__FindOrAddPenetrateEvent, (CCollisionEvent * thisptr, int edx, CBaseEntity* pEntity0, CBaseEntity* pEntity1), {
-	// swap (this may make a difference somewhere else)
+	penetrateevent_t& pEvent = ORIG_CCollisionEvent__FindOrAddPenetrateEvent(thisptr, edx, pEntity0, pEntity1);
+	// swap so that we don't get pointer dependent ordering in the logs
 	if (pEntity0->GetRefEHandle().GetEntryIndex() > pEntity1->GetRefEHandle().GetEntryIndex())
 		std::swap(pEntity0, pEntity1);
-	penetrateevent_t& pEvent = ORIG_CCollisionEvent__FindOrAddPenetrateEvent(thisptr, edx, pEntity0, pEntity1);
 	URINATE_WITH_INFO(false, {
 		uu.Spew("(%d) \"%s\" / (%d) \"%s\", event time: %f",
 		        pEntity0->GetRefEHandle().GetEntryIndex(),
@@ -191,12 +266,23 @@ BASIC_OFFSET_HOOK(engine, 0x485e0, void, __cdecl, _Host_RunFrame_Client, (bool f
 	ORIG__Host_RunFrame_Client(framefinished);
 });
 
+BASIC_OFFSET_HOOK(engine, 0x46cd0, void, __cdecl, _Host_RunFrame_Input, (float accumulated_extra_samples, bool bFinalTick), {
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame_Input(accumulated_extra_samples, bFinalTick);
+});
+
+BASIC_OFFSET_HOOK(engine, 0x48740, void, __cdecl, _Host_RunFrame_Render, (), {
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame_Render();
+});
+
 BASIC_OFFSET_HOOK(vphysics, 0x17b90, void, __fastcall, CPhysicsObject__AddVelocity, (CPhysicsObject * thisptr, int edx, Vector* vec, AngularImpulse* vecAng), {
 	Vector inVecCopy = *vec;
 	URINATE_WITH_INFO(true, {
-		Vector actual;
-		thisptr->GetVelocity(&actual, nullptr);
-		uu.Spew("vel: " V_FMT ", add vel: " V_FMT, V_UNP(actual), V_UNP(inVecCopy));
+		Vector vphysVel;
+		AngularImpulse vphysImpulse;
+		thisptr->GetVelocity(&vphysVel, &vphysImpulse);
+		uu.Spew("phys vel: " V_FMT ", vphys impulse: " V_FMT ", add vel: " V_FMT, V_UNP(vphysVel), V_UNP(vphysImpulse), V_UNP(inVecCopy));
 	});
 	ORIG_CPhysicsObject__AddVelocity(thisptr, edx, vec, vecAng);
 });
@@ -209,8 +295,144 @@ BASIC_OFFSET_HOOK(vphysics, 0x129b0, void, __fastcall, CPhysicsEnvironment__Simu
 BASIC_OFFSET_HOOK(server, 0xea710, void, __fastcall, CBaseEntity__VPhysicsUpdate, (CBaseEntity * thisptr, int edx, CPhysicsObject* pPhysics), {
 	URINATE_WITH_INFO(true, {
 		Vector vphysPos;
+		QAngle vphysAng;
 		pPhysics->GetPosition(&vphysPos, nullptr);
-		uu.Spew("(%d) \"%s\", pos: " V_FMT ", vphys pos: " V_FMT, thisptr->GetRefEHandle().GetEntryIndex(), thisptr->GetClassname(), V_UNP(ENT_POS(thisptr)), V_UNP(vphysPos));
+		uu.Spew("(%d) \"%s\", pos: " V_FMT ", vphys pos: " V_FMT ", vphys ang: " V_FMT,
+		        thisptr->GetRefEHandle().GetEntryIndex(),
+		        thisptr->GetClassname(),
+		        V_UNP(ENT_POS(thisptr)),
+		        V_UNP(vphysPos),
+		        V_UNP(vphysAng));
 	});
 	ORIG_CBaseEntity__VPhysicsUpdate(thisptr, edx, pPhysics);
+});
+
+// the object I want doesn't have a shadow controller
+/*BASIC_OFFSET_HOOK(vphysics, 0x1a410, void, __fastcall, CShadowController__do_simulation_controller, (CShadowController * thisptr, int edx, void* es, void* cores), {
+	URINATE_WITH_INFO(true, {
+		CBaseEntity* ent = (CBaseEntity*)thisptr->m_pObject->GetGameData();
+		Vector vphysPos;
+		thisptr->m_pObject->GetPosition(&vphysPos, nullptr);
+		uu.Spew("(%d) \"%s\", vphys pos: " V_FMT, ent->GetRefEHandle().GetEntryIndex(), ent->GetClassname(), V_UNP(vphysPos));
+	});
+	ORIG_CShadowController__do_simulation_controller(thisptr, edx, es, cores);
+});*/
+
+BASIC_OFFSET_HOOK(server,
+                  0x435a20,
+                  IMotionEvent::simresult_e,
+                  __fastcall,
+                  CGrabController__Simulate,
+                  (CGrabController * thisptr, int edx, IPhysicsMotionController* pController, CPhysicsObject* pObject, float deltaTime, Vector& linear, AngularImpulse& angular),
+                  {
+	                  URINATE_WITH_INFO(true, {
+		                  CBaseEntity* ent = (CBaseEntity*)pObject->GetGameData();
+		                  Vector vphysVel;
+		                  AngularImpulse vphysImpulse;
+		                  pObject->GetVelocity(&vphysVel, &vphysImpulse);
+		                  uu.Spew("(%d) \"%s\", vphys vel: " V_FMT ", vphys impulse: " V_FMT, ent->GetRefEHandle().GetEntryIndex(), ent->GetClassname(), V_UNP(vphysVel), V_UNP(vphysImpulse));
+	                  });
+	                  return ORIG_CGrabController__Simulate(thisptr, edx, pController, pObject, deltaTime, linear, angular);
+                  });
+
+BASIC_OFFSET_HOOK(vphysics, 0x3e370, void, __fastcall, IVP_Environment__simulate_time_step, (IVP_Environment * thisptr, int edx, float sub_psi_time), {
+	URINATE_WITH_INFO(true, { uu.Spew("ivp seed: %u", *spt_lh.IVP_RAND_SEED); });
+	ORIG_IVP_Environment__simulate_time_step(thisptr, edx, sub_psi_time);
+});
+
+// not triggered?
+BASIC_OFFSET_HOOK(vphysics, 0x331c0, void, __fastcall, IVP_Real_Object__set_new_m_object_f_core, (IVP_Real_Object * thisptr, int edx, IVP_U_Matrix* new_m_object_f_core), {
+	URINATE_SIMPLE(true);
+	ORIG_IVP_Real_Object__set_new_m_object_f_core(thisptr, edx, new_m_object_f_core);
+});
+
+// not triggered
+BASIC_OFFSET_HOOK(server, 0x43bba0, void, __fastcall, CWeaponPhysCannon__DetachObject, (CWeaponPhysCannon * thisptr, int edx, bool playSound, bool wasLaunched), {
+	URINATE_SIMPLE(true);
+	ORIG_CWeaponPhysCannon__DetachObject(thisptr, edx, playSound, wasLaunched);
+});
+
+BASIC_OFFSET_HOOK(server, 0x4389a0, void, __fastcall, CPlayerPickupController__Shutdown, (CPlayerPickupController * thisptr, int edx, bool bThrown), {
+	URINATE_SIMPLE(true);
+	ORIG_CPlayerPickupController__Shutdown(thisptr, edx, bThrown);
+});
+
+BASIC_OFFSET_HOOK(server,
+                  0x439ff0,
+                  void,
+                  __fastcall,
+                  CPlayerPickupController__Use,
+                  (CPlayerPickupController * thisptr, int edx, CBaseEntity* pActivator, CBaseEntity* pCaller, USE_TYPE useType, float value),
+                  {
+	                  URINATE_SIMPLE(true);
+	                  ORIG_CPlayerPickupController__Use(thisptr, edx, pActivator, pCaller, useType, value);
+                  });
+
+BASIC_OFFSET_HOOK(server, 0x23380, AngularImpulse, __cdecl, RandomAngularImpulse_MINE, (float minVal, float maxVal), {
+	AngularImpulse ret{};
+	{
+		URINATE_WITH_INFO(true, {
+			if (isPre)
+				uu.Spew("min: %f, max: %f", minVal, maxVal);
+			else
+				uu.Spew("min: %f, max: %f, impulse: " V_FMT, minVal, maxVal, V_UNP(ret));
+		});
+		ret = ORIG_RandomAngularImpulse_MINE(minVal, maxVal);
+	}
+	return ret;
+});
+
+BASIC_OFFSET_HOOK(vstdlib, 0x7ae0, int, __fastcall, CUniformRandomStream__RandomInt, (CUniformRandomStream * thisptr, int edx, int iLow, int iHigh), {
+	int ret = 0;
+	{
+		URINATE_WITH_INFO(true, {
+			if (isPre)
+				uu.Spew("low: %d, high: %d", iLow, iHigh);
+			else
+				uu.Spew("low: %d, high: %d, value: %d", iLow, iHigh, ret);
+		});
+		ret = ORIG_CUniformRandomStream__RandomInt(thisptr, edx, iLow, iHigh);
+	}
+	return ret;
+});
+
+BASIC_OFFSET_HOOK(vstdlib, 0x77d0, int, __fastcall, CUniformRandomStream__GenerateRandomNumber, (CUniformRandomStream * thisptr, int edx), {
+	/*int ret = 0;
+	{
+		URINATE_WITH_INFO(true, {
+			if (isPre)
+				uu.Spew("");
+			else
+				uu.Spew("value: %d", ret);
+		});
+		ret = ORIG_CUniformRandomStream__GenerateRandomNumber(thisptr, edx);
+	}
+	return ret;*/
+	int ret = ORIG_CUniformRandomStream__GenerateRandomNumber(thisptr, edx);
+	URINATE_WITH_INFO(false, { uu.Spew("value: %d", ret); });
+	return ret;
+});
+
+BASIC_OFFSET_HOOK(vstdlib, 0x7760, void, __fastcall, CUniformRandomStream__SetSeed, (CUniformRandomStream * thisptr, int edx, int iSeed), {
+	URINATE_WITH_INFO(false, { uu.Spew("%d", iSeed); });
+	ORIG_CUniformRandomStream__SetSeed(thisptr, edx, iSeed);
+});
+
+BASIC_OFFSET_HOOK(vstdlib, 0x76d0, void, __cdecl, RandomSeed_MINE, (int iSeed), {
+	URINATE_SIMPLE(true);
+	ORIG_RandomSeed_MINE(iSeed);
+});
+
+BASIC_OFFSET_HOOK(server, 0x234f50, int, __cdecl, SharedRandomInt_MINE, (const char* sharedname, int iMinVal, int iMaxVal, int additionalSeed), {
+	int ret = 0;
+	{
+		URINATE_WITH_INFO(true, {
+			if (isPre)
+				uu.Spew("shared name: %s, min: %d, max: %d, additional: %d", sharedname, iMinVal, iMaxVal, additionalSeed);
+			else
+				uu.Spew("shared name: %s, min: %d, max: %d, additional: %d, value: %d", sharedname, iMinVal, iMaxVal, additionalSeed, ret);
+		});
+		ret = ORIG_SharedRandomInt_MINE(sharedname, iMinVal, iMaxVal, additionalSeed);
+	}
+	return ret;
 });

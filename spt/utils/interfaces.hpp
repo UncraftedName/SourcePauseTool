@@ -14,6 +14,8 @@
 #include "icliententitylist.h"
 #include "engine\ivmodelinfo.h"
 #include "engine\IEngineTrace.h"
+#include "SoundEmitterSystem\isoundemittersystembase.h"
+#include "engine\iserverplugin.h"
 
 namespace interfaces
 {
@@ -34,4 +36,6 @@ namespace interfaces
 	extern IVModelInfo* modelInfo;
 	extern IBaseClientDLL* clientInterface;
 	extern IEngineTrace* engineTraceClient;
+	extern ISoundEmitterSystemBase* soundEmitterSystem;
+	extern IServerPluginHelpers* pluginHelpers;
 } // namespace interfaces

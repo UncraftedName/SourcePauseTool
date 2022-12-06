@@ -61,10 +61,12 @@ namespace interfaces
 	IInputSystem* inputSystem = nullptr;
 	ICvar* g_pCVar = nullptr;
 	void* gm = nullptr;
-	IClientEntityList* entList;
-	IVModelInfo* modelInfo;
-	IBaseClientDLL* clientInterface;
+	IClientEntityList* entList = nullptr;
+	IVModelInfo* modelInfo = nullptr;
+	IBaseClientDLL* clientInterface = nullptr;
 	IEngineTrace* engineTraceClient = nullptr;
+	ISoundEmitterSystemBase* soundEmitterSystem = nullptr;
+	IServerPluginHelpers* pluginHelpers = nullptr;
 } // namespace interfaces
 
 ConVar* _viewmodel_fov = nullptr;
@@ -175,6 +177,10 @@ bool CSourcePauseTool::Load(CreateInterfaceFn interfaceFactory, CreateInterfaceF
 	interfaces::modelInfo = (IVModelInfo*)interfaceFactory(VMODELINFO_SERVER_INTERFACE_VERSION, NULL);
 	interfaces::clientInterface = (IBaseClientDLL*)clientFactory(CLIENT_DLL_INTERFACE_VERSION, NULL);
 	interfaces::engineTraceClient = (IEngineTrace*)interfaceFactory(INTERFACEVERSION_ENGINETRACE_CLIENT, NULL);
+	interfaces::soundEmitterSystem =
+	    (ISoundEmitterSystemBase*)interfaceFactory(SOUNDEMITTERSYSTEM_INTERFACE_VERSION, NULL);
+	interfaces::pluginHelpers =
+	    (IServerPluginHelpers*)interfaceFactory(INTERFACEVERSION_ISERVERPLUGINHELPERS, NULL);
 
 	if (interfaces::gm)
 	{
@@ -316,6 +322,10 @@ bool CSourcePauseTool::Load(CreateInterfaceFn interfaceFactory, CreateInterfaceF
 
 void CSourcePauseTool::Unload(void)
 {
+	// we've already unloaded everything
+	if (!pluginLoaded)
+		return;
+
 	if (skipUnload)
 	{
 		// Preventing double load of plugin, do nothing on unload

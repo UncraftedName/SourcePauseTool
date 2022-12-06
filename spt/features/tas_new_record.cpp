@@ -8,6 +8,7 @@
 #include "tier1\CommandBuffer.h"
 #include "interfaces.hpp"
 #include "signals.hpp"
+#include "spt\spt-serverplugin.hpp"
 #include <charconv>
 #include <vector>
 
@@ -313,8 +314,70 @@ void TASRecordFeature::LoadFeature()
 
 void TASRecordFeature::UnloadFeature() {}
 
+// returns true if we just deferred our own plugin_unload
+bool DeferUnloadHack(void* cmdBuf)
+{
+	// some hacking for hooking/logging functions super high up the call stack
+
+	extern int g_hookCallDepth;
+
+	if (g_hookCallDepth == 0)
+		return false; // we don't need need to defer anything
+
+	struct CCommandBufferGuts
+	{
+		struct Command_t
+		{
+			int m_nTick;
+			int m_nFirstArgS;
+			int m_nBufferSize;
+		};
+
+		char m_pArgSBuffer[8192];
+		int m_nLastUsedArgSSize;
+		int m_nArgSBufferSize;
+		CUtlFixedLinkedList<Command_t> m_Commands;
+		int m_nCurrentTick;
+		int m_nLastTickToProcess;
+		int m_nWaitDelayTicks;
+		int m_hNextCommand;
+		int m_nMaxArgSBufferLength;
+		bool m_bIsProcessingCommands;
+		CCommand m_CurrentCommand;
+	};
+
+	auto guts = (CCommandBufferGuts*)cmdBuf;
+	if (guts->m_Commands.Count() == 0)
+		return false;
+
+	auto& command = guts->m_Commands[guts->m_Commands.Head()];
+	if (command.m_nTick > guts->m_nLastTickToProcess)
+		return false;
+	char* cmdStr = &guts->m_pArgSBuffer[command.m_nFirstArgS];
+	int pIdx;
+	if (_snscanf_s(cmdStr, command.m_nBufferSize, "plugin_unload %d", &pIdx) != 1)
+		return false;
+
+	// it's an unload command, is it for us?
+
+	auto& plugins = *(CUtlVector<void*>*)((uint32_t)interfaces::pluginHelpers + 4);
+	extern CSourcePauseTool g_SourcePauseTool;
+	extern bool g_deferPluginUnload;
+	if (*(IServerPluginCallbacks**)((uint32_t)plugins[pIdx] + 132) == &g_SourcePauseTool)
+	{
+		g_deferPluginUnload = true;
+		for (int i = guts->m_Commands.Head(); guts->m_Commands.IsValidIndex(i); i = guts->m_Commands.Next(i))
+			guts->m_Commands[i].m_nTick++;
+		return true;
+	}
+	return false;
+}
+
 HOOK_THISCALL(bool, TASRecordFeature, CCommandBuffer__DequeueNextCommand)
 {
+	if (DeferUnloadHack(thisptr))
+		return false;
+
 	bool rval = spt_tas_record.ORIG_CCommandBuffer__DequeueNextCommand(thisptr, edx);
 
 	if (spt_tas_record.recording && rval)

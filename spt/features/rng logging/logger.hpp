@@ -84,7 +84,7 @@ public: // public, but not meant to be used from elsewhere
 
 inline LoggerFeature spt_logger;
 
-typedef std::function<void(const class Urinator&)> UrinateFunc;
+typedef std::function<void(const class Urinator&, bool isPre)> UrinateFunc;
 
 class Urinator
 {
@@ -96,15 +96,12 @@ private:
 private:
 	void SpewInternal() const
 	{
-		if (urinateFunc)
-			urinateFunc(*this);
-		else
-			Spew("");
+		urinateFunc(*this, pre);
 	}
 
 public:
 	// the log bool param allows me to reuse the same macros if I don't want to log pre/post
-	Urinator(const char* funcName, bool logPrePost, UrinateFunc urinateFunc = nullptr) : pre(true), funcName(funcName), urinateFunc(urinateFunc), logPrePost(logPrePost)
+	Urinator(const char* funcName, bool logPrePost, UrinateFunc urinateFunc) : pre(true), funcName(funcName), urinateFunc(urinateFunc), logPrePost(logPrePost)
 	{
 		SpewInternal();
 	}
@@ -121,9 +118,9 @@ public:
 	void SpewWithVPhysInfo(const char* fmt, ...) const;
 };
 
-#define URINATE_SIMPLE(logPrePost) Urinator urinator(__FUNCTION__, logPrePost)
+#define URINATE_WITH_INFO(logPrePost, urinate_body) Urinator urinator(__FUNCTION__, logPrePost, [&](const Urinator& uu, bool isPre) { urinate_body })
 
-#define URINATE_WITH_INFO(logPrePost, urinate_body) Urinator urinator(__FUNCTION__, logPrePost, [&](const Urinator& uu) { urinate_body })
+#define URINATE_SIMPLE(logPrePost) URINATE_WITH_INFO(logPrePost, { uu.Spew(""); })
 
 #define URINATE_WITH_VPHYS(logPrePost) URINATE_WITH_INFO(logPrePost, { uu.SpewWithVPhysInfo(nullptr); })
 
