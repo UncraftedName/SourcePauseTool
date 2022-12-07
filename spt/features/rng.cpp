@@ -14,7 +14,7 @@ ConVar y_spt_set_ivp_seed_on_load(
     "y_spt_set_ivp_seed_on_load",
     "",
     FCVAR_CHEAT,
-    "Sets the ivp seed once during the next load, can prevent some physics rng when running a tas.\n");
+    "Sets the ivp seed once during the next load, can prevent some physics rng when running a tas.");
 
 RNGStuff spt_rng;
 
