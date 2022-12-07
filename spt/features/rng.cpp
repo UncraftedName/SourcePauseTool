@@ -16,6 +16,13 @@ ConVar y_spt_set_ivp_seed_on_load(
     FCVAR_CHEAT,
     "Sets the ivp seed once during the next load, can prevent some physics rng when running a tas.");
 
+ConVar y_spt_set_physics_hook_offset_on_load(
+    "y_spt_set_physics_hook_offset_on_load",
+    "",
+    FCVAR_CHEAT,
+    "Sets the offset of the physics hook timer once during the next load; this may contribute to the uniform random stream.\n"
+	"Valid values are integer multiples of the tickrate in [0,0.05f].");
+
 RNGStuff spt_rng;
 
 namespace patterns
@@ -37,6 +44,9 @@ namespace patterns
 	         "55 8B EC 83 EC 34 57 8B F9 8B 07 FF 90 ?? ?? ?? ?? A1 ?? ?? ?? ?? 83 78 30 00",
 	         "dmomm",
 	         "57 8B F9 8B 07 FF 90 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 83 79 ?? 00");
+	PATTERNS(PhysFrame,
+		"5135",
+		"55 8B EC 83 EC 0C 83 3D ?? ?? ?? ?? 00 53 56 57 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00");
 } // namespace patterns
 
 void RNGStuff::InitHooks()
@@ -47,6 +57,7 @@ void RNGStuff::InitHooks()
 		HOOK_FUNCTION(server, CBasePlayer__InitVCollision);
 		FIND_PATTERN(vphysics, ivp_srand);
 	}
+	FIND_PATTERN(server, PhysFrame);
 }
 
 int RNGStuff::GetPredictionRandomSeed(int commandOffset)
@@ -68,12 +79,24 @@ void RNGStuff::PreHook()
 		int idx = GetPatternIndex((void**)&ORIG_ivp_srand);
 		IVP_RAND_SEED = *(uint32_t**)((uintptr_t)ORIG_ivp_srand + offs[idx]);
 	}
+	if (ORIG_PhysFrame)
+	{
+		uint32_t offs[] = {24};
+		int idx = GetPatternIndex((void**)&ORIG_PhysFrame);
+		// PhysFrame() accesses m_bPaused which is the field immediately after m_impactSoundTime :)
+		g_PhysicsHook__m_impactSoundTime = *(float**)((uintptr_t)ORIG_PhysFrame + offs[idx]) - 1;
+	}
 }
 
 void RNGStuff::LoadFeature()
 {
-	if (ORIG_ivp_srand && ORIG_CBasePlayer__InitVCollision)
-		InitConcommandBase(y_spt_set_ivp_seed_on_load);
+	if (ORIG_CBasePlayer__InitVCollision)
+	{
+		if (ORIG_ivp_srand && spt_rng.IVP_RAND_SEED)
+			InitConcommandBase(y_spt_set_ivp_seed_on_load);
+		if (g_PhysicsHook__m_impactSoundTime)
+			InitConcommandBase(y_spt_set_physics_hook_offset_on_load);
+	}
 }
 
 void RNGStuff::UnloadFeature() {}
@@ -98,11 +121,26 @@ HOOK_THISCALL(void, RNGStuff, CBasePlayer__InitVCollision, const Vector& vecAbsO
 {
 	spt_rng.ORIG_CBasePlayer__InitVCollision(thisptr, edx, vecAbsOrigin, vecAbsVelocity);
 #endif
-	// set the seed before any vphys sim happens, don't use GetInt() since that's casted from a float
-	if (y_spt_set_ivp_seed_on_load.GetString()[0] != '\0')
+	if (spt_rng.ORIG_ivp_srand && spt_rng.IVP_RAND_SEED)
 	{
-		spt_rng.ORIG_ivp_srand((uint32_t)strtoul(y_spt_set_ivp_seed_on_load.GetString(), nullptr, 10));
-		y_spt_set_ivp_seed_on_load.SetValue("");
+		// set the seed before any vphys sim happens, don't use GetInt() since that's casted from a float
+		if (y_spt_set_ivp_seed_on_load.GetString()[0] != '\0')
+		{
+			spt_rng.ORIG_ivp_srand((uint32_t)strtoul(y_spt_set_ivp_seed_on_load.GetString(), nullptr, 10));
+			y_spt_set_ivp_seed_on_load.SetValue("");
+		}
+		DevWarning("spt: ivp seed is %u\n", *spt_rng.IVP_RAND_SEED);
 	}
-	DevWarning("spt: ivp seed is %u\n", *spt_rng.IVP_RAND_SEED);
+
+	if (spt_rng.g_PhysicsHook__m_impactSoundTime)
+	{
+		// same deal here, but we clamp the cvar value to [0,0.05f]
+		if (y_spt_set_physics_hook_offset_on_load.GetString()[0] != '\0')
+		{
+			*spt_rng.g_PhysicsHook__m_impactSoundTime =
+			    clamp(y_spt_set_physics_hook_offset_on_load.GetFloat(), 0, 0.05f);
+			y_spt_set_physics_hook_offset_on_load.SetValue("");
+		}
+		DevWarning("spt: physics hook timer offset is %f\n", *spt_rng.g_PhysicsHook__m_impactSoundTime);
+	}
 }

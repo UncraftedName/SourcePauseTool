@@ -24,8 +24,10 @@ private:
 #else
 	DECL_HOOK_THISCALL(void, CBasePlayer__InitVCollision, const Vector& vecAbsOrigin, const Vector& vecAbsVelocity);
 #endif
+	DECL_MEMBER_CDECL(void, PhysFrame, float deltaTime);
 
 	uint32_t* IVP_RAND_SEED = nullptr;
+	float* g_PhysicsHook__m_impactSoundTime = nullptr;
 };
 
 extern RNGStuff spt_rng;
