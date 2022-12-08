@@ -21,7 +21,7 @@ ConVar y_spt_set_physics_hook_offset_on_load(
     "",
     FCVAR_CHEAT,
     "Sets the offset of the physics hook timer once during the next load; this may contribute to the uniform random stream.\n"
-	"Valid values are integer multiples of the tickrate in [0,0.05f].");
+    "Valid values are integer multiples of the tickrate in [0,0.05f].");
 
 RNGStuff spt_rng;
 
@@ -45,13 +45,15 @@ namespace patterns
 	         "dmomm",
 	         "57 8B F9 8B 07 FF 90 ?? ?? ?? ?? 8B 0D ?? ?? ?? ?? 83 79 ?? 00");
 	PATTERNS(PhysFrame,
-		"5135",
-		"55 8B EC 83 EC 0C 83 3D ?? ?? ?? ?? 00 53 56 57 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00");
+	         "5135",
+	         "55 8B EC 83 EC 0C 83 3D ?? ?? ?? ?? 00 53 56 57 0F 84 ?? ?? ?? ?? 80 3D ?? ?? ?? ?? 00");
+	PATTERNS(CSoundEmitterSystemBase__EnsureAvailableSlotsForGender, "5135", "83 EC 14 55");
 } // namespace patterns
 
 void RNGStuff::InitHooks()
 {
 	HOOK_FUNCTION(server, SetPredictionRandomSeed);
+	HOOK_FUNCTION(SoundEmitterSystem, CSoundEmitterSystemBase__EnsureAvailableSlotsForGender);
 	if (!utils::DoesGameLookLikeBMSMod() && !utils::DoesGameLookLikeEstranged())
 	{
 		HOOK_FUNCTION(server, CBasePlayer__InitVCollision);
@@ -143,4 +145,24 @@ HOOK_THISCALL(void, RNGStuff, CBasePlayer__InitVCollision, const Vector& vecAbsO
 		}
 		DevWarning("spt: physics hook timer offset is %f\n", *spt_rng.g_PhysicsHook__m_impactSoundTime);
 	}
+
+	if (spt_rng.ORIG_CSoundEmitterSystemBase__EnsureAvailableSlotsForGender)
+		spt_rng.resetSounds.clear();
+}
+
+HOOK_THISCALL(void,
+              RNGStuff,
+              CSoundEmitterSystemBase__EnsureAvailableSlotsForGender,
+              SoundFile* pSoundnames,
+              int c,
+              gender_t gender)
+{
+	if (spt_rng.ORIG_CBasePlayer__InitVCollision)
+	{
+		// go through all sounds, and mark them as available if we haven't done so yet (since the start of the load)
+		for (int i = 0; i < c; i++)
+			if (spt_rng.resetSounds.insert(pSoundnames[i].symbol).second)
+				pSoundnames[i].available = true;
+	}
+	spt_rng.ORIG_CSoundEmitterSystemBase__EnsureAvailableSlotsForGender(thisptr, edx, pSoundnames, c, gender);
 }
