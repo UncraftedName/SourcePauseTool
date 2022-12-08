@@ -5,6 +5,7 @@
 #include "cbase.h"
 #include "physics_collisionevent.h"
 #include "CommandBuffer.h"
+#include "SoundEmitterSystem\isoundemittersystembase.h"
 
 #include "logger.hpp"
 #include "signals.hpp"
@@ -125,6 +126,18 @@ struct CPlayerPickupController
 {
 };
 
+class CUserCmd;
+
+// replicate from vphysics_sound.h
+struct soundlist_t
+{
+	struct impactsound_t
+	{
+	};
+
+	CUtlVector<impactsound_t> elements;
+};
+
 #define BASIC_OFFSET_HOOK(moduleName, offset, retType, callType, funcName, params, hookBody) \
 	static retType(callType* ORIG_##funcName) params; \
 	static retType callType funcName params \
@@ -175,6 +188,26 @@ BASIC_OFFSET_HOOK(engine, 0x48500, void, __cdecl, _Host_RunFrame_Server, (bool f
 	HighCallstackFuncScope _h{};
 	URINATE_SIMPLE(true);
 	ORIG__Host_RunFrame_Server(finalTick);
+});
+
+BASIC_OFFSET_HOOK(engine, 0x485e0, void, __cdecl, _Host_RunFrame_Client, (bool framefinished), {
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame_Client(framefinished);
+});
+
+BASIC_OFFSET_HOOK(engine, 0x46cd0, void, __cdecl, _Host_RunFrame_Input, (float accumulated_extra_samples, bool bFinalTick), {
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame_Input(accumulated_extra_samples, bFinalTick);
+});
+
+BASIC_OFFSET_HOOK(engine, 0x48740, void, __cdecl, _Host_RunFrame_Render, (), {
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame_Render();
+});
+
+BASIC_OFFSET_HOOK(engine, 0x46db0, void, __cdecl, _Host_RunFrame_Sound, (), {
+	URINATE_SIMPLE(true);
+	ORIG__Host_RunFrame_Sound();
 });
 
 // not logging, just getting ORIG ptr
@@ -261,21 +294,6 @@ BASIC_OFFSET_HOOK(server, 0x1c4e40, void, __fastcall, CBasePlayer__VPhysicsShado
 	ORIG_CBasePlayer__VPhysicsShadowUpdate(thisptr, edx, pPhysics);
 });
 
-BASIC_OFFSET_HOOK(engine, 0x485e0, void, __cdecl, _Host_RunFrame_Client, (bool framefinished), {
-	URINATE_SIMPLE(true);
-	ORIG__Host_RunFrame_Client(framefinished);
-});
-
-BASIC_OFFSET_HOOK(engine, 0x46cd0, void, __cdecl, _Host_RunFrame_Input, (float accumulated_extra_samples, bool bFinalTick), {
-	URINATE_SIMPLE(true);
-	ORIG__Host_RunFrame_Input(accumulated_extra_samples, bFinalTick);
-});
-
-BASIC_OFFSET_HOOK(engine, 0x48740, void, __cdecl, _Host_RunFrame_Render, (), {
-	URINATE_SIMPLE(true);
-	ORIG__Host_RunFrame_Render();
-});
-
 BASIC_OFFSET_HOOK(vphysics, 0x17b90, void, __fastcall, CPhysicsObject__AddVelocity, (CPhysicsObject * thisptr, int edx, Vector* vec, AngularImpulse* vecAng), {
 	Vector inVecCopy = *vec;
 	URINATE_WITH_INFO(true, {
@@ -292,6 +310,7 @@ BASIC_OFFSET_HOOK(vphysics, 0x129b0, void, __fastcall, CPhysicsEnvironment__Simu
 	ORIG_CPhysicsEnvironment__Simulate(thisptr, edx, deltatime);
 });
 
+// too much info for now, reenable later
 BASIC_OFFSET_HOOK(server, 0xea710, void, __fastcall, CBaseEntity__VPhysicsUpdate, (CBaseEntity * thisptr, int edx, CPhysicsObject* pPhysics), {
 	URINATE_WITH_INFO(true, {
 		Vector vphysPos;
@@ -383,7 +402,13 @@ BASIC_OFFSET_HOOK(server, 0x23380, AngularImpulse, __cdecl, RandomAngularImpulse
 });
 
 BASIC_OFFSET_HOOK(vstdlib, 0x7ae0, int, __fastcall, CUniformRandomStream__RandomInt, (CUniformRandomStream * thisptr, int edx, int iLow, int iHigh), {
-	int ret = 0;
+	int ret = -666;
+	if (iLow == iHigh)
+	{
+		ret = ORIG_CUniformRandomStream__RandomInt(thisptr, edx, iLow, iHigh);
+		URINATE_WITH_INFO(false, { uu.Spew("low: %d, high: %d, value: %d", iLow, iHigh, ret); });
+	}
+	else
 	{
 		URINATE_WITH_INFO(true, {
 			if (isPre)
@@ -392,6 +417,20 @@ BASIC_OFFSET_HOOK(vstdlib, 0x7ae0, int, __fastcall, CUniformRandomStream__Random
 				uu.Spew("low: %d, high: %d, value: %d", iLow, iHigh, ret);
 		});
 		ret = ORIG_CUniformRandomStream__RandomInt(thisptr, edx, iLow, iHigh);
+	}
+	return ret;
+});
+
+BASIC_OFFSET_HOOK(vstdlib, 0x7a30, float, __fastcall, CUniformRandomStream__RandomFloat, (CUniformRandomStream * thisptr, int edx, float flLow, float flHigh), {
+	float ret = 0;
+	{
+		URINATE_WITH_INFO(true, {
+			if (isPre)
+				uu.Spew("low: %f, high: %f", flLow, flHigh);
+			else
+				uu.Spew("low: %f, high: %f, value: %f", flLow, flHigh, ret);
+		});
+		ret = ORIG_CUniformRandomStream__RandomFloat(thisptr, edx, flLow, flHigh);
 	}
 	return ret;
 });
@@ -428,11 +467,77 @@ BASIC_OFFSET_HOOK(server, 0x234f50, int, __cdecl, SharedRandomInt_MINE, (const c
 	{
 		URINATE_WITH_INFO(true, {
 			if (isPre)
-				uu.Spew("shared name: %s, min: %d, max: %d, additional: %d", sharedname, iMinVal, iMaxVal, additionalSeed);
+				uu.Spew("shared name: \"%s\", min: %d, max: %d, additional: %d", sharedname, iMinVal, iMaxVal, additionalSeed);
 			else
-				uu.Spew("shared name: %s, min: %d, max: %d, additional: %d, value: %d", sharedname, iMinVal, iMaxVal, additionalSeed, ret);
+				uu.Spew("shared name: \"%s\", min: %d, max: %d, additional: %d, value: %d", sharedname, iMinVal, iMaxVal, additionalSeed, ret);
 		});
 		ret = ORIG_SharedRandomInt_MINE(sharedname, iMinVal, iMaxVal, additionalSeed);
 	}
 	return ret;
 });
+
+BASIC_OFFSET_HOOK(SoundEmitterSystem,
+                  0x1e40,
+                  bool,
+                  __fastcall,
+                  CSoundEmitterSystemBase__GetParametersForSound,
+                  (ISoundEmitterSystemBase * thisptr, int edx, const char* soundname, CSoundParameters& params, gender_t gender, bool isbeingemitted),
+                  {
+	                  URINATE_WITH_INFO(true, { uu.Spew("sound: \"%s\", gender: %d", soundname, gender); });
+	                  return ORIG_CSoundEmitterSystemBase__GetParametersForSound(thisptr, edx, soundname, params, gender, isbeingemitted);
+                  });
+
+BASIC_OFFSET_HOOK(server, 0xf6100, void, __fastcall, CBasePlayer__PlayerStepSound, (CBasePlayer * thisptr, int edx, Vector& vecOrigin, surfacedata_t* psurface, float fvol, bool force), {
+	URINATE_SIMPLE(true);
+	ORIG_CBasePlayer__PlayerStepSound(thisptr, edx, vecOrigin, psurface, fvol, force);
+});
+
+BASIC_OFFSET_HOOK(server, 0x419c60, bool, __fastcall, CPortal_Player__UseFoundEntity, (CBasePlayer * thisptr, int edx, CBaseEntity* pUseEntity), {
+	URINATE_SIMPLE(true);
+	return ORIG_CPortal_Player__UseFoundEntity(thisptr, edx, pUseEntity);
+});
+
+BASIC_OFFSET_HOOK(server, 0x193400, void, __cdecl, PlayImpactSounds_MINE, (soundlist_t & list), {
+	URINATE_WITH_INFO(true, { uu.Spew("num sounds: %d", list.elements.Count()); });
+	ORIG_PlayImpactSounds_MINE(list);
+});
+
+BASIC_OFFSET_HOOK(vstdlib, 0x7ba0, float, __fastcall, CGaussianRandomStream__RandomFloat, (CGaussianRandomStream * thisptr, int edx, float flMean, float flStdDev), {
+	float ret = 0;
+	{
+		URINATE_WITH_INFO(true, {
+			if (isPre)
+				uu.Spew("mean: %f, stddev: %f", flMean, flStdDev);
+			else
+				uu.Spew("mean: %f, stddev: %f, value: %f", flMean, flStdDev, ret);
+		});
+		ret = ORIG_CGaussianRandomStream__RandomFloat(thisptr, edx, flMean, flStdDev);
+	}
+	return ret;
+});
+
+BASIC_OFFSET_HOOK(server, 0x2dc9f0, void, __fastcall, CHL2_Player__UpdateWeaponPosture, (CBasePlayer * thisptr, int edx), {
+	URINATE_SIMPLE(true);
+	ORIG_CHL2_Player__UpdateWeaponPosture(thisptr, edx);
+});
+
+BASIC_OFFSET_HOOK(server, 0x1bd780, void, __fastcall, CBasePlayer__PlayerRunCommand, (CBasePlayer * thisptr, int edx, CUserCmd* ucmd, void* moveHelper), {
+	URINATE_SIMPLE(true);
+	ORIG_CBasePlayer__PlayerRunCommand(thisptr, edx, ucmd, moveHelper);
+});
+
+BASIC_OFFSET_HOOK(server, 0x39290, void, __fastcall, CAI_BaseNPC__NPCThink, (CBaseEntity * thisptr, int edx), {
+	URINATE_WITH_INFO(true, { uu.Spew("(%d) \"%s\"", thisptr->GetRefEHandle().GetEntryIndex(), thisptr->GetClassname()); });
+	ORIG_CAI_BaseNPC__NPCThink(thisptr, edx);
+});
+
+BASIC_OFFSET_HOOK(SoundEmitterSystem,
+                  0x4790,
+                  int,
+                  __fastcall,
+                  CSoundEmitterSystemBase__FindBestSoundForGender,
+                  (ISoundEmitterSystemBase* thisptr, int edx, SoundFile* pSoundnames, int c, gender_t gender),
+                  {
+	                  URINATE_SIMPLE(true);
+	                  return ORIG_CSoundEmitterSystemBase__FindBestSoundForGender(thisptr, edx, pSoundnames, c, gender);
+                  });

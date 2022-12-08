@@ -29,7 +29,7 @@ CON_COMMAND_F(un_begin_rng_tracking_on_load, "Starts tracking rng stuff as soon 
 
 CON_COMMAND_F(un_end_rng_tracking, "Finishes logging stuff to track rng", FCVAR_DONTRECORD)
 {
-	URINATE_SIMPLE(false);
+	URINATE_WITH_INFO(false, { uu.Spew("We're done here"); });
 	if (spt_logger.rngLogState == RNG_LOG_STATE_NONE)
 		Msg("spt-rng: we've already stopped logging\n");
 	else
