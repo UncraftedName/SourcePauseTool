@@ -13,6 +13,11 @@ ConVar y_spt_draw_frustum("y_spt_draw_frustum",
                           FCVAR_CHEAT | FCVAR_DONTRECORD,
                           "Draw what the frustum would look like for a player");
 
+ConVar y_spt_draw_frustum_far_plane("y_spt_draw_frustum_far_plane",
+                                    "16000",
+                                    FCVAR_CHEAT | FCVAR_DONTRECORD,
+                                    "<3 Hi Imanex");
+
 class FrustumFeature : public FeatureWrapper<FrustumFeature>
 {
 	void LoadFeature() override
@@ -20,6 +25,7 @@ class FrustumFeature : public FeatureWrapper<FrustumFeature>
 		if (!spt_meshRenderer.signal.Works)
 			return;
 		InitConcommandBase(y_spt_draw_frustum);
+		InitConcommandBase(y_spt_draw_frustum_far_plane);
 		spt_meshRenderer.signal.Connect(this, &FrustumFeature::OnMeshRenderSignal);
 	}
 
@@ -31,17 +37,41 @@ class FrustumFeature : public FeatureWrapper<FrustumFeature>
 		if (!spt_entprops.GetPlayer(false))
 			return;
 
+		DrawFrustum(mr, true, MeshColor::Outline({255, 255, 0, 10}));
+		DrawFrustum(mr, false, MeshColor::Face({255, 255, 0, 10}));
+	}
+
+	void DrawFrustum(MeshRendererDelegate& mr, bool reverse, MeshColor mc)
+	{
 		mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
-		                [](MeshBuilderDelegate& mb)
+		                [mc](MeshBuilderDelegate& mb)
 		                {
 			                VPlane planes[6];
 			                memcpy(planes, spt_overlay.viewRender->GetFrustum(), sizeof(VPlane) * 6);
+			                float maxDist = -1;
+			                int maxDistIdx = -1;
 			                for (int i = 0; i < 6; i++)
+			                {
 				                planes[i] = planes[i].Flip();
+				                float tmp = abs(planes[i].DistTo(spt_overlay.mainView->origin));
+				                if (tmp > maxDist)
+				                {
+					                maxDist = tmp;
+					                maxDistIdx = i;
+				                }
+			                }
+			                planes[maxDistIdx].m_Dist +=
+			                    planes[maxDistIdx].DistTo(spt_overlay.mainView->origin)
+			                    + y_spt_draw_frustum_far_plane.GetFloat();
+
 			                CPolyhedron* poly = GeneratePolyhedronFromPlanes((float*)planes, 6, 0.1f, true);
-			                mb.AddCPolyhedron(poly, MeshColor::Outline({255, 255, 0, 10}));
-			                poly->Release();
-		                }),
+			                if (poly)
+			                {
+				                mb.AddCPolyhedron(poly, mc);
+				                poly->Release();
+			                }
+		                },
+		                {ZTEST_FACES | ZTEST_LINES, reverse ? CullType::Reverse : CullType::Default}),
 		            [](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
 		            {
 			            AngleIMatrix(spt_overlay.mainView->angles,
