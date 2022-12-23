@@ -1192,9 +1192,7 @@
     <ClCompile Include="spt\features\visualizations\renderer\source files\materials_manager.cpp" />
     <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_builder.cpp" />
     <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_construction.cpp" />
-    <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_data.cpp" />
     <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_renderer.cpp" />
-    <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_unit.cpp" />
     <ClCompile Include="spt\features\visualizations\renderer\source files\static_mesh.cpp" />
     <ClCompile Include="spt\features\visualizations\sg-collide-vis.cpp" />
     <ClCompile Include="spt\features\visualizations\vag_trace.cpp" />

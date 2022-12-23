@@ -62,6 +62,8 @@
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
+#include <vector>
+
 #include "mathlib\vector.h"
 #include "materialsystem\imaterial.h"
 
@@ -79,10 +81,16 @@
 #define VPROF_BUDGETGROUP_MESHBUILDER _T("Mesh_Builder")
 #define VPROF_BUDGETGROUP_MESH_RENDERER _T("Mesh_Renderer")
 
-#include <vector>
+#include "spt\utils\interfaces.hpp"
 
+#define MAX_MESH_VERTS 32767
+#define MAX_MESH_INDICES 32767
+
+// TODO COMMENTS
 inline int g_meshRenderFrameNum = 0;
 inline bool g_inMeshRenderSignal = false;
+
+typedef unsigned short VertIndex;
 
 // a single vertex - may have position, color, uv coordinates, normal, etc
 struct VertexData
@@ -91,90 +99,246 @@ struct VertexData
 	color32 col;
 };
 
-// list of verts + indices
-struct MeshComponentData
+// this allows arrays shared by all dynamic meshes; behaves kind of a stack - you can only edit the last slice
+template<typename T>
+struct VectorSlice
 {
-	std::vector<VertexData> verts;
-	std::vector<unsigned short> indices;
+	std::vector<T>* vec;
+	size_t off;
+	size_t len;
 
-	MeshComponentData() = default;
-	MeshComponentData(MeshComponentData&) = delete;
-	MeshComponentData(MeshComponentData&&) = default;
+	// TODO TRY SETTING TO DEFAULT
+	VectorSlice() : vec(nullptr), off(0), len(0){};
 
-	bool Empty() const;
-	void Clear();
+	VectorSlice(VectorSlice&) = delete;
 
-	void Reserve(size_t numExtraVerts, size_t numExtraIndices);
-	IMesh* CreateIMesh(IMaterial* material, const CreateMeshParams& params, bool faces, bool dynamic) const;
+	VectorSlice(VectorSlice&& other) : vec(other.vec), off(other.off), len(other.len)
+	{
+		other.vec = nullptr;
+		other.off = other.len = 0;
+	}
+
+	VectorSlice(std::vector<T>& vec) : vec(&vec), off(vec.size()), len(0) {}
+
+	VectorSlice<T>& operator=(VectorSlice<T>&& other) = default;
+
+	void pop()
+	{
+		if (vec)
+			vec->resize(vec->size() - len);
+		vec = nullptr;
+		off = len = 0;
+	}
+
+	inline std::vector<T>::iterator begin() const
+	{
+		return vec->begin() + off;
+	}
+
+	inline std::vector<T>::iterator end() const
+	{
+		return vec->begin() + off + len;
+	}
+
+	template<class _It>
+	inline void add_range(_It first, _It last)
+	{
+		size_t dist = std::distance(first, last);
+		reserve_extra(dist);
+		vec->insert(vec->end(), first, last);
+		len += dist;
+	}
+
+	inline void reserve_extra(size_t n)
+	{
+		if (vec->capacity() < off + len + n)
+			vec->reserve(SmallestPowerOfTwoGreaterOrEqual(off + len + n));
+	}
+
+	inline void push_back(const T& elem)
+	{
+		Assert(off + len == vec->size());
+		vec->push_back(elem);
+		len++;
+	}
+
+	template<class... Params>
+	inline void emplace_back(Params&&... params)
+	{
+		Assert(off + len == vec->size());
+		vec->emplace_back(std::forward<Params>(params)...);
+		len++;
+	}
+
+	inline T& operator[](size_t i) const
+	{
+		return vec->at(off + i);
+	}
+
+	inline bool empty() const
+	{
+		return len == 0;
+	}
+
+	inline size_t size() const
+	{
+		return len;
+	}
+
+	~VectorSlice()
+	{
+		pop();
+	}
 };
 
-// two components - faces/lines
-struct MeshData
+enum class MeshPrimitiveType
 {
-	MeshComponentData faceData, lineData;
+	Lines,
+	Triangles,
 
-	MeshData() = default;
-	MeshData(MeshData&) = delete;
-	MeshData(MeshData&&) = default;
-
-	bool Empty() const;
-	void Clear();
+	Count
 };
 
-typedef int DynamicComponentToken;
+struct MeshVertData
+{
+	VectorSlice<VertexData> verts;
+	VectorSlice<VertIndex> indices;
+	MeshPrimitiveType type;
+	IMaterial* material;
 
-// two IMeshWrappers - faces/lines
+	MeshVertData() = default;
+
+	MeshVertData(MeshVertData&& other)
+	    : verts(std::move(other.verts))
+	    , indices(std::move(other.indices))
+	    , type(other.type)
+	    , material(other.material)
+	{
+		other.material = nullptr;
+	}
+
+	MeshVertData(std::vector<VertexData>& vertDataVec,
+	             std::vector<VertIndex>& vertIndexVec,
+	             MeshPrimitiveType type,
+	             IMaterial* material)
+	    : verts(vertDataVec), indices(vertIndexVec), type(type), material(material)
+	{
+		material->IncrementReferenceCount();
+	}
+
+	~MeshVertData()
+	{
+		if (material)
+			material->DecrementReferenceCount();
+	}
+};
+
+struct IMeshWrapper
+{
+	IMesh* iMesh;
+	IMaterial* material;
+};
+
 struct MeshUnit
 {
-	// either an IMesh*, or contains enough data to create one
-	struct IMeshWrapper
+	union
 	{
-		union
+		struct
 		{
-			IMesh* iMesh;
-			DynamicComponentToken dynamicToken;
-		};
-		const bool opaque, faces, dynamic, zTest;
-
-		IMeshWrapper(const MeshUnit& myWrapper, int mDataIdx, bool opaque, bool faces, bool dynamic);
-		IMeshWrapper(IMeshWrapper&) = delete;
-		IMeshWrapper(IMeshWrapper&&);
-		~IMeshWrapper();
-		bool Empty() const;
-		IMesh* GetIMesh(const MeshUnit& outer, IMaterial* material) const;
+			IMeshWrapper* meshesArr;
+			size_t nMeshes;
+		} staticData; // TODO simplify?
+		VectorSlice<MeshVertData> dynamicData;
 	};
-
 	const MeshPositionInfo posInfo;
-	const CreateMeshParams params; // MUST BE BEFORE MESH COMPONENTS FOR CORRECT INITIALIZATION ORDER
-	IMeshWrapper faceComponent, lineComponent;
+	const bool dynamic;
 
-	MeshUnit(int mDataIdx,
-	         const MeshPositionInfo& posInfo,
-	         const CreateMeshParams& params,
-	         bool facesOpaque,
-	         bool linesOpaque,
-	         bool dynamic);
-	MeshUnit(MeshUnit&) = delete;
-	MeshUnit(MeshUnit&&) = default;
-	~MeshUnit() = default;
+	MeshUnit() = default;
 
-	bool Empty();
+	MeshUnit(MeshUnit&& other) : posInfo(other.posInfo), dynamic(other.dynamic)
+	{
+		if (dynamic)
+		{
+			dynamicData = std::move(other.dynamicData);
+		}
+		else
+		{
+			staticData.meshesArr = other.staticData.meshesArr;
+			staticData.nMeshes = other.staticData.nMeshes;
+			other.staticData.meshesArr = nullptr;
+		}
+	}
+
+	MeshUnit(IMeshWrapper* meshesArr, size_t nMeshes, const MeshPositionInfo& posInfo)
+	    : posInfo(posInfo), dynamic(false)
+	{
+		staticData.meshesArr = meshesArr;
+		staticData.nMeshes = nMeshes;
+	}
+
+	MeshUnit(VectorSlice<MeshVertData>& dynamicData, const MeshPositionInfo& posInfo)
+	    : dynamicData(std::move(dynamicData)), posInfo(posInfo), dynamic(true)
+	{
+	}
+
+	~MeshUnit()
+	{
+		if (dynamic)
+		{
+			if (!dynamicData.vec)
+				return;
+			for (auto& vData : dynamicData)
+				vData.material->DecrementReferenceCount();
+		}
+		else
+		{
+			if (!staticData.meshesArr)
+				return;
+			for (size_t i = 0; i < staticData.nMeshes; i++)
+			{
+				staticData.meshesArr[i].material->DecrementReferenceCount();
+				CMatRenderContextPtr(interfaces::materialSystem)
+				    ->DestroyStaticMesh(staticData.meshesArr[i].iMesh);
+			}
+			delete[] staticData.meshesArr;
+		}
+	}
 };
 
+// TODO add functionality to convert to collides????? :eyes:
 struct MeshBuilderInternal
 {
-	MeshData* curMeshData = nullptr;
-	MeshData reusedStaticMeshData;
-	std::vector<MeshData> dynamicMeshData;
-	size_t numDynamicMeshes = 0;
+	// you can't swap the vectors cuz they're used in slices
+	std::list<std::vector<VertexData>> sharedVertArrays;
+	std::list<std::vector<VertIndex>> sharedIndexArrays;
+	std::vector<MeshVertData> sharedVertDataArrays;
+
+	VectorSlice<MeshVertData> curMeshVertData;
 
 	std::vector<MeshUnit> dynamicMeshUnits;
 
+	MeshVertData& FindOrAddVData(MeshPrimitiveType type, IMaterial* material);
+
+	using MeshComponentIterator = const MeshVertData*;
+
+	struct
+	{
+		MeshComponentIterator from, to; // [from,to)
+		bool dynamic;
+	} creationStatus;
+
+	IMeshWrapper CreateIMeshFromVertData(MeshComponentIterator from,
+	                                     MeshComponentIterator to,
+	                                     size_t totalVerts,
+	                                     size_t totalIndices,
+	                                     bool dynamic);
+	IMeshWrapper CreateIMeshFromVertData(const MeshVertData& vData, bool dynamic);
+	void BeginDynamicMeshCreation(MeshComponentIterator from, MeshComponentIterator to, bool dynamic);
+	IMeshWrapper GetNextIMeshWrapper();
+
 	void ClearOldBuffers();
-	void BeginNewMesh(bool dynamic);
-	MeshUnit* FinalizeCurMesh(const CreateMeshParams& params);
-	const MeshComponentData* GetMeshData(DynamicComponentToken token, bool faces) const;
-	const MeshUnit& GetMeshUnit(DynamicMesh dynMesh) const;
+	MeshPositionInfo _CalcPosInfoForCurrentMesh();
+	const MeshUnit& GetDynamicMeshFromToken(DynamicMesh token) const;
 };
 
 inline MeshBuilderInternal g_meshBuilderInternal;

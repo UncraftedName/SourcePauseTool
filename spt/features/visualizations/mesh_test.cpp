@@ -138,20 +138,15 @@ BEGIN_TEST_CASE("AddCircle()", Vector(1000, 0, 0))
 	Vector dir(4, 2, 13);
 	QAngle ang;
 	VectorAngles(dir, ang);
-	for (int i = 10; i >= 0; i--) // draw backwards and check for sorting
+	for (int i = 10; i >= 0; i--)
 	{
-		RENDER_DYNAMIC(
-		    mr,
-		    {
-			    mb.AddCircle(testPos + Vector(-20, 0, -30) + dir * i,
-			                 ang,
-			                 20 + 8 * i,
-			                 3 * (i + 1),
-			                 MeshColor::Outline({(byte)(250 - i * 20), 200, (byte)(i * 20), 50}));
-		    },
-		    ZTEST_FACES | ZTEST_LINES,
-		    CullType::Default,
-		    TranslucentSortType::AABB_Center); // test that this works with y_spt_draw_mesh_debug
+		RENDER_DYNAMIC(mr, {
+			mb.AddCircle(testPos + Vector(-20, 0, -30) + dir * i,
+			             ang,
+			             20 + 8 * i,
+			             3 * (i + 1),
+			             MeshColor::Outline({(byte)(250 - i * 20), 200, (byte)(i * 20), 50}));
+		});
 	}
 	// jwst tribute
 	RENDER_DYNAMIC(mr, {
@@ -189,8 +184,7 @@ BEGIN_TEST_CASE("AddTris()", Vector(1200, 0, 0))
 	Vector vNew[numVerts];
 	for (int i = 0; i < numVerts; i++)
 		vNew[i] = v[i] + testPos;
-	RENDER_DYNAMIC(mr, mb.AddTris(vNew, numVerts / 3, MeshColor::Outline({50, 150, 200, 30}));
-	               , ZTEST_FACES | ZTEST_LINES, CullType::Reverse);
+	RENDER_DYNAMIC(mr, mb.AddTris(vNew, numVerts / 3, MeshColor::Outline({50, 150, 200, 30})););
 }
 END_TEST_CASE()
 
@@ -268,7 +262,9 @@ BEGIN_TEST_CASE("AddQuad()", Vector(1400, 0, 0))
 				               tileCorner + Vector(0, tileSize, 0),
 				               tileCorner + Vector(tileSize, tileSize, 0),
 				               tileCorner + Vector(tileSize, 0, 0),
-				               {cLerp, {150, 150, 150, 255}});
+				               {cLerp, {150, 150, 150, 255}},
+				               true,
+				               WD_BOTH); // test winding direction
 			    }
 		    }
 		    // outline board
@@ -277,8 +273,7 @@ BEGIN_TEST_CASE("AddQuad()", Vector(1400, 0, 0))
 		               boardCorner + Vector(tileSize * size, tileSize * size, 0),
 		               boardCorner + Vector(tileSize * size, 0, 0),
 		               MeshColor::Wire({50, 50, 50, 255}));
-	    },
-	    {ZTEST_FACES | ZTEST_LINES, CullType::ShowBoth})); // test culling
+	    }));
 }
 END_TEST_CASE()
 
@@ -487,13 +482,13 @@ BEGIN_TEST_CASE("Timmy", Vector(0, -300, 0))
 		            SetScaleMatrix(scale, infoOut.mat);
 		            AngleMatrix(ang, testPos, tmpMat);
 		            MatrixMultiply(tmpMat, infoOut.mat, infoOut.mat);
-		            infoOut.faces.colorModulate.a = (sin(testFeature.time) + 1) / 2.f * 255;
+		            infoOut.colorModulate.a = (sin(testFeature.time) + 1) / 2.f * 255;
 		            // timmy will be more yellow through portals
-		            if (infoIn.portalRenderDepth.value_or(0) >= 1)
-			            infoOut.faces.colorModulate.b = 0;
+		            if (infoIn.portalRenderDepth >= 1)
+			            infoOut.colorModulate.b = 0;
 		            // timmy will be more green on the overlay
 		            if (infoIn.inOverlayView)
-			            infoOut.faces.colorModulate.r = 0;
+			            infoOut.colorModulate.r = 0;
 	            });
 }
 END_TEST_CASE()
@@ -659,21 +654,16 @@ BEGIN_TEST_CASE("AddEllipse()", Vector(800, -300, 0))
 	QAngle ang;
 	VectorAngles(dir, ang);
 	float radius = 100.0f;
-	for (float i = 8.0; i >= 2.0f; i -= 0.5f) // draw backwards and check for sorting
+	for (float i = 8.0; i >= 2.0f; i -= 0.5f)
 	{
-		RENDER_DYNAMIC(
-		    mr,
-		    {
-			    mb.AddEllipse(testPos + Vector(-20, 0, -30) + dir * i,
-			                  ang,
-			                  radius / i,
-			                  radius / (10 - i),
-			                  32,
-			                  MeshColor::Outline({(byte)(250 - i * 40), 200, (byte)(i * 40), 50}));
-		    },
-		    ZTEST_FACES | ZTEST_LINES,
-		    CullType::Default,
-		    TranslucentSortType::AABB_Center); // test that this works with y_spt_draw_mesh_debug
+		RENDER_DYNAMIC(mr, {
+			mb.AddEllipse(testPos + Vector(-20, 0, -30) + dir * i,
+			              ang,
+			              radius / i,
+			              radius / (10 - i),
+			              32,
+			              MeshColor::Outline({(byte)(250 - i * 40), 200, (byte)(i * 40), 50}));
+		});
 	}
 }
 END_TEST_CASE()

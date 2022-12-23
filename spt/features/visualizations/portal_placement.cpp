@@ -116,14 +116,19 @@ static void DrawPortal(MeshBuilderDelegate& mb, const PortalPlacement::Placement
 		portalColor = col;
 	}
 
-	MeshColor facePortalColor = MeshColor::Face(portalColor);
-	mb.AddEllipse(info.finalPos, info.finalAngles, PORTAL_HALF_WIDTH, PORTAL_HALF_HEIGHT, 32, facePortalColor);
+	mb.AddEllipse(info.finalPos,
+	              info.finalAngles,
+	              PORTAL_HALF_WIDTH,
+	              PORTAL_HALF_HEIGHT,
+	              32,
+	              MeshColor::Face(portalColor),
+	              false);
 
 	if (y_spt_draw_pp_bbox.GetBool())
 	{
 		const Vector portalMaxs(1, PORTAL_HALF_WIDTH, PORTAL_HALF_HEIGHT);
 		MeshColor outlinePortalColor(noDrawColor, portalColor);
-		mb.AddBox(info.finalPos, -portalMaxs, portalMaxs, info.finalAngles, outlinePortalColor);
+		mb.AddBox(info.finalPos, -portalMaxs, portalMaxs, info.finalAngles, outlinePortalColor, false);
 	}
 }
 
@@ -153,8 +158,7 @@ void PortalPlacement::OnMeshRenderSignal(MeshRendererDelegate& mr)
 
 		    if (y_spt_draw_pp_blue.GetBool())
 			    DrawPortal(mb, p1, blueColor);
-	    },
-	    {ZTEST_NONE}));
+	    }));
 }
 
 bool PortalPlacement::ShouldLoadFeature()

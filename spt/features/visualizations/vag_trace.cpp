@@ -182,13 +182,21 @@ void VagTrace::OnMeshRenderSignal(MeshRendererDelegate& mr)
 		static StaticMesh targetMesh;
 		if (!targetMesh.Valid())
 		{
-			targetMesh = MB_STATIC(
-			    {
-				    const MeshColor mc = MeshColor::Outline({255, 255, 255, 40});
-				    mb.AddBox({0, 0, 0}, {-15, -15, -15}, {15, 15, 15}, {0, 0, 0}, mc);
-			    },
-			    ZTEST_LINES,
-			    CullType::ShowBoth);
+			targetMesh = MB_STATIC({
+				color32 c(255, 255, 255, 40);
+				mb.AddBox({0, 0, 0},
+				          {-15, -15, -15},
+				          {15, 15, 15},
+				          {0, 0, 0},
+				          MeshColor::Face(c),
+				          false);
+				mb.AddBox({0, 0, 0},
+				          {-15, -15, -15},
+				          {15, 15, 15},
+				          {0, 0, 0},
+				          MeshColor::Wire(c),
+				          true);
+			});
 		}
 		mr.DrawMesh(targetMesh,
 		            [this](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
@@ -523,18 +531,14 @@ void VagTrace::DrawTrace(MeshRendererDelegate& mr)
 	mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
 	                [&](MeshBuilderDelegate& mb)
 	                {
-		                mb.AddLine(cache.exitPortal.pos, cache.entryPortal.pos, {255, 0, 255, 255});
-		                mb.AddLine(cache.entryPortal.pos, cache.vagDestination, {175, 0, 175, 255});
-		                mb.AddSphere(cache.vagDestination, 1, 1, MeshColor::Face({255, 255, 255, 255}));
-	                },
-	                {ZTEST_NONE}),
+		                mb.AddLine(cache.exitPortal.pos, cache.entryPortal.pos, {255, 0, 255, 255}, false);
+		                mb.AddLine(cache.entryPortal.pos, cache.vagDestination, {175, 0, 175, 255}, false);
+		                mb.AddSphere(cache.vagDestination, 1, 1, MeshColor::Face({255, 255, 255, 255}), false);
+	                }),
 	            [](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
 	            {
-		            if (infoIn.portalRenderDepth.value_or(0) > 0)
-		            {
-			            infoOut.faces.skipRender = true;
-			            infoOut.lines.skipRender = true;
-		            }
+		            if (infoIn.portalRenderDepth > 0)
+			            infoOut.skipRender = true;
 	            });
 
 	static StaticMesh arrowMesh, circleMesh;
@@ -556,13 +560,12 @@ void VagTrace::DrawTrace(MeshRendererDelegate& mr)
 		    [=](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
 		    {
 			    // don't show through portals
-			    if (infoIn.portalRenderDepth.value_or(0) > 0)
+			    if (infoIn.portalRenderDepth > 0)
 			    {
-				    infoOut.faces.skipRender = true;
-				    infoOut.lines.skipRender = true;
+				    infoOut.skipRender = true;
 				    return;
 			    }
-			    infoOut.faces.colorModulate = infoOut.lines.colorModulate = colors[ax];
+			    infoOut.colorModulate = colors[ax];
 			    Vector localDir, portalNorm, portalPos;
 			    matrix3x4_t& portalMat = freeEntry ? cache.entryMat : cache.exitMat;
 			    MatrixGetColumn(portalMat, 0, portalNorm);
@@ -580,13 +583,12 @@ void VagTrace::DrawTrace(MeshRendererDelegate& mr)
 		            [=](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
 		            {
 			            // don't show through portals
-			            if (infoIn.portalRenderDepth.value_or(0) > 0)
+			            if (infoIn.portalRenderDepth > 0)
 			            {
-				            infoOut.faces.skipRender = true;
-				            infoOut.lines.skipRender = true;
+				            infoOut.skipRender = true;
 				            return;
 			            }
-			            infoOut.faces.colorModulate = infoOut.lines.colorModulate = colors[ax];
+			            infoOut.colorModulate = colors[ax];
 			            infoOut.mat =
 			                freeEntry ? cache.entryNudgeTransforms[ax] : cache.exitNudgeTransforms[ax];
 		            });
@@ -623,14 +625,12 @@ void VagTrace::DrawTargetTrace(MeshRendererDelegate& mr)
 	if (!portalMeshDetailed.Valid() || !portalMeshSimple.Valid() || !circleMesh.Valid())
 	{
 		// box representing a portal w/ arrow towards local forward
-		portalMeshDetailed = MB_STATIC(
-		    {
-			    const Vector portalMaxs(1, 32, 54);
-			    const MeshColor boxColor = MeshColor::Outline({255, 255, 255, 40});
-			    mb.AddBox({0, 0, 0}, -portalMaxs, portalMaxs, vec3_angle, boxColor);
-			    mb.AddArrow3D({1, 0, 0}, {2, 0, 0}, ARROW_PARAMS, MeshColor::Wire({255, 255, 255, 255}));
-		    },
-		    ZTEST_NONE);
+		portalMeshDetailed = MB_STATIC({
+			const Vector portalMaxs(1, 32, 54);
+			const MeshColor boxColor = MeshColor::Outline({255, 255, 255, 40});
+			mb.AddBox({0, 0, 0}, -portalMaxs, portalMaxs, vec3_angle, boxColor, false);
+			mb.AddArrow3D({1, 0, 0}, {2, 0, 0}, ARROW_PARAMS, MeshColor::Wire({255, 255, 255, 255}), false);
+		});
 		// an arrow for local forward & local up
 		portalMeshSimple = MB_STATIC({
 			mb.AddArrow3D({0, 0, 0}, {1, 0, 0}, ARROW_PARAMS, MeshColor::Wire({255, 255, 255, 255}));
@@ -663,14 +663,10 @@ void VagTrace::DrawTargetTrace(MeshRendererDelegate& mr)
 				            [=](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
 				            {
 					            infoOut.mat = entryMat;
-					            infoOut.faces.colorModulate = modColor;
-					            infoOut.lines.colorModulate = modColor;
+					            infoOut.colorModulate = modColor;
 					            // don't show detailed portals through real portals
-					            if (i == 0 && infoIn.portalRenderDepth.value_or(0) > 0)
-					            {
-						            infoOut.faces.skipRender = true;
-						            infoOut.lines.skipRender = true;
-					            }
+					            if (i == 0 && infoIn.portalRenderDepth > 0)
+						            infoOut.skipRender = true;
 				            });
 			}
 		}
@@ -708,8 +704,7 @@ void VagTrace::DrawTargetTrace(MeshRendererDelegate& mr)
 			            [=](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
 			            {
 				            infoOut.mat = *circleMats[i];
-				            infoOut.faces.colorModulate = exitColor;
-				            infoOut.lines.colorModulate = exitColor;
+				            infoOut.colorModulate = exitColor;
 			            });
 		}
 	}

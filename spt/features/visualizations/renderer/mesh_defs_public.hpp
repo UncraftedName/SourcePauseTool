@@ -19,6 +19,7 @@ struct MeshPositionInfo
 	Vector mins, maxs;
 };
 
+// TODO rename to shape color
 struct MeshColor
 {
 	const color32 faceColor, lineColor;
@@ -48,41 +49,12 @@ inline color32 color32RgbLerp(color32 a, color32 b, float f)
 	        (byte)(a.a * (1 - f) + b.a * f)};
 }
 
-enum ZTestFlags
+// has no effect on lines
+enum WindingDir
 {
-	ZTEST_NONE = 0,
-	ZTEST_FACES = 1,
-	ZTEST_LINES = 2,
-};
-
-/*
-* Rendering translucent meshes in the correct order is tricky - but you can provide a hint to the renderer for
-* how you want your mesh to be sorted relative to other meshes. Given the camera and mesh position, we wish to
-* define the distance from the camera to each mesh.
-* - AABB_Surface: useful for axis aligned boxes and planes. The distance to the mesh is defined as the distance to
-*   the meshes' AABB.
-* - AABB_Center: useful for non-axis-aligned planes. The distance to the mesh is defined as the distance to the
-*   center of its AABB.
-*/
-enum class TranslucentSortType
-{
-	AABB_Surface,
-	AABB_Center,
-};
-
-// direction of normals for faces (has no effect on lines)
-enum class CullType
-{
-	Default,
-	Reverse,
-	ShowBoth,
-};
-
-struct CreateMeshParams
-{
-	const int zTestFlags = ZTEST_FACES | ZTEST_LINES;
-	const CullType cullType = CullType::Default;
-	const TranslucentSortType sortType = TranslucentSortType::AABB_Surface;
+	WD_CW = 1,       // clockwise
+	WD_CCW = 1 << 1, // counter clockwise
+	WD_BOTH = WD_CW | WD_CCW
 };
 
 // typical use case - check Valid() and if it returns false recreate

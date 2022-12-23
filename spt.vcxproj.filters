@@ -295,12 +295,6 @@
     <ClCompile Include="spt\features\visualizations\renderer\source files\static_mesh.cpp">
       <Filter>spt\features\visualizations\renderer\source files</Filter>
     </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_unit.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_data.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
     <ClCompile Include="spt\features\property_getter.cpp">
       <Filter>spt\features</Filter>
     </ClCompile>

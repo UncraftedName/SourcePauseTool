@@ -503,10 +503,9 @@ public:
 			            {
 				            infoOut.mat = mat;
 				            RenderCallbackZFightFix(infoIn, infoOut);
+				            // TODO gotta use 4 meshes
 				            if (outline)
-					            infoOut.faces.skipRender = true;
-				            else
-					            infoOut.lines.skipRender = true;
+					            infoOut.skipRender = true;
 			            });
 		};
 
