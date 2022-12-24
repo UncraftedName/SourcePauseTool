@@ -5,6 +5,7 @@
 #ifdef SPT_MESH_RENDERING_ENABLED
 
 #include <algorithm>
+#include <iterator>
 
 #include "..\mesh_defs_private.hpp"
 #include "interfaces.hpp"
@@ -325,7 +326,7 @@ struct MeshUnitWrapper
 void MeshRendererFeature::FrameCleanup()
 {
 	g_meshUnitWrappers.clear();
-	g_meshBuilderInternal.ClearOldBuffers();
+	g_meshBuilderInternal.FrameCleanup();
 }
 
 void MeshRendererFeature::OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView)
@@ -351,6 +352,7 @@ void MeshRendererFeature::SetupViewInfo(CRendering3dView* rendering3dView)
 }
 
 // TODO RENAME TO MESHCOMPONENT?
+// TODO make sure that I don't create new meshes while any of these are active since they have pointers to a vector
 struct SortedMeshElement
 {
 	MeshUnitWrapper* unitWrapper;
@@ -363,11 +365,14 @@ std::weak_ordering operator<=>(const SortedMeshElement& a, const SortedMeshEleme
 
 void RenderAll(const std::vector<SortedMeshElement>& sortedComponents)
 {
-	using _it = std::vector<SortedMeshElement>::const_iterator;
+	if (sortedComponents.empty())
+		return;
 
-	_it end = sortedComponents.end();
+	using _it = const SortedMeshElement*;
+
+	_it end = &sortedComponents.back() + 1;
 	_it low;
-	_it high = sortedComponents.begin();
+	_it high = &sortedComponents.front();
 
 	while (high != end)
 	{
@@ -381,9 +386,13 @@ void RenderAll(const std::vector<SortedMeshElement>& sortedComponents)
 			// copy the vert data references into this temp buffer
 			static std::vector<const MeshVertData*> tmp;
 			tmp.clear();
-			std::transform(low, high, tmp.begin(), [](const SortedMeshElement& s) { return s.vertData; });
+			for (auto it = low; it < high; it++)
+				tmp.push_back(it->vertData);
+			// TODO try using transform?
+			// std::transform(low, high, std::back_insert_iterator(tmp), [](const SortedMeshElement& s) { return s.vertData; });
+
 			// batch the whole range
-			g_meshBuilderInternal.BeginDynamicMeshCreation(tmp.front(), tmp.back() + 1, true);
+			g_meshBuilderInternal.BeginDynamicMeshCreation(&tmp.front(), &tmp.back() + 1, true);
 			IMeshWrapper mw;
 			while (mw = g_meshBuilderInternal.GetNextIMeshWrapper(), mw.iMesh)
 				low->unitWrapper->Render(mw);

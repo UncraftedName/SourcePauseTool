@@ -16,35 +16,35 @@ MeshVertData& MeshBuilderInternal::FindOrAddVData(MeshPrimitiveType type, IMater
 	                            curMeshVertData.end(),
 	                            [=](const MeshVertData& vd) { return vd.type == type && vd.material == material; });
 
-	if (vDataIt == curMeshVertData.end())
-	{
-		decltype(sharedVertArrays)::iterator vertIt;
-		decltype(sharedIndexArrays)::iterator idxIt;
+	if (vDataIt != curMeshVertData.end())
+		return *vDataIt;
 
-		if (curMeshVertData.size() + 1 > sharedVertArrays.size())
-		{
-			vertIt = sharedVertArrays.end();
-			idxIt = sharedIndexArrays.end();
-			sharedVertArrays.emplace_back();
-			sharedIndexArrays.emplace_back();
-		}
-		else
-		{
-			vertIt = sharedVertArrays.begin();
-			idxIt = sharedIndexArrays.begin();
-			for (size_t _ = 0; _ < curMeshVertData.size(); _++)
-			{
-				vertIt++;
-				idxIt++;
-			}
-		}
-		curMeshVertData.emplace_back(*vertIt, *idxIt, type, material);
+	decltype(sharedVertArrays)::iterator vertIt;
+	decltype(sharedIndexArrays)::iterator idxIt;
+
+	if (curMeshVertData.size() + 1 > sharedVertArrays.size())
+	{
+		sharedVertArrays.emplace_back();
+		sharedIndexArrays.emplace_back();
+		vertIt = --sharedVertArrays.end();
+		idxIt = --sharedIndexArrays.end();
 	}
-	return *vDataIt;
+	else
+	{
+		vertIt = sharedVertArrays.begin();
+		idxIt = sharedIndexArrays.begin();
+		for (size_t _ = 0; _ < curMeshVertData.size(); _++)
+		{
+			vertIt++;
+			idxIt++;
+		}
+	}
+	curMeshVertData.emplace_back(*vertIt, *idxIt, type, material);
+	return *--curMeshVertData.end();
 }
 
-IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(MeshComponentIterator from,
-                                                          MeshComponentIterator to,
+IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(MeshComponentIterator from_,
+                                                          MeshComponentIterator to_,
                                                           size_t totalVerts,
                                                           size_t totalIndices,
                                                           bool dynamic)
@@ -56,11 +56,14 @@ IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(MeshComponentIterator 
 	if (totalVerts == 0 || totalIndices == 0)
 		return IMeshWrapper{};
 
+	auto from = *from_;
+
 #ifdef DEBUG
-	for (auto i = from + 1; i < to; i++)
+	for (auto it_ = from_ + 1; it_ < to_; it_++)
 	{
-		AssertEquals(from->type, i->type);
-		AssertEquals(from->material, i->material);
+		auto it = *it_;
+		AssertEquals(from->type, it->type);
+		AssertEquals(from->material, it->material);
 		// TODO I want to ensure that meshes with a callback don't get merged
 	}
 #endif
@@ -118,9 +121,9 @@ IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(MeshComponentIterator 
 	size_t idxIdx = 0; // ;)
 	size_t idxOffset = 0;
 
-	for (MeshComponentIterator _component = from; _component < to; _component++)
+	for (MeshComponentIterator it = from_; it < to_; it++)
 	{
-		for (const VertexData& vert : _component->verts)
+		for (const VertexData& vert : (**it).verts)
 		{
 			*(Vector*)((uintptr_t)desc.m_pPosition + vertIdx * desc.m_VertexSize_Position) = vert.pos;
 			unsigned char* pColor = desc.m_pColor + vertIdx * desc.m_VertexSize_Color;
@@ -130,7 +133,7 @@ IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(MeshComponentIterator 
 			pColor[3] = vert.col.a;
 			vertIdx++;
 		}
-		for (VertIndex vIdx : _component->indices)
+		for (VertIndex vIdx : (**it).indices)
 			desc.m_pIndices[idxIdx++] = vIdx + desc.m_nFirstVertex + idxOffset;
 		idxOffset = vertIdx; // TODO what does it look like if I remove this lol
 	}
@@ -144,7 +147,8 @@ IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(MeshComponentIterator 
 
 IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(const MeshVertData& vData, bool dynamic)
 {
-	return CreateIMeshFromVertData(&vData, &vData + 1, vData.verts.size(), vData.indices.size(), dynamic);
+	auto vd = &vData;
+	return CreateIMeshFromVertData(&vd, &vd + 1, vData.verts.size(), vData.indices.size(), dynamic);
 }
 
 void MeshBuilderInternal::BeginDynamicMeshCreation(MeshComponentIterator from, MeshComponentIterator to, bool dynamic)
@@ -161,8 +165,12 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 		if (creationStatus.from == creationStatus.to)
 			return IMeshWrapper{}; // done with iteration
 
-		if (creationStatus.from->verts.size() > MAX_MESH_VERTS
-		    || creationStatus.from->indices.size() > MAX_MESH_INDICES)
+		if ((**creationStatus.from).verts.size() <= MAX_MESH_VERTS
+		    && (**creationStatus.from).indices.size() <= MAX_MESH_INDICES)
+		{
+			break;
+		}
+		else
 		{
 			AssertMsg(0, "too many verts/indices");
 			Warning("spt: mesh has too many verts or indices, this would cause a game error\n");
@@ -170,29 +178,36 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 			continue;
 		}
 	}
-	size_t totalNumVerts = creationStatus.from->verts.size();
-	size_t totalNumIndices = creationStatus.from->indices.size();
+	size_t totalNumVerts = (**creationStatus.from).verts.size();
+	size_t totalNumIndices = (**creationStatus.from).indices.size();
 	MeshComponentIterator batchEnd = creationStatus.from + 1;
 	for (; batchEnd < creationStatus.to; batchEnd++)
 	{
-		if (totalNumIndices + batchEnd->indices.size() > MAX_MESH_INDICES
-		    || totalNumVerts + batchEnd->verts.size() > MAX_MESH_VERTS)
+		if (totalNumIndices + (**batchEnd).indices.size() > MAX_MESH_INDICES
+		    || totalNumVerts + (**batchEnd).verts.size() > MAX_MESH_VERTS)
 		{
 			break;
 		}
-		Assert(batchEnd->indices.size() >= batchEnd->verts.size());
-		totalNumVerts += batchEnd->verts.size();
-		totalNumIndices += batchEnd->indices.size();
+		Assert((**batchEnd).indices.size() >= (**batchEnd).verts.size());
+		totalNumVerts += (**batchEnd).verts.size();
+		totalNumIndices += (**batchEnd).indices.size();
 	}
 	MeshComponentIterator batchStart = creationStatus.from;
-	creationStatus.from = batchEnd + 1;
+	creationStatus.from = batchEnd;
 	return CreateIMeshFromVertData(batchStart, batchEnd, totalNumVerts, totalNumIndices, creationStatus.dynamic);
 }
 
-void MeshBuilderInternal::ClearOldBuffers()
+void MeshBuilderInternal::FrameCleanup()
 {
-	curMeshVertData.pop();
-	// TODO
+	// TODO comments!!!
+	while (dynamicMeshUnits.size() > 0)
+		dynamicMeshUnits.pop_back();
+#ifdef DEBUG
+	for (auto& vertArray : sharedVertArrays)
+		Assert(vertArray.size() == 0);
+	for (auto& idxArray : sharedIndexArrays)
+		Assert(idxArray.size() == 0);
+#endif
 }
 
 MeshPositionInfo MeshBuilderInternal::_CalcPosInfoForCurrentMesh()
@@ -218,6 +233,7 @@ const MeshUnit& MeshBuilderInternal::GetDynamicMeshFromToken(DynamicMesh token) 
 
 StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 {
+	g_meshBuilderInternal.curMeshVertData = {g_meshBuilderInternal.sharedVertDataArrays};
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
 
@@ -240,6 +256,7 @@ DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESHBUILDER);
 	AssertMsg(g_inMeshRenderSignal, "spt: Must create dynamic meshes in MeshRenderSignal!");
+	g_meshBuilderInternal.curMeshVertData = {(g_meshBuilderInternal.sharedVertDataArrays)};
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
 	MeshPositionInfo posInfo = g_meshBuilderInternal._CalcPosInfoForCurrentMesh();

@@ -90,7 +90,7 @@
 inline int g_meshRenderFrameNum = 0;
 inline bool g_inMeshRenderSignal = false;
 
-typedef unsigned short VertIndex;
+using VertIndex = unsigned short;
 
 // a single vertex - may have position, color, uv coordinates, normal, etc
 struct VertexData
@@ -120,12 +120,32 @@ struct VectorSlice
 
 	VectorSlice(std::vector<T>& vec) : vec(&vec), off(vec.size()), len(0) {}
 
-	VectorSlice<T>& operator=(VectorSlice<T>&& other) = default;
+	/*void init(std::vector<T>& vec_)
+	{
+		vec = &vec_;
+		off = vec_.size();
+		len = 0;
+	}*/
+
+	VectorSlice<T>& operator=(VectorSlice<T>&& other)
+	{
+		if (&other == this)
+			return *this;
+		vec = other.vec;
+		off = other.off;
+		len = other.len;
+		other.vec = nullptr;
+		other.off = other.len = 0;
+		return *this;
+	};
 
 	void pop()
 	{
 		if (vec)
+		{
+			Assert(off + len == vec->size());
 			vec->resize(vec->size() - len);
+		}
 		vec = nullptr;
 		off = len = 0;
 	}
@@ -195,7 +215,6 @@ enum class MeshPrimitiveType
 {
 	Lines,
 	Triangles,
-
 	Count
 };
 
@@ -239,6 +258,7 @@ struct IMeshWrapper
 	IMaterial* material;
 };
 
+// TODO - two different mesh units?
 struct MeshUnit
 {
 	union
@@ -289,6 +309,7 @@ struct MeshUnit
 				return;
 			for (auto& vData : dynamicData)
 				vData.material->DecrementReferenceCount();
+			dynamicData.~VectorSlice();
 		}
 		else
 		{
@@ -296,6 +317,7 @@ struct MeshUnit
 				return;
 			for (size_t i = 0; i < staticData.nMeshes; i++)
 			{
+				// TODO delete if unreferenced?
 				staticData.meshesArr[i].material->DecrementReferenceCount();
 				CMatRenderContextPtr(interfaces::materialSystem)
 				    ->DestroyStaticMesh(staticData.meshesArr[i].iMesh);
@@ -319,7 +341,7 @@ struct MeshBuilderInternal
 
 	MeshVertData& FindOrAddVData(MeshPrimitiveType type, IMaterial* material);
 
-	using MeshComponentIterator = const MeshVertData*;
+	using MeshComponentIterator = const MeshVertData**;
 
 	struct
 	{
@@ -336,7 +358,7 @@ struct MeshBuilderInternal
 	void BeginDynamicMeshCreation(MeshComponentIterator from, MeshComponentIterator to, bool dynamic);
 	IMeshWrapper GetNextIMeshWrapper();
 
-	void ClearOldBuffers();
+	void FrameCleanup();
 	MeshPositionInfo _CalcPosInfoForCurrentMesh();
 	const MeshUnit& GetDynamicMeshFromToken(DynamicMesh token) const;
 };

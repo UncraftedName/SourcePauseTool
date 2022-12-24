@@ -38,6 +38,8 @@ Vector* Scratch(size_t n)
 #define GET_VDATA_FACES(color, zTest) GET_VDATA_FACES_CUSTOM_MATERIAL(BASIC_MATERIAL(color, zTest))
 #define GET_VDATA_LINES(color, zTest) GET_VDATA_LINES_CUSTOM_MATERIAL(BASIC_MATERIAL(color, zTest))
 
+#define DECLARE_MULTIPLE_COMPONENTS(count) g_meshBuilderInternal.curMeshVertData.reserve_extra(count)
+
 // TODO change me to a macro, remove dtor
 // Instead of using data->Reserve directly - give the numbers to this struct and it will check that
 // your numbers are correct when it goes out of scope.
@@ -211,6 +213,7 @@ void MeshBuilderDelegate::AddQuads(const Vector* verts, int nFaces, MeshColor mc
 {
 	if (!verts || nFaces <= 0 || !(wd & WD_BOTH))
 		return;
+	DECLARE_MULTIPLE_COMPONENTS(2);
 	auto& vdf = GET_VDATA_FACES(mc.faceColor, zTest);
 	auto& vdl = GET_VDATA_LINES(mc.lineColor, zTest);
 	for (int i = 0; i < nFaces; i++)
@@ -239,6 +242,7 @@ void MeshBuilderDelegate::_AddPolygon(const Vector* verts,
 
 void MeshBuilderDelegate::AddPolygon(const Vector* verts, int nVerts, MeshColor mc, bool zTest, WindingDir wd)
 {
+	DECLARE_MULTIPLE_COMPONENTS(2);
 	_AddPolygon(verts, nVerts, mc, wd, GET_VDATA_FACES(mc.faceColor, zTest), GET_VDATA_LINES(mc.lineColor, zTest));
 }
 
@@ -281,6 +285,7 @@ void MeshBuilderDelegate::AddBox(const Vector& pos,
 	if ((mc.faceColor.a == 0 && mc.lineColor.a == 0) || !(wd & WD_BOTH))
 		return;
 
+	DECLARE_MULTIPLE_COMPONENTS(2);
 	auto& vdf = GET_VDATA_FACES(mc.faceColor, zTest);
 	auto& vdl = GET_VDATA_LINES(mc.lineColor, zTest);
 	size_t origNumFaceVerts = vdf.verts.size();
@@ -311,6 +316,7 @@ void MeshBuilderDelegate::AddSphere(const Vector& pos,
 	if (nSubdivisions < 0 || radius < 0 || (mc.faceColor.a == 0 && mc.lineColor.a == 0) || !(wd & WD_BOTH))
 		return;
 
+	DECLARE_MULTIPLE_COMPONENTS(2);
 	auto& vdf = GET_VDATA_FACES(mc.faceColor, zTest);
 	auto& vdl = GET_VDATA_LINES(mc.lineColor, zTest);
 	size_t origNumFaceVerts = vdf.verts.size();
@@ -376,13 +382,9 @@ void MeshBuilderDelegate::AddSweptBox(const Vector& start,
 	AddBox(end, mins - nudge * 1.5, maxs - nudge * 1.5, vec3_angle, mcEnd, zTest, wd);
 	AddBox(start, mins - nudge, maxs - nudge, vec3_angle, mcStart, zTest, wd);
 
-	// We have 3 different colors! We'll choose a representative color for the faces
-	// and lines so that all faces use the same vdata, and the same for lines.
-	int _faceAlpha = mcStart.faceColor.a & mcEnd.faceColor.a & mcSweep.faceColor.a;
-	int _lineAlpha = mcStart.lineColor.a & mcEnd.lineColor.a & mcSweep.lineColor.a;
-
-	auto& vdf = GET_VDATA_FACES((color32{255, 255, 255, (byte)_faceAlpha}), zTest);
-	auto& vdl = GET_VDATA_FACES((color32{255, 255, 255, (byte)_lineAlpha}), zTest);
+	DECLARE_MULTIPLE_COMPONENTS(2);
+	auto& vdf = GET_VDATA_FACES(mcSweep.faceColor, zTest);
+	auto& vdl = GET_VDATA_LINES(mcSweep.lineColor, zTest);
 
 	// For a given box, we can encode a face of the box with a 0 or 1 corresponding to mins/maxs.
 	// With 3 bits, you can encode the two "same" corners on both boxes.
@@ -498,6 +500,7 @@ void MeshBuilderDelegate::AddSweptBox(const Vector& start,
 		}
 		else
 		{
+			// TODO I need a reserve scope here
 			for (int i = 0; i < 2; i++)
 			{
 				bool doingFaces = i == 0;
@@ -650,7 +653,7 @@ void MeshBuilderDelegate::AddCone(const Vector& pos,
 		vdf.indices.push_back(tipIdx + 1);
 		vdf.indices.push_back(tipIdx);
 		if (drawBase)
-			_AddFacePolygonIndices(vdf, tipIdx + 1, nCirclePoints, wd);
+			_AddFacePolygonIndices(vdf, tipIdx + 1, nCirclePoints, INVERT_WD(wd));
 	}
 
 	if (mc.lineColor.a != 0)
@@ -743,6 +746,7 @@ void MeshBuilderDelegate::AddArrow3D(const Vector& pos,
 	if (nCirclePoints < 3 || (mc.faceColor.a == 0 && mc.lineColor.a == 0))
 		return;
 
+	DECLARE_MULTIPLE_COMPONENTS(2);
 	auto& vdf = GET_VDATA_FACES(mc.faceColor, zTest);
 	auto& vdl = GET_VDATA_LINES(mc.lineColor, zTest);
 
@@ -772,7 +776,7 @@ void MeshBuilderDelegate::AddArrow3D(const Vector& pos,
 
 	if (mc.lineColor.a != 0)
 	{
-		ReserveScope(vdl, 0, nCirclePoints * 2);
+		ReserveScope rs(vdl, 0, nCirclePoints * 2);
 		for (int i = 0; i < nCirclePoints; i++)
 		{
 			vdl.indices.push_back(innerCircleLineIdx + i);
@@ -788,7 +792,10 @@ void MeshBuilderDelegate::AddCPolyhedron(const CPolyhedron* polyhedron, MeshColo
 	if (mc.faceColor.a != 0)
 	{
 		auto& vdf = GET_VDATA_FACES(mc.faceColor, zTest);
-		ReserveScope re(vdf, polyhedron->iVertexCount, polyhedron->iIndexCount * INDEX_COUNT_MULTIPLIER(wd));
+		size_t totalIndices = 0;
+		for (int p = 0; p < polyhedron->iPolygonCount; p++)
+			totalIndices += (polyhedron->pPolygons[p].iIndexCount - 2) * 3;
+		ReserveScope rs(vdf, polyhedron->iVertexCount, totalIndices * INDEX_COUNT_MULTIPLIER(wd));
 		const size_t initIdx = vdf.verts.size();
 		for (int v = 0; v < polyhedron->iVertexCount; v++)
 			vdf.verts.emplace_back(polyhedron->pVertices[v], mc.faceColor);
