@@ -58,11 +58,12 @@
 
 #pragma once
 
+#include <vector>
+#include <stack>
+
 #include "mesh_defs_public.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
-
-#include <vector>
 
 #include "mathlib\vector.h"
 #include "materialsystem\imaterial.h"
@@ -92,6 +93,9 @@ inline bool g_inMeshRenderSignal = false;
 
 using VertIndex = unsigned short;
 using DynamicMeshToken = DynamicMesh;
+
+template<class T>
+using VectorStack = std::stack<T, std::vector<T>>;
 
 // a single vertex - may have position, color, uv coordinates, normal, etc
 struct VertexData
@@ -347,8 +351,7 @@ struct MeshBuilderInternal
 
 	VectorSlice<MeshVertData> curMeshVertData;
 
-	// TODO explicitly use a stack?
-	std::vector<MeshUnit> dynamicMeshUnits;
+	VectorStack<MeshUnit> dynamicMeshUnits;
 
 	MeshVertData& FindOrAddVData(MeshPrimitiveType type, IMaterial* material);
 

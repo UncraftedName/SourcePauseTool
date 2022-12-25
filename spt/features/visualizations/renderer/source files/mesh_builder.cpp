@@ -204,8 +204,9 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 void MeshBuilderInternal::FrameCleanup()
 {
 	// TODO comments!!!
-	while (dynamicMeshUnits.size() > 0)
-		dynamicMeshUnits.pop_back();
+
+	while (!dynamicMeshUnits.empty())
+		dynamicMeshUnits.pop();
 #ifdef DEBUG
 	for (auto& vertArray : sharedVertArrays)
 		Assert(vertArray.size() == 0);
@@ -235,7 +236,7 @@ MeshPositionInfo MeshBuilderInternal::_CalcPosInfoForCurrentMesh()
 
 const MeshUnit& MeshBuilderInternal::GetDynamicMeshFromToken(DynamicMesh token) const
 {
-	return dynamicMeshUnits[token.dynamicMeshIdx];
+	return dynamicMeshUnits._Get_container()[token.dynamicMeshIdx];
 }
 
 /**************************************** MESH BUILDER PRO ****************************************/
@@ -276,7 +277,7 @@ DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
 	MeshPositionInfo posInfo = g_meshBuilderInternal._CalcPosInfoForCurrentMesh();
-	g_meshBuilderInternal.dynamicMeshUnits.emplace_back(g_meshBuilderInternal.curMeshVertData, posInfo);
+	g_meshBuilderInternal.dynamicMeshUnits.emplace(g_meshBuilderInternal.curMeshVertData, posInfo);
 	return {g_meshBuilderInternal.dynamicMeshUnits.size() - 1, g_meshRenderFrameNum};
 }
 

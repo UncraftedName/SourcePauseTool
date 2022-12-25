@@ -95,10 +95,10 @@ struct MeshRendererInternal
 			{
 			}
 		};
+
 		std::vector<DebugMeshDesc> sharedDescriptionArray;
-		// TODO use a stack
-		std::vector<VectorSlice<DebugMeshDesc>> descriptionSlices;
-		// std::vector<DynamicMeshToken> meshTokens;
+		VectorStack<VectorSlice<DebugMeshDesc>> descriptionSlices;
+
 	} debugMeshInfo;
 
 	void FrameCleanup();
@@ -342,6 +342,7 @@ void MeshRendererInternal::FrameCleanup()
 {
 	queuedUnitWrappers.clear();
 	g_meshBuilderInternal.FrameCleanup();
+	Assert(debugMeshInfo.descriptionSlices.empty());
 }
 
 void MeshRendererInternal::OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView)
@@ -370,7 +371,7 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
-	debugMeshInfo.descriptionSlices.emplace_back(debugMeshInfo.sharedDescriptionArray);
+	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionArray);
 
 	static std::vector<SortedMeshElement> sortedMeshes;
 	sortedMeshes.clear();
@@ -493,9 +494,9 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 			// scale point mesh by the AABB size, plot this bad boy in desmos as a function of maxBoxDim
 			float size = -falloff * (biggest - smallest) / (maxBoxDim + falloff) + biggest;
 
-			debugMeshInfo.descriptionSlices.back().emplace_back(sortedMesh.unitWrapper->camDistSqrTo,
-			                                                    size,
-			                                                    DEBUG_COLOR_CROSS);
+			debugMeshInfo.descriptionSlices.top().emplace_back(sortedMesh.unitWrapper->camDistSqrTo,
+			                                                   size,
+			                                                   DEBUG_COLOR_CROSS);
 		}
 
 		// we'll just reuse this array
@@ -505,9 +506,9 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 
 		static std::vector<MeshUnitWrapper> debugMeshes;
 		debugMeshes.clear();
-		debugMeshes.reserve(debugMeshInfo.descriptionSlices.back().size());
+		debugMeshes.reserve(debugMeshInfo.descriptionSlices.top().size());
 
-		for (auto& debugDesc : debugMeshInfo.descriptionSlices.back())
+		for (auto& debugDesc : debugMeshInfo.descriptionSlices.top())
 		{
 			debugMeshes.emplace_back(spt_meshBuilder.CreateDynamicMesh(
 			    [&](MeshBuilderDelegate& mb)
@@ -529,7 +530,6 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 				    }
 			    }));
 		}
-		debugMeshInfo.descriptionSlices.pop_back();
 
 		for (MeshUnitWrapper& debugMesh : debugMeshes)
 		{
@@ -542,6 +542,7 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 		std::sort(sortedMeshes.begin(), sortedMeshes.end());
 		DrawAll(sortedMeshes);
 	}
+	debugMeshInfo.descriptionSlices.pop();
 }
 
 void MeshRendererInternal::DrawAll(const std::vector<SortedMeshElement>& sortedComponents)
@@ -580,7 +581,7 @@ void MeshRendererInternal::DrawAll(const std::vector<SortedMeshElement>& sortedC
 
 				if (y_spt_draw_mesh_debug.GetBool())
 				{
-					auto& lastSlice = debugMeshInfo.descriptionSlices.back();
+					auto& lastSlice = debugMeshInfo.descriptionSlices.top();
 					Vector batchedMins{INFINITY};
 					Vector batchedMaxs{-INFINITY};
 					for (auto it = low; it < high; it++)
@@ -610,7 +611,7 @@ void MeshRendererInternal::DrawAll(const std::vector<SortedMeshElement>& sortedC
 			low->unitWrapper->Render(low->iMeshWrapper);
 			if (y_spt_draw_mesh_debug.GetBool())
 			{
-				auto& lastSlice = debugMeshInfo.descriptionSlices.back();
+				auto& lastSlice = debugMeshInfo.descriptionSlices.top();
 				lastSlice.emplace_back(low->unitWrapper->posInfo.mins - Vector{1},
 				                       low->unitWrapper->posInfo.maxs + Vector{1},
 				                       DEBUG_COLOR_STATIC_MESH);
