@@ -389,7 +389,7 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 		auto shouldRender = [](IMaterial* material)
 		{
 			return material && !material->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ)
-			       && !material->GetMaterialVarFlag(MATERIAL_VAR_TRANSLUCENT);
+			       && !material->GetMaterialVarFlag(MATERIAL_VAR_VERTEXALPHA);
 		};
 
 		const MeshUnit& meshUnit = meshUnitWrapper.GetMeshUnit();
@@ -397,7 +397,7 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 		if (meshUnit.dynamic)
 		{
 			for (MeshVertData& vData : meshUnit.dynamicData)
-				if (!vData.verts.empty() || shouldRender(vData.material))
+				if (!vData.verts.empty() && shouldRender(vData.material))
 					sortedMeshes.emplace_back(&meshUnitWrapper, &vData, IMeshWrapper{});
 		}
 		else
@@ -437,7 +437,7 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 			if (meshUnitWrapper.callback && meshUnitWrapper.cbInfoOut.colorModulate.a < 1)
 				return true; // a calback made this mesh translucent
 			return material->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ)
-			       || material->GetMaterialVarFlag(MATERIAL_VAR_TRANSLUCENT);
+			       || material->GetMaterialVarFlag(MATERIAL_VAR_VERTEXALPHA);
 		};
 
 		const MeshUnit& meshUnit = meshUnitWrapper.GetMeshUnit();
@@ -445,7 +445,7 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 		if (meshUnit.dynamic)
 		{
 			for (MeshVertData& vData : meshUnit.dynamicData)
-				if (!vData.verts.empty() || shouldRender(vData.material))
+				if (!vData.verts.empty() && shouldRender(vData.material))
 					sortedMeshes.emplace_back(&meshUnitWrapper, &vData, IMeshWrapper{});
 		}
 		else
@@ -637,9 +637,9 @@ std::weak_ordering SortedMeshElement::operator<=>(const SortedMeshElement& rhs) 
 		// group those without a callback together
 		if (!unitWrapper->callback != !rhs.unitWrapper->callback)
 			return !unitWrapper->callback <=> !rhs.unitWrapper->callback;
-		// if both have a callback then just ensure they're different
+		// if both have a callback, only group together if it's the same unit (the callback will be the same)
 		if (unitWrapper->callback && rhs.unitWrapper->callback)
-			return vertData <=> rhs.vertData;
+			return unitWrapper <=> rhs.unitWrapper;
 	}
 	else
 	{

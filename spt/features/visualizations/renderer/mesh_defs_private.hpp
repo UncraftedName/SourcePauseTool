@@ -58,9 +58,6 @@
 
 #pragma once
 
-#include <vector>
-#include <stack>
-
 #include "mesh_defs_public.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
@@ -81,6 +78,8 @@
 
 #define VPROF_BUDGETGROUP_MESHBUILDER _T("Mesh_Builder")
 #define VPROF_BUDGETGROUP_MESH_RENDERER _T("Mesh_Renderer")
+
+#include <stack>
 
 #include "spt\utils\interfaces.hpp"
 
