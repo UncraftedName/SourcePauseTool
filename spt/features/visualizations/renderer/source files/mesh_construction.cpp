@@ -169,9 +169,9 @@ void MeshBuilderDelegate::AddTris(const Vector* verts, int nFaces, MeshColor mc,
 		for (int i = 0; i < nFaces; i++)
 		{
 			size_t vIdx = vdf.verts.size();
-			vdf.verts.emplace_back(verts[3 * nFaces + 0]);
-			vdf.verts.emplace_back(verts[3 * nFaces + 1]);
-			vdf.verts.emplace_back(verts[3 * nFaces + 2]);
+			vdf.verts.emplace_back(verts[3 * i + 0]);
+			vdf.verts.emplace_back(verts[3 * i + 1]);
+			vdf.verts.emplace_back(verts[3 * i + 2]);
 			if (wd & WD_CW)
 			{
 				vdf.indices.push_back(vIdx + 0);
@@ -275,8 +275,8 @@ void MeshBuilderDelegate::AddEllipse(const Vector& pos,
 }
 
 void MeshBuilderDelegate::AddBox(const Vector& pos,
-                                 const Vector& mins,
-                                 const Vector& maxs,
+                                 const Vector& mins_,
+                                 const Vector& maxs_,
                                  const QAngle& ang,
                                  MeshColor mc,
                                  bool zTest,
@@ -292,12 +292,12 @@ void MeshBuilderDelegate::AddBox(const Vector& pos,
 	size_t origNumLineVerts = vdl.verts.size();
 	_AddSubdivCube(0, mc, wd, vdf, vdl);
 
-	Vector size, actualMins;
+	Vector size, mins;
 	matrix3x4_t scaleMat, offMat, finalMat;
-	VectorAbs(maxs - mins, size);
-	VectorMin(mins, maxs, actualMins); // in case anyone stupid (like me) swaps the mins/maxs
-	scaleMat.Init({size.x, 0, 0}, {0, size.y, 0}, {0, 0, size.z}, actualMins); // set up box dimensions at origin
-	AngleMatrix(ang, pos, offMat);                                             // rotate box and put at 'pos'
+	VectorAbs(maxs_ - mins_, size);
+	VectorMin(mins_, maxs_, mins); // in case anyone stupid (like me) swaps the mins/maxs
+	scaleMat.Init({size.x, 0, 0}, {0, size.y, 0}, {0, 0, size.z}, mins); // set up box dimensions at origin
+	AngleMatrix(ang, pos, offMat);                                       // rotate box and put at 'pos'
 	MatrixMultiply(offMat, scaleMat, finalMat);
 
 	for (size_t i = origNumFaceVerts; i < vdf.verts.size(); i++)
@@ -560,6 +560,7 @@ void MeshBuilderDelegate::AddSweptBox(const Vector& start,
 				}
 			}
 		}
+
 		tmpQuad = {start + v2 + ax0Off, start + v2, end + v2, end + v2 + ax0Off};
 		_AddPolygon(tmpQuad.data(), 4, mcSweep, wd, vdf, vdl);
 		tmpQuad = {start + v3, start + v3 + ax0Off, end + v3 + ax0Off, end + v3};

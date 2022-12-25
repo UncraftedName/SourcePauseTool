@@ -64,7 +64,7 @@ public:
 	void DrawMesh(const StaticMesh& mesh, const RenderCallback& callback = nullptr);
 
 private:
-	friend class MeshRendererFeature;
+	friend struct MeshRendererInternal;
 	MeshRendererDelegate() = default;
 	MeshRendererDelegate(MeshRendererDelegate&) = delete;
 };
@@ -80,7 +80,7 @@ private:
 	struct CPortalRender** g_pPortalRender = nullptr;
 
 public:
-	// Works() method valid during or after PreHook()
+	// Works() method valid during or after LoadFeature()
 	Gallant::Signal1<MeshRendererDelegate&> signal;
 
 	// returns -1 if not available
@@ -94,23 +94,9 @@ protected:
 	void UnloadFeature() override;
 
 private:
-	struct
-	{
-		CRendering3dView* rendering3dView;
-		CViewSetup* viewSetup;
-		VPlane* frustum;
-	} viewInfo;
-
 	DECL_MEMBER_CDECL(void, OnRenderStart);
 	DECL_HOOK_THISCALL(void, CRendering3dView__DrawOpaqueRenderables, int param);
 	DECL_HOOK_THISCALL(void, CRendering3dView__DrawTranslucentRenderables, bool bInSkybox, bool bShadowDepth);
-
-	bool Works() const; // TODO remove me
-	void FrameCleanup();
-	void OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView);
-	void SetupViewInfo(CRendering3dView* rendering3dView);
-	void OnDrawOpaques(CRendering3dView* renderingView);
-	void OnDrawTranslucents(CRendering3dView* renderingView);
 };
 
 inline MeshRendererFeature spt_meshRenderer;

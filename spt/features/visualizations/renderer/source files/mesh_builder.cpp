@@ -1,5 +1,7 @@
 #include "stdafx.h"
 
+#include <algorithm>
+
 #include "..\mesh_builder.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
@@ -194,6 +196,8 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 	}
 	MeshComponentIterator batchStart = creationStatus.from;
 	creationStatus.from = batchEnd;
+	creationStatus.lastBatchStart = batchStart;
+	creationStatus.lastBatchEnd = batchEnd;
 	return CreateIMeshFromVertData(batchStart, batchEnd, totalNumVerts, totalNumIndices, creationStatus.dynamic);
 }
 
@@ -212,14 +216,19 @@ void MeshBuilderInternal::FrameCleanup()
 
 MeshPositionInfo MeshBuilderInternal::_CalcPosInfoForCurrentMesh()
 {
-	MeshPositionInfo pi = {Vector{FLT_MAX}, -Vector{FLT_MAX}};
-	for (size_t i = 0; i < curMeshVertData.len; i++)
+	MeshPositionInfo pi{Vector{INFINITY}, Vector{-INFINITY}};
+	for (MeshVertData& vData : curMeshVertData)
 	{
-		for (auto& vertData : curMeshVertData[i].verts)
+		for (VertexData& vert : vData.verts)
 		{
-			VectorMin(vertData.pos, pi.mins, pi.mins);
-			VectorMax(vertData.pos, pi.maxs, pi.maxs);
+			VectorMin(vert.pos, pi.mins, pi.mins);
+			VectorMax(vert.pos, pi.maxs, pi.maxs);
 		}
+	}
+	for (int i = 0; i < 3; i++)
+	{
+		Assert(pi.mins[i] > -1e30);
+		Assert(pi.maxs[i] < 1e30);
 	}
 	return pi;
 }
@@ -237,15 +246,23 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
 
-	const auto& vData = g_meshBuilderInternal.curMeshVertData;
+	const auto& vDataSlice = g_meshBuilderInternal.curMeshVertData;
+
+	size_t nonEmptyComponents =
+	    std::count_if(vDataSlice.begin(),
+	                  vDataSlice.end(),
+	                  [](MeshVertData& vd) { return vd.verts.size() > 0 && vd.verts.size() > 0; });
 
 	MeshUnit* mu = new MeshUnit{
-	    new IMeshWrapper[vData.size()],
-	    vData.size(),
+	    new IMeshWrapper[nonEmptyComponents],
+	    nonEmptyComponents,
 	    g_meshBuilderInternal._CalcPosInfoForCurrentMesh(),
 	};
-	for (size_t i = 0; i < vData.size(); i++)
-		mu->staticData.meshesArr[i] = g_meshBuilderInternal.CreateIMeshFromVertData(vData[i], false);
+
+	int i = 0;
+	for (const MeshVertData& vd : vDataSlice)
+		if (vd.verts.size() > 0 && vd.verts.size() > 0)
+			mu->staticData.meshesArr[i++] = g_meshBuilderInternal.CreateIMeshFromVertData(vd, false);
 
 	g_meshBuilderInternal.curMeshVertData.pop();
 	// TODO EMPLACE
@@ -255,8 +272,7 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESHBUILDER);
-	AssertMsg(g_inMeshRenderSignal, "spt: Must create dynamic meshes in MeshRenderSignal!");
-	g_meshBuilderInternal.curMeshVertData = {(g_meshBuilderInternal.sharedVertDataArrays)};
+	g_meshBuilderInternal.curMeshVertData = {g_meshBuilderInternal.sharedVertDataArrays};
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
 	MeshPositionInfo posInfo = g_meshBuilderInternal._CalcPosInfoForCurrentMesh();

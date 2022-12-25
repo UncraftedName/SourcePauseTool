@@ -91,6 +91,7 @@ inline int g_meshRenderFrameNum = 0;
 inline bool g_inMeshRenderSignal = false;
 
 using VertIndex = unsigned short;
+using DynamicMeshToken = DynamicMesh;
 
 // a single vertex - may have position, color, uv coordinates, normal, etc
 struct VertexData
@@ -337,6 +338,7 @@ struct MeshBuilderInternal
 
 	VectorSlice<MeshVertData> curMeshVertData;
 
+	// TODO explicitly use a stack?
 	std::vector<MeshUnit> dynamicMeshUnits;
 
 	MeshVertData& FindOrAddVData(MeshPrimitiveType type, IMaterial* material);
@@ -346,6 +348,7 @@ struct MeshBuilderInternal
 	struct
 	{
 		MeshComponentIterator from, to; // [from,to)
+		MeshComponentIterator lastBatchStart, lastBatchEnd; // for debug meshes
 		bool dynamic;
 	} creationStatus;
 
