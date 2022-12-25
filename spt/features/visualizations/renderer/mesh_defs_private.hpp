@@ -99,7 +99,7 @@ struct VertexData
 	Vector pos;
 	color32 col;
 
-	VertexData() = default;
+	VertexData(){};
 	VertexData(const Vector& pos, color32 color) : pos(pos), col(color) {}
 };
 
@@ -177,6 +177,12 @@ struct VectorSlice
 	{
 		if (vec->capacity() < off + len + n)
 			vec->reserve(SmallestPowerOfTwoGreaterOrEqual(off + len + n));
+	}
+
+	inline void resize(size_t n)
+	{
+		vec->resize(off + n);
+		len = n;
 	}
 
 	inline void push_back(const T& elem)
