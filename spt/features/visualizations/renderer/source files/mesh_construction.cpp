@@ -169,9 +169,9 @@ void MeshBuilderDelegate::AddTris(const Vector* verts, int nFaces, MeshColor mc,
 		for (int i = 0; i < nFaces; i++)
 		{
 			size_t vIdx = vdf.verts.size();
-			vdf.verts.emplace_back(verts[3 * i + 0]);
-			vdf.verts.emplace_back(verts[3 * i + 1]);
-			vdf.verts.emplace_back(verts[3 * i + 2]);
+			vdf.verts.emplace_back(verts[3 * i + 0], mc.faceColor);
+			vdf.verts.emplace_back(verts[3 * i + 1], mc.faceColor);
+			vdf.verts.emplace_back(verts[3 * i + 2], mc.faceColor);
 			if (wd & WD_CW)
 			{
 				vdf.indices.push_back(vIdx + 0);

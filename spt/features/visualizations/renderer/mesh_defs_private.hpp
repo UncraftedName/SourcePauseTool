@@ -98,6 +98,9 @@ struct VertexData
 {
 	Vector pos;
 	color32 col;
+
+	VertexData() = default;
+	VertexData(const Vector& pos, color32 color) : pos(pos), col(color) {}
 };
 
 // this allows arrays shared by all dynamic meshes; behaves kind of a stack - you can only edit the last slice
@@ -347,7 +350,7 @@ struct MeshBuilderInternal
 
 	struct
 	{
-		MeshComponentIterator from, to; // [from,to)
+		MeshComponentIterator from, to;                     // [from,to)
 		MeshComponentIterator lastBatchStart, lastBatchEnd; // for debug meshes
 		bool dynamic;
 	} creationStatus;
