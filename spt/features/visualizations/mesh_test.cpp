@@ -306,98 +306,81 @@ BEGIN_TEST_CASE("AddSweptBox()", Vector(2000, 0, 0))
 	* the index math for swept boxes is very non-trivial, so check all possible combinations
 	* of the components of the sweep being 0. Also check cases where the sweep is small -
 	* the may lead to weird cases where the sweep may overlap the start/end in unexpected ways.
-	* 
-	* Since there's just so many swept boxes, I'll actually make them all static cuz mah poor fps :(
 	*/
 
-	static std::vector<StaticMesh> boxes;
+	MeshColor cStart = MeshColor::Outline({0, 255, 0, 20});
+	MeshColor cEnd = MeshColor::Outline({255, 0, 0, 20});
+	MeshColor cSweep = MeshColor::Outline({150, 150, 150, 20});
+	const Vector mins(-5, -7, -9);
+	const Vector maxs(7, 9, 11);
+	const float sweepMags[] = {10, 25}; // test small and large sweeps
+	const float xOffs[] = {-50, 50};
+	const float ySpacing = 90;
 
-	if (boxes.size() == 0 || !boxes[0].Valid())
 	{
-		// create all
-		boxes.clear();
+		// no sweep
+		Vector start = testPos + Vector(0, 0, 60);
+		RENDER_DYNAMIC(mr, mb.AddSweptBox(start, start + Vector(0.001), mins, maxs, cStart, cEnd, cSweep););
+	}
 
-		MeshColor cStart = MeshColor::Outline({0, 255, 0, 20});
-		MeshColor cEnd = MeshColor::Outline({255, 0, 0, 20});
-		MeshColor cSweep = MeshColor::Outline({150, 150, 150, 20});
-		const Vector mins(-5, -7, -9);
-		const Vector maxs(7, 9, 11);
-		const float sweepMags[] = {10, 25}; // test small and large sweeps
-		const float xOffs[] = {-50, 50};
-		const float ySpacing = 90;
-
+	for (int i = 0; i < 2; i++)
+	{
+		// test all (24!!!) edge cases
+		int yOff = 0;
+		for (int excludeAxIdx = 0; excludeAxIdx < 3; excludeAxIdx++)
 		{
-			// no sweep
-			Vector start = testPos + Vector(0, 0, 60);
-			boxes.push_back(
-			    MB_STATIC(mb.AddSweptBox(start, start + Vector(0.001), mins, maxs, cStart, cEnd, cSweep);));
-		}
-
-		for (int i = 0; i < 2; i++)
-		{
-			// test all (24!!!) edge cases
-			int yOff = 0;
-			for (int excludeAxIdx = 0; excludeAxIdx < 3; excludeAxIdx++)
-			{
-				int axIdx0 = (excludeAxIdx + 1) % 3;
-				int axIdx1 = (excludeAxIdx + 2) % 3;
-				for (int ax0 = 0; ax0 < 2; ax0++)
-				{
-					for (int ax1 = 0; ax1 < 2; ax1++)
-					{
-						for (int j = 0; j < 2; j++)
-						{
-							Vector start = testPos + Vector(xOffs[i], ++yOff * ySpacing, 0);
-							Vector off;
-							off[excludeAxIdx] = 0;
-							off[axIdx0] = (ax0 - .5) * (j ? 1 : .2);
-							off[axIdx1] = (ax1 - .5) * (j ? .2 : 1);
-							VectorNormalize(off);
-							Vector end = start + off * sweepMags[i];
-							boxes.push_back(MB_STATIC(mb.AddSweptBox(
-							    start, end, mins, maxs, cStart, cEnd, cSweep);));
-						}
-					}
-				}
-			}
-			// test all corner cases
-			yOff = 0;
+			int axIdx0 = (excludeAxIdx + 1) % 3;
+			int axIdx1 = (excludeAxIdx + 2) % 3;
 			for (int ax0 = 0; ax0 < 2; ax0++)
 			{
 				for (int ax1 = 0; ax1 < 2; ax1++)
 				{
-					for (int ax2 = 0; ax2 < 2; ax2++)
+					for (int j = 0; j < 2; j++)
 					{
-						Vector start = testPos + Vector(xOffs[i], ++yOff * ySpacing, 60);
-						Vector off(ax0 - .5, ax1 - .5, ax2 - .5);
+						Vector start = testPos + Vector(xOffs[i], ++yOff * ySpacing, 0);
+						Vector off;
+						off[excludeAxIdx] = 0;
+						off[axIdx0] = (ax0 - .5) * (j ? 1 : .2);
+						off[axIdx1] = (ax1 - .5) * (j ? .2 : 1);
 						VectorNormalize(off);
 						Vector end = start + off * sweepMags[i];
-						boxes.push_back(MB_STATIC(
-						    mb.AddSweptBox(start, end, mins, maxs, cStart, cEnd, cSweep);));
+						RENDER_DYNAMIC(
+						    mr, mb.AddSweptBox(start, end, mins, maxs, cStart, cEnd, cSweep););
 					}
 				}
 			}
-			// test all face cases
-			yOff = 0;
-			for (int ax = 0; ax < 3; ax++)
+		}
+		// test all corner cases
+		yOff = 0;
+		for (int ax0 = 0; ax0 < 2; ax0++)
+		{
+			for (int ax1 = 0; ax1 < 2; ax1++)
 			{
-				for (int reflect = 0; reflect < 2; reflect++)
+				for (int ax2 = 0; ax2 < 2; ax2++)
 				{
-					Vector start = testPos + Vector(xOffs[i], ++yOff * ySpacing, 120);
-					Vector off(0);
-					off[ax] = reflect - .5;
+					Vector start = testPos + Vector(xOffs[i], ++yOff * ySpacing, 60);
+					Vector off(ax0 - .5, ax1 - .5, ax2 - .5);
 					VectorNormalize(off);
 					Vector end = start + off * sweepMags[i];
-					boxes.push_back(
-					    MB_STATIC(mb.AddSweptBox(start, end, mins, maxs, cStart, cEnd, cSweep);));
+					RENDER_DYNAMIC(mr,
+					               mb.AddSweptBox(start, end, mins, maxs, cStart, cEnd, cSweep););
 				}
 			}
 		}
-	}
-	for (auto& staticMesh : boxes)
-	{
-		Assert(staticMesh.Valid());
-		mr.DrawMesh(staticMesh);
+		// test all face cases
+		yOff = 0;
+		for (int ax = 0; ax < 3; ax++)
+		{
+			for (int reflect = 0; reflect < 2; reflect++)
+			{
+				Vector start = testPos + Vector(xOffs[i], ++yOff * ySpacing, 120);
+				Vector off(0);
+				off[ax] = reflect - .5;
+				VectorNormalize(off);
+				Vector end = start + off * sweepMags[i];
+				RENDER_DYNAMIC(mr, mb.AddSweptBox(start, end, mins, maxs, cStart, cEnd, cSweep););
+			}
+		}
 	}
 }
 END_TEST_CASE()
