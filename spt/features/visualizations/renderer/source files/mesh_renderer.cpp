@@ -59,7 +59,7 @@ struct MeshRendererInternal
 	{
 		CRendering3dView* rendering3dView;
 		CViewSetup* viewSetup;
-		VPlane* frustum;
+		cplane_t frustum[FRUSTUM_NUMPLANES];
 	} viewInfo;
 
 	struct
@@ -262,7 +262,7 @@ struct MeshUnitWrapper
 	}
 
 	// returns true if this mesh should be rendered
-	bool ApplyCallbackAndCalcCamDist(const CViewSetup& cvs, const VPlane frustum[6])
+	bool ApplyCallbackAndCalcCamDist(const CViewSetup& cvs, const cplane_t frustum[6])
 	{
 		const MeshUnit& meshUnit = GetMeshUnit();
 
@@ -293,9 +293,8 @@ struct MeshUnitWrapper
 
 		// check if mesh is outside frustum
 
-		// TODO convert to mathlib BoxOnPlaneSide
 		for (int i = 0; i < 6; i++)
-			if (frustum[i].BoxOnPlaneSide(posInfo.mins, posInfo.maxs) == SIDE_BACK)
+			if (BoxOnPlaneSide((float*)&posInfo.mins, (float*)&posInfo.maxs, &frustum[i]) == 2)
 				return false;
 
 		// calc camera to mesh "distance"
@@ -362,9 +361,18 @@ void MeshRendererInternal::OnRenderViewPre_Signal(void* thisptr, CViewSetup* cam
 void MeshRendererInternal::SetupViewInfo(CRendering3dView* rendering3dView)
 {
 	viewInfo.rendering3dView = rendering3dView;
+
 	// if only more stuff was public ://
+
 	viewInfo.viewSetup = (CViewSetup*)((uintptr_t)rendering3dView + 8);
-	viewInfo.frustum = *(VPlane**)(viewInfo.viewSetup + 1); // inward facing
+
+	// these are inward facing planes, convert from VPlane to cplane_t for fast frustum test
+	for (int i = 0; i < FRUSTUM_NUMPLANES; i++)
+	{
+		VPlane* vp = *(VPlane**)(viewInfo.viewSetup + 1) + i;
+		viewInfo.frustum[i] = {.normal = vp->m_Normal, .dist = vp->m_Dist, .type = 255};
+		viewInfo.frustum[i].signbits = SignbitsForPlane(&viewInfo.frustum[i]);
+	}
 }
 
 void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
