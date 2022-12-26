@@ -45,8 +45,8 @@ struct MeshRendererInternal
 
 	struct
 	{
-		CRendering3dView* rendering3dView;
-		CViewSetup* viewSetup;
+		const CRendering3dView* rendering3dView;
+		const CViewSetup* viewSetup;
 		cplane_t frustum[FRUSTUM_NUMPLANES];
 	} viewInfo;
 
@@ -89,16 +89,23 @@ struct MeshRendererInternal
 
 	} debugMeshInfo;
 
-	void FrameCleanup();
+	using DebugDescList = decltype(debugMeshInfo.descriptionSlices)::value_type;
+
 	void OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView);
-	void SetupViewInfo(CRendering3dView* rendering3dView);
+	void FrameCleanup();
 	void OnDrawOpaques(CRendering3dView* rendering3dView);
 	void OnDrawTranslucents(CRendering3dView* rendering3dView);
+
+	void SetupViewInfo(CRendering3dView* rendering3dView);
 	ComponentRange CollectRenderableComponents(bool opaques);
 	void AddDebugCrosses(ConstComponentRange range, bool opaques);
 	void AddDebugBox(ConstComponentRange range, bool opaques);
 	void DrawDebugMeshes();
 	void DrawAll(ConstComponentRange range, bool addDebugMeshes, bool opaques);
+
+	void AddDebugCrosses(DebugDescList& debugList, ConstComponentRange range, bool opaques);
+	void AddDebugBox(DebugDescList& debugList, ConstComponentRange range, bool opaques);
+	void DrawDebugMeshes(DebugDescList& debugList);
 
 } g_meshRendererInternal;
 
@@ -163,10 +170,9 @@ void MeshRendererFeature::PreHook()
 	* 1) InitHooks: spt_overlay finds the render function.
 	* 2) PreHook: spt_overlay may connect the RenderViewSignal. To not depend on feature load order
 	*    we cannot check if the signal exists, but we can check if the RenderView function was found.
-	* 3) LoadFeature: Anything that uses the mesh rendering system can check to see if the signal exists.
+	* 3) LoadFeature: Anything that uses the mesh rendering system can check to see if the signal works.
 	*/
-	signal.Works = !!ORIG_CRendering3dView__DrawOpaqueRenderables
-	               && !!ORIG_CRendering3dView__DrawTranslucentRenderables
+	signal.Works = ORIG_CRendering3dView__DrawOpaqueRenderables && ORIG_CRendering3dView__DrawTranslucentRenderables
 	               && spt_overlay.ORIG_CViewRender__RenderView;
 
 	if (ORIG_OnRenderStart)
@@ -249,8 +255,10 @@ struct MeshUnitWrapper
 	}
 
 	// returns true if this mesh should be rendered
-	bool ApplyCallbackAndCalcCamDist(const CViewSetup& cvs, const cplane_t frustum[6])
+	bool ApplyCallbackAndCalcCamDist()
 	{
+		auto& viewInfo = g_meshRendererInternal.viewInfo;
+
 		if (callback)
 		{
 			// apply callback
@@ -260,7 +268,7 @@ struct MeshUnitWrapper
 			                   : g_meshBuilderInternal.GetDynamicMeshFromToken(_dynamicToken).posInfo;
 
 			CallbackInfoIn infoIn = {
-			    cvs,
+			    *viewInfo.viewSetup,
 			    unitPosInfo,
 			    spt_meshRenderer.CurrentPortalRenderDepth(),
 			    spt_overlay.renderingOverlay,
@@ -273,18 +281,26 @@ struct MeshUnitWrapper
 			TransformAABB(cbInfoOut.mat, unitPosInfo.mins, unitPosInfo.maxs, posInfo.mins, posInfo.maxs);
 		}
 
-		// check if mesh is outside frustum
+		// do frustum check
+
+		frustumCheckResult = 0;
 
 		for (int i = 0; i < 6; i++)
-			if (BoxOnPlaneSide((float*)&posInfo.mins, (float*)&posInfo.maxs, &frustum[i]) == 2)
+		{
+			int cur = BoxOnPlaneSide((float*)&posInfo.mins,
+			                         (float*)&posInfo.maxs,
+			                         &g_meshRendererInternal.viewInfo.frustum[i]);
+			frustumCheckResult |= cur;
+			if (cur == 2)
 				return false;
+		}
 
 		// calc camera to mesh "distance"
 
-		CalcClosestPointOnAABB(posInfo.mins, posInfo.maxs, cvs.origin, camDistSqrTo);
-		if (cvs.origin == camDistSqrTo)
+		CalcClosestPointOnAABB(posInfo.mins, posInfo.maxs, viewInfo.viewSetup->origin, camDistSqrTo);
+		if (viewInfo.viewSetup->origin == camDistSqrTo)
 			camDistSqrTo = (posInfo.mins + posInfo.maxs) / 2.f; // if inside cube, use center idfk
-		camDistSqr = cvs.origin.DistToSqr(camDistSqrTo);
+		camDistSqr = viewInfo.viewSetup->origin.DistToSqr(camDistSqrTo);
 
 		return true;
 	}
@@ -392,8 +408,6 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 			    if (ignoreZA != ignoreZB)
 				    return ignoreZB; // TODO test me!!
 		    }
-		    // TODO check if two meshes overlap from camera's perspective
-		    // we already know both objects at least overlap with the frustum, could do something with that
 		    if (a.unitWrapper->camDistSqr != b.unitWrapper->camDistSqr)
 			    return a.unitWrapper->camDistSqr > b.unitWrapper->camDistSqr;
 		    return a < b;
@@ -403,8 +417,8 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 
 	if (y_spt_draw_mesh_debug.GetBool())
 	{
-		AddDebugCrosses(range, false);
-		DrawDebugMeshes();
+		AddDebugCrosses(debugMeshInfo.descriptionSlices.top(), range, false);
+		DrawDebugMeshes(debugMeshInfo.descriptionSlices.top());
 	}
 	debugMeshInfo.descriptionSlices.pop();
 }
@@ -416,7 +430,7 @@ ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
 
 	for (MeshUnitWrapper& unitWrapper : queuedUnitWrappers)
 	{
-		if (!unitWrapper.ApplyCallbackAndCalcCamDist(*viewInfo.viewSetup, viewInfo.frustum))
+		if (!unitWrapper.ApplyCallbackAndCalcCamDist())
 			continue; // the mesh is outside our frustum or the user wants to skip rendering
 
 		if (unitWrapper.callback && unitWrapper.cbInfoOut.colorModulate.a < 1)
@@ -428,8 +442,8 @@ ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
 				return false;
 
 			if (unitWrapper.callback)
-				if (unitWrapper.cbInfoOut.colorModulate.a < 255 && !opaques)
-					return true; // callback changed the alpha component, make translucent if < 1 otherwise opaque
+				if (unitWrapper.cbInfoOut.colorModulate.a < 255)
+					return !opaques; // callback changed alpha component, make translucent if < 1 otherwise opaque
 
 			bool opaqueMaterial = !material->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ)
 			                      && !material->GetMaterialVarFlag(MATERIAL_VAR_VERTEXALPHA);
@@ -455,7 +469,7 @@ ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
 	return ComponentRange{components.begin(), components.end()};
 }
 
-void MeshRendererInternal::AddDebugCrosses(ConstComponentRange range, bool opaques)
+void MeshRendererInternal::AddDebugCrosses(DebugDescList& debugList, ConstComponentRange range, bool opaques)
 {
 	(void)opaques;
 	for (auto it = range.first; it < range.second; it++)
@@ -466,18 +480,16 @@ void MeshRendererInternal::AddDebugCrosses(ConstComponentRange range, bool opaqu
 		// scale cross by the AABB size, plot this bad boy in desmos as a function of maxBoxDim
 		float size = -falloff * (biggest - smallest) / (maxDiameter + falloff) + biggest;
 
-		debugMeshInfo.descriptionSlices.top().emplace_back(it->unitWrapper->camDistSqrTo,
-		                                                   size,
-		                                                   DEBUG_COLOR_CROSS);
+		debugList.emplace_back(it->unitWrapper->camDistSqrTo, size, DEBUG_COLOR_CROSS);
 	}
 }
 
-void MeshRendererInternal::DrawDebugMeshes()
+void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 {
 	static std::vector<MeshUnitWrapper> debugUnitWrappers;
 	debugUnitWrappers.clear();
 
-	for (auto& debugDesc : debugMeshInfo.descriptionSlices.top())
+	for (auto& debugDesc : debugList)
 	{
 		debugUnitWrappers.emplace_back(spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
@@ -539,7 +551,11 @@ void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugM
 			{
 				range.first->unitWrapper->Render(mw);
 				if (addDebugMeshes)
-					AddDebugBox(g_meshBuilderInternal.creationStatus.batchRange, opaques);
+				{
+					AddDebugBox(debugMeshInfo.descriptionSlices.top(),
+					            g_meshBuilderInternal.creationStatus.batchRange,
+					            opaques);
+				}
 			}
 		}
 		else
@@ -547,12 +563,12 @@ void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugM
 			// a single static mesh
 			range.first->unitWrapper->Render(range.first->iMeshWrapper);
 			if (addDebugMeshes)
-				AddDebugBox(range, opaques);
+				AddDebugBox(debugMeshInfo.descriptionSlices.top(), range, opaques);
 		}
 	}
 }
 
-void MeshRendererInternal::AddDebugBox(ConstComponentRange range, bool opaques)
+void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentRange range, bool opaques)
 {
 	auto& debugDescs = debugMeshInfo.descriptionSlices.top();
 	if (range.first->vertData)
@@ -564,14 +580,14 @@ void MeshRendererInternal::AddDebugBox(ConstComponentRange range, bool opaques)
 			VectorMin(it->unitWrapper->posInfo.mins, batchedMins, batchedMins);
 			VectorMax(it->unitWrapper->posInfo.maxs, batchedMaxs, batchedMaxs);
 
-			debugDescs.emplace_back(it->unitWrapper->posInfo.mins - Vector{1},
+			debugList.emplace_back(it->unitWrapper->posInfo.mins - Vector{1},
 			                        it->unitWrapper->posInfo.maxs + Vector{1},
 			                        it->unitWrapper->callback ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
 			                                                  : DEBUG_COLOR_DYNAMIC_MESH);
 		}
 		if (std::distance(range.first, range.second) > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
 		{
-			debugDescs.emplace_back(batchedMins - Vector{2},
+			debugList.emplace_back(batchedMins - Vector{2},
 			                        batchedMaxs + Vector{2},
 			                        opaques ? DEBUG_COLOR_MERGED_DYNAMIC_MESH_OPAQUE
 			                                : DEBUG_COLOR_MERGED_DYNAMIC_MESH_TRANSLUCENT);
@@ -580,7 +596,7 @@ void MeshRendererInternal::AddDebugBox(ConstComponentRange range, bool opaques)
 	else
 	{
 		Assert(std::distance(range.first, range.second) == 1);
-		debugDescs.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1},
+		debugList.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1},
 		                        range.first->unitWrapper->posInfo.maxs + Vector{1},
 		                        DEBUG_COLOR_STATIC_MESH);
 	}

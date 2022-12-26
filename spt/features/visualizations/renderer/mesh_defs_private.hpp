@@ -175,7 +175,7 @@ using MeshComponentContainer = std::vector<MeshComponent>;
 using ComponentRange = std::pair<MeshComponentContainer::iterator, MeshComponentContainer::iterator>;
 using ConstComponentRange = std::pair<MeshComponentContainer::const_iterator, MeshComponentContainer::const_iterator>;
 
-// TODO add functionality to convert to collides????? :eyes:
+// TODO add functionality to convert to collides
 struct MeshBuilderInternal
 {
 	// you can't swap the vectors cuz they're used in slices
