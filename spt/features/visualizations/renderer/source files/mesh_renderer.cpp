@@ -32,8 +32,6 @@ ConVar y_spt_draw_mesh_debug("y_spt_draw_mesh_debug",
 * own render order. Nothing we do will be perfect - but a good enough solution for many cases is to approximate
 * the distance to each mesh from the camera as a single value and sort based on that.
 * 
-* TODO - try combining opaques & translucents into one mesh before rendering
-* 
 * This system would not exist without the absurd of times mlugg has helped me while making it; send him lots of
 * love, gifts, and fruit baskets.
 */
@@ -95,10 +93,11 @@ struct MeshRendererInternal
 	void SetupViewInfo(CRendering3dView* rendering3dView);
 	void OnDrawOpaques(CRendering3dView* rendering3dView);
 	void OnDrawTranslucents(CRendering3dView* rendering3dView);
-	void CollectRenderableComponents(std::vector<MeshComponent>& vec, bool opaques);
-	void AddDebugCrosses(std::vector<MeshComponent>& vec);
+	ComponentRange CollectRenderableComponents(bool opaques);
+	void AddDebugCrosses(ConstComponentRange range);
+	void AddDebugBox(ConstComponentRange range);
 	void DrawDebugMeshes();
-	void DrawAll(const std::vector<MeshComponent>& sortedComponents);
+	void DrawAll(ConstComponentRange range);
 
 } g_meshRendererInternal;
 
@@ -227,7 +226,7 @@ struct MeshUnitWrapper
 {
 	// keep statics alive as long as we render
 	const std::shared_ptr<StaticMeshUnit> _staticMeshPtr;
-	const DynamicMesh _dynamicToken;
+	const DynamicMeshToken _dynamicToken;
 	const RenderCallback callback;
 
 	CallbackInfoOut cbInfoOut;
@@ -235,7 +234,7 @@ struct MeshUnitWrapper
 	Vector camDistSqrTo;
 	float camDistSqr; // translucent sorting metric
 
-	MeshUnitWrapper(DynamicMesh dynamicToken, const RenderCallback& callback = nullptr)
+	MeshUnitWrapper(DynamicMeshToken dynamicToken, const RenderCallback& callback = nullptr)
 	    : _staticMeshPtr(nullptr)
 	    , _dynamicToken(dynamicToken)
 	    , callback(callback)
@@ -366,11 +365,9 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 	// push a new debug slice, the corresponding pop will be in DrawTranslucents
 	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionArray);
 
-	static std::vector<MeshComponent> sortedMeshes;
-	sortedMeshes.clear();
-	CollectRenderableComponents(sortedMeshes, true);
-	std::sort(sortedMeshes.begin(), sortedMeshes.end());
-	DrawAll(sortedMeshes);
+	ComponentRange range = CollectRenderableComponents(true);
+	std::sort(range.first, range.second);
+	DrawAll(range);
 }
 
 void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
@@ -378,14 +375,11 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
 
-	static std::vector<MeshComponent> sortedMeshes;
-	sortedMeshes.clear();
-
-	CollectRenderableComponents(sortedMeshes, false);
+	ComponentRange range = CollectRenderableComponents(false);
 
 	std::sort(
-	    sortedMeshes.begin(),
-	    sortedMeshes.end(),
+	    range.first,
+	    range.second,
 	    [](const MeshComponent& a, const MeshComponent& b)
 	    {
 		    IMaterial* matA = a.vertData ? a.vertData->material : a.iMeshWrapper.material;
@@ -404,18 +398,21 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 		    return a < b;
 	    });
 
-	DrawAll(sortedMeshes);
+	DrawAll(range);
 
 	if (y_spt_draw_mesh_debug.GetBool())
 	{
-		AddDebugCrosses(sortedMeshes);
+		AddDebugCrosses(range);
 		DrawDebugMeshes();
 	}
 	debugMeshInfo.descriptionSlices.pop();
 }
 
-void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent>& vec, bool opaques)
+ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
 {
+	static std::vector<MeshComponent> vec;
+	vec.clear();
+
 	for (MeshUnitWrapper& meshUnitWrapper : queuedUnitWrappers)
 	{
 		if (!meshUnitWrapper.ApplyCallbackAndCalcCamDist(*viewInfo.viewSetup, viewInfo.frustum))
@@ -454,19 +451,20 @@ void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent
 					vec.emplace_back(&meshUnitWrapper, &vData, IMeshWrapper{});
 		}
 	}
+	return ComponentRange{vec.begin(), vec.end()};
 }
 
-void MeshRendererInternal::AddDebugCrosses(std::vector<MeshComponent>& vec)
+void MeshRendererInternal::AddDebugCrosses(ConstComponentRange range)
 {
-	for (MeshComponent& sortedMesh : vec)
+	for (auto it = range.first; it < range.second; it++)
 	{
-		const MeshPositionInfo& posInfo = sortedMesh.unitWrapper->posInfo;
+		const MeshPositionInfo& posInfo = it->unitWrapper->posInfo;
 		float maxDiameter = VectorMaximum(posInfo.maxs - posInfo.mins);
 		const float smallest = 1, biggest = 15, falloff = 100;
 		// scale cross by the AABB size, plot this bad boy in desmos as a function of maxBoxDim
 		float size = -falloff * (biggest - smallest) / (maxDiameter + falloff) + biggest;
 
-		debugMeshInfo.descriptionSlices.top().emplace_back(sortedMesh.unitWrapper->camDistSqrTo,
+		debugMeshInfo.descriptionSlices.top().emplace_back(it->unitWrapper->camDistSqrTo,
 		                                                   size,
 		                                                   DEBUG_COLOR_CROSS);
 	}
@@ -474,12 +472,12 @@ void MeshRendererInternal::AddDebugCrosses(std::vector<MeshComponent>& vec)
 
 void MeshRendererInternal::DrawDebugMeshes()
 {
-	static std::vector<MeshUnitWrapper> debugMeshes;
-	debugMeshes.clear();
+	static std::vector<MeshUnitWrapper> debugUnitWrappers;
+	debugUnitWrappers.clear();
 
 	for (auto& debugDesc : debugMeshInfo.descriptionSlices.top())
 	{
-		debugMeshes.emplace_back(spt_meshBuilder.CreateDynamicMesh(
+		debugUnitWrappers.emplace_back(spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
 			    if (debugDesc.isBox)
@@ -498,10 +496,10 @@ void MeshRendererInternal::DrawDebugMeshes()
 		    }));
 	}
 
-	static std::vector<MeshComponent> sortedMeshes;
-	sortedMeshes.clear();
+	static std::vector<MeshComponent> debugComponents;
+	debugComponents.clear();
 
-	for (MeshUnitWrapper& debugMesh : debugMeshes)
+	for (MeshUnitWrapper& debugMesh : debugUnitWrappers)
 	{
 		Assert(!debugMesh._staticMeshPtr);
 
@@ -509,84 +507,78 @@ void MeshRendererInternal::DrawDebugMeshes()
 
 		for (auto& component : debugUnit.vDataSlice)
 			if (component.indices.size() > 0)
-				sortedMeshes.emplace_back(&debugMesh, &component, IMeshWrapper{});
+				debugComponents.emplace_back(&debugMesh, &component, IMeshWrapper{});
 	}
-	std::sort(sortedMeshes.begin(), sortedMeshes.end());
-	DrawAll(sortedMeshes);
+	std::sort(debugComponents.begin(), debugComponents.end());
+	DrawAll({debugComponents.begin(), debugComponents.end()});
 }
 
-void MeshRendererInternal::DrawAll(const std::vector<MeshComponent>& sortedComponents)
+void MeshRendererInternal::DrawAll(ConstComponentRange fullRange)
 {
-	if (sortedComponents.empty())
+	if (std::distance(fullRange.first, fullRange.second) == 0)
 		return;
 
-	using _it = const MeshComponent*;
+	ConstComponentRange range{{}, fullRange.first};
 
-	_it low;
-	_it high = &sortedComponents.front();
-	_it end = &sortedComponents.back() + 1;
-
-	while (high != end)
+	while (range.second != fullRange.second)
 	{
-		low = high++;
+		range.first = range.second++;
 
-		if (low->vertData)
+		if (range.first->vertData)
 		{
-			// dynamic - find a suitable range [low,high) that we can batch together
-			high = std::find_if(low + 1, end, [low](auto& s) { return (*low <=> s) != 0; });
-			// copy the vert data references into this temp buffer
-			static std::vector<const MeshVertData*> tmp;
-			tmp.clear();
-			// TODO try using transform?
-			// std::transform(low, high, std::back_insert_iterator(tmp), [](const MeshComponent& s) { return s.vertData; });
-			for (auto it = low; it < high; it++)
-				tmp.push_back(it->vertData);
+			range.second = std::find_if(range.first + 1,
+			                            fullRange.second,
+			                            [=](auto& mc) { return (*range.first <=> mc) != 0; });
 
 			// batch the whole range
-			g_meshBuilderInternal.BeginDynamicMeshCreation(&tmp.front(), &tmp.back() + 1, true);
+			g_meshBuilderInternal.BeginIMeshCreation(range, true);
 			IMeshWrapper mw;
 			while (mw = g_meshBuilderInternal.GetNextIMeshWrapper(), mw.iMesh)
 			{
-				low->unitWrapper->Render(mw);
-
+				range.first->unitWrapper->Render(mw);
 				if (y_spt_draw_mesh_debug.GetBool())
-				{
-					auto& lastSlice = debugMeshInfo.descriptionSlices.top();
-					Vector batchedMins{INFINITY};
-					Vector batchedMaxs{-INFINITY};
-					for (auto it = low; it < high; it++)
-					{
-						auto& posInfo = it->unitWrapper->posInfo;
-						VectorMin(posInfo.mins, batchedMins, batchedMins);
-						VectorMax(posInfo.maxs, batchedMaxs, batchedMaxs);
-
-						lastSlice.emplace_back(posInfo.mins - Vector{1},
-						                       posInfo.maxs + Vector{1},
-						                       it->unitWrapper->callback
-						                           ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
-						                           : DEBUG_COLOR_DYNAMIC_MESH);
-					}
-					if (std::distance(low, high) > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
-					{
-						lastSlice.emplace_back(batchedMins - Vector{2},
-						                       batchedMaxs + Vector{2},
-						                       DEBUG_COLOR_MERGED_DYNAMIC_MESH);
-					}
-				}
+					AddDebugBox(g_meshBuilderInternal.creationStatus.batchRange);
 			}
 		}
 		else
 		{
 			// a single static mesh
-			low->unitWrapper->Render(low->iMeshWrapper);
+			range.first->unitWrapper->Render(range.first->iMeshWrapper);
 			if (y_spt_draw_mesh_debug.GetBool())
-			{
-				auto& lastSlice = debugMeshInfo.descriptionSlices.top();
-				lastSlice.emplace_back(low->unitWrapper->posInfo.mins - Vector{1},
-				                       low->unitWrapper->posInfo.maxs + Vector{1},
-				                       DEBUG_COLOR_STATIC_MESH);
-			}
+				AddDebugBox(range);
 		}
+	}
+}
+
+void MeshRendererInternal::AddDebugBox(ConstComponentRange range)
+{
+	auto& debugDescs = debugMeshInfo.descriptionSlices.top();
+	if (range.first->vertData)
+	{
+		Vector batchedMins{INFINITY};
+		Vector batchedMaxs{-INFINITY};
+		for (auto it = range.first; it < range.second; it++)
+		{
+			VectorMin(it->unitWrapper->posInfo.mins, batchedMins, batchedMins);
+			VectorMax(it->unitWrapper->posInfo.maxs, batchedMaxs, batchedMaxs);
+
+			debugDescs.emplace_back(it->unitWrapper->posInfo.mins - Vector{1},
+			                        it->unitWrapper->posInfo.maxs + Vector{1},
+			                        it->unitWrapper->callback ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
+			                                                  : DEBUG_COLOR_DYNAMIC_MESH);
+		}
+		if (std::distance(range.first, range.second) > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
+		{
+			debugDescs.emplace_back(batchedMins - Vector{2},
+			                        batchedMaxs + Vector{2},
+			                        DEBUG_COLOR_MERGED_DYNAMIC_MESH);
+		}
+	}
+	else
+	{
+		debugDescs.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1},
+		                        range.first->unitWrapper->posInfo.maxs + Vector{1},
+		                        DEBUG_COLOR_STATIC_MESH);
 	}
 }
 
@@ -631,7 +623,7 @@ std::weak_ordering MeshComponent::operator<=>(const MeshComponent& rhs) const
 	return W::equivalent;
 }
 
-/**************************************** MESH RENDERER ****************************************/
+/**************************************** MESH RENDERER DELEGATE ****************************************/
 
 void MeshRendererDelegate::DrawMesh(const DynamicMesh& dynamicMesh, const RenderCallback& callback)
 {

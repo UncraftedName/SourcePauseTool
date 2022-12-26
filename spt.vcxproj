@@ -1396,6 +1396,7 @@
     <ClInclude Include="spt\features\visualizations\renderer\mesh_renderer.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\mesh_defs_private.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\mesh_defs_public.hpp" />
+    <ClInclude Include="spt\features\visualizations\renderer\source files\vector_slice.hpp" />
     <ClInclude Include="spt\ipc\ipc.hpp" />
     <ClInclude Include="spt\scripts2\condition2.hpp" />
     <ClInclude Include="spt\scripts2\framebulk_handler2.hpp" />

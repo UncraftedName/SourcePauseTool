@@ -82,6 +82,7 @@
 #include <stack>
 
 #include "spt\utils\interfaces.hpp"
+#include "source files\vector_slice.hpp"
 
 #define MAX_MESH_VERTS 32767
 #define MAX_MESH_INDICES 32767
@@ -106,133 +107,6 @@ struct VertexData
 	VertexData(const Vector& pos, color32 color) : pos(pos), col(color) {}
 };
 
-// this allows arrays shared by all dynamic meshes; behaves kind of a stack - you can only edit the last slice
-template<typename T>
-struct VectorSlice
-{
-	std::vector<T>* vec;
-	size_t off;
-	size_t len;
-
-	// TODO TRY SETTING TO DEFAULT
-	VectorSlice() = default;
-
-	VectorSlice(VectorSlice&) = delete;
-
-	VectorSlice(VectorSlice&& other) : vec(other.vec), off(other.off), len(other.len)
-	{
-		other.vec = nullptr;
-		other.off = other.len = 0;
-	}
-
-	VectorSlice(std::vector<T>& vec) : vec(&vec), off(vec.size()), len(0) {}
-
-	/*void init(std::vector<T>& vec_)
-	{
-		vec = &vec_;
-		off = vec_.size();
-		len = 0;
-	}*/
-
-	VectorSlice<T>& operator=(VectorSlice<T>&& other)
-	{
-		if (&other == this)
-			return *this;
-		vec = other.vec;
-		off = other.off;
-		len = other.len;
-		other.vec = nullptr;
-		other.off = other.len = 0;
-		return *this;
-	};
-
-	void pop()
-	{
-		if (vec)
-		{
-			Assert(off + len == vec->size());
-			vec->resize(vec->size() - len);
-			vec = nullptr;
-			off = len = 0;
-		}
-	}
-
-	inline std::vector<T>::iterator begin() const
-	{
-		return vec->begin() + off;
-	}
-
-	inline std::vector<T>::iterator end() const
-	{
-		return vec->begin() + off + len;
-	}
-
-	template<class _It>
-	inline void add_range(_It first, _It last)
-	{
-		size_t dist = std::distance(first, last);
-		reserve_extra(dist);
-		vec->insert(vec->end(), first, last);
-		len += dist;
-	}
-
-	inline void reserve_extra(size_t n)
-	{
-		if (vec->capacity() < off + len + n)
-			vec->reserve(SmallestPowerOfTwoGreaterOrEqual(off + len + n));
-	}
-
-	inline void resize(size_t n)
-	{
-		vec->resize(off + n);
-		len = n;
-	}
-
-	template<class _Pr>
-	inline void erase_if(_Pr pred)
-	{
-		auto it = std::remove_if(begin(), end(), pred);
-		auto removed = std::distance(it, end());
-		vec->erase(it, end());
-		len -= removed;
-	}
-
-	inline void push_back(const T& elem)
-	{
-		Assert(off + len == vec->size());
-		vec->push_back(elem);
-		len++;
-	}
-
-	template<class... Params>
-	inline void emplace_back(Params&&... params)
-	{
-		Assert(off + len == vec->size());
-		vec->emplace_back(std::forward<Params>(params)...);
-		len++;
-	}
-
-	inline T& operator[](size_t i) const
-	{
-		return vec->at(off + i);
-	}
-
-	inline bool empty() const
-	{
-		return len == 0;
-	}
-
-	inline size_t size() const
-	{
-		return len;
-	}
-
-	~VectorSlice()
-	{
-		pop();
-	}
-};
-
 enum class MeshPrimitiveType
 {
 	Lines,
@@ -249,48 +123,16 @@ struct MeshVertData
 
 	MeshVertData() = default;
 
-	MeshVertData(MeshVertData&& other)
-	    : verts(std::move(other.verts))
-	    , indices(std::move(other.indices))
-	    , type(other.type)
-	    , material(other.material)
-	{
-		other.material = nullptr;
-	}
+	MeshVertData(MeshVertData&& other);
 
 	MeshVertData(std::vector<VertexData>& vertDataVec,
 	             std::vector<VertIndex>& vertIndexVec,
 	             MeshPrimitiveType type,
-	             IMaterial* material)
-	    : verts(vertDataVec), indices(vertIndexVec), type(type), material(material)
-	{
-		material->IncrementReferenceCount();
-	}
+	             IMaterial* material);
 
-	bool Empty() const
-	{
-		return verts.size() == 0 || indices.size() == 0;
-	}
+	bool Empty() const;
 
-	~MeshVertData()
-	{
-		if (material)
-			material->DecrementReferenceCount();
-	}
-};
-
-struct DynamicMeshUnit
-{
-	VectorSlice<MeshVertData> vDataSlice;
-	const MeshPositionInfo posInfo;
-
-	DynamicMeshUnit(VectorSlice<MeshVertData>& vDataSlice, const MeshPositionInfo& posInfo)
-	    : vDataSlice(std::move(vDataSlice)), posInfo(posInfo)
-	{
-	}
-
-	DynamicMeshUnit(const DynamicMeshUnit&) = delete;
-	DynamicMeshUnit(DynamicMeshUnit&& other) : vDataSlice(std::move(other.vDataSlice)), posInfo(other.posInfo) {}
+	~MeshVertData();
 };
 
 struct IMeshWrapper
@@ -299,24 +141,24 @@ struct IMeshWrapper
 	IMaterial* material;
 };
 
+struct DynamicMeshUnit
+{
+	VectorSlice<MeshVertData> vDataSlice;
+	const MeshPositionInfo posInfo;
+
+	DynamicMeshUnit(VectorSlice<MeshVertData>& vDataSlice, const MeshPositionInfo& posInfo);
+	DynamicMeshUnit(const DynamicMeshUnit&) = delete;
+	DynamicMeshUnit(DynamicMeshUnit&& other);
+};
+
 struct StaticMeshUnit
 {
 	IMeshWrapper* meshesArr;
 	const size_t nMeshes;
 	const MeshPositionInfo posInfo;
 
-	~StaticMeshUnit()
-	{
-		if (meshesArr)
-		{
-			for (size_t i = 0; i < nMeshes; i++)
-			{
-				meshesArr[i].material->DecrementReferenceCount();
-				CMatRenderContextPtr(interfaces::materialSystem)->DestroyStaticMesh(meshesArr[i].iMesh);
-			}
-			delete[] meshesArr;
-		}
-	}
+	StaticMeshUnit(size_t nMeshes, const MeshPositionInfo& posInfo);
+	~StaticMeshUnit();
 };
 
 struct MeshComponent
@@ -327,6 +169,11 @@ struct MeshComponent
 
 	std::weak_ordering operator<=>(const MeshComponent& rhs) const;
 };
+
+// the ranges are: [first, second)
+using MeshComponentContainer = std::vector<MeshComponent>;
+using ComponentRange = std::pair<MeshComponentContainer::iterator, MeshComponentContainer::iterator>;
+using ConstComponentRange = std::pair<MeshComponentContainer::const_iterator, MeshComponentContainer::const_iterator>;
 
 // TODO add functionality to convert to collides????? :eyes:
 struct MeshBuilderInternal
@@ -341,28 +188,24 @@ struct MeshBuilderInternal
 	VectorStack<DynamicMeshUnit> dynamicMeshUnits;
 
 	MeshVertData& FindOrAddVData(MeshPrimitiveType type, IMaterial* material);
-
-	using MeshComponentIterator = const MeshVertData**;
+	MeshPositionInfo _CalcPosInfoForCurrentMesh();
 
 	struct
 	{
-		MeshComponentIterator from, to;                     // [from,to)
-		MeshComponentIterator lastBatchStart, lastBatchEnd; // for debug meshes
+		ConstComponentRange curRange;
+		ConstComponentRange batchRange; // for dynamic meshes
 		bool dynamic;
 	} creationStatus;
 
-	IMeshWrapper CreateIMeshFromVertData(MeshComponentIterator from,
-	                                     MeshComponentIterator to,
-	                                     size_t totalVerts,
-	                                     size_t totalIndices,
-	                                     bool dynamic);
-	IMeshWrapper CreateIMeshFromVertData(const MeshVertData& vData, bool dynamic);
-	void BeginDynamicMeshCreation(MeshComponentIterator from, MeshComponentIterator to, bool dynamic);
+	void BeginIMeshCreation(ConstComponentRange range, bool dynamic);
+	IMeshWrapper _CreateIMeshFromRange(ConstComponentRange range,
+	                                   size_t totalVerts,
+	                                   size_t totalIndices,
+	                                   bool dynamic);
 	IMeshWrapper GetNextIMeshWrapper();
 
 	void FrameCleanup();
-	MeshPositionInfo _CalcPosInfoForCurrentMesh();
-	const DynamicMeshUnit& GetDynamicMeshFromToken(DynamicMesh token) const;
+	const DynamicMeshUnit& GetDynamicMeshFromToken(DynamicMeshToken token) const;
 };
 
 inline MeshBuilderInternal g_meshBuilderInternal;

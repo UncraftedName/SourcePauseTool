@@ -606,6 +606,9 @@
     <ClInclude Include="spt\features\property_getter.hpp">
       <Filter>spt\features</Filter>
     </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\source files\vector_slice.hpp">
+      <Filter>spt\features\visualizations\renderer\source files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\lib\public\mathlib.lib">
