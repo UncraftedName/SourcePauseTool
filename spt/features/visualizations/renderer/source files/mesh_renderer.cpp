@@ -283,17 +283,10 @@ struct MeshUnitWrapper
 
 		// do frustum check
 
-		frustumCheckResult = 0;
-
+		auto& frustum = g_meshRendererInternal.viewInfo.frustum;
 		for (int i = 0; i < 6; i++)
-		{
-			int cur = BoxOnPlaneSide((float*)&posInfo.mins,
-			                         (float*)&posInfo.maxs,
-			                         &g_meshRendererInternal.viewInfo.frustum[i]);
-			frustumCheckResult |= cur;
-			if (cur == 2)
+			if (BoxOnPlaneSide((float*)&posInfo.mins, (float*)&posInfo.maxs, &frustum[i]) == 2)
 				return false;
-		}
 
 		// calc camera to mesh "distance"
 
@@ -394,24 +387,23 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 
 	ComponentRange range = CollectRenderableComponents(false);
 
-	std::sort(
-	    range.first,
-	    range.second,
-	    [](const MeshComponent& a, const MeshComponent& b)
-	    {
-		    IMaterial* matA = a.vertData ? a.vertData->material : a.iMeshWrapper.material;
-		    IMaterial* matB = b.vertData ? b.vertData->material : b.iMeshWrapper.material;
-		    if (matA != matB)
-		    {
-			    bool ignoreZA = matA->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
-			    bool ignoreZB = matB->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
-			    if (ignoreZA != ignoreZB)
-				    return ignoreZB; // TODO test me!!
-		    }
-		    if (a.unitWrapper->camDistSqr != b.unitWrapper->camDistSqr)
-			    return a.unitWrapper->camDistSqr > b.unitWrapper->camDistSqr;
-		    return a < b;
-	    });
+	std::sort(range.first,
+	          range.second,
+	          [](const MeshComponent& a, const MeshComponent& b)
+	          {
+		          IMaterial* matA = a.vertData ? a.vertData->material : a.iMeshWrapper.material;
+		          IMaterial* matB = b.vertData ? b.vertData->material : b.iMeshWrapper.material;
+		          if (matA != matB)
+		          {
+			          bool ignoreZA = matA->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
+			          bool ignoreZB = matB->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
+			          if (ignoreZA != ignoreZB)
+				          return ignoreZB; // TODO test me!!
+		          }
+		          if (a.unitWrapper->camDistSqr != b.unitWrapper->camDistSqr)
+			          return a.unitWrapper->camDistSqr > b.unitWrapper->camDistSqr;
+		          return a < b;
+	          });
 
 	DrawAll(range, y_spt_draw_mesh_debug.GetBool(), false);
 
@@ -570,7 +562,6 @@ void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugM
 
 void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentRange range, bool opaques)
 {
-	auto& debugDescs = debugMeshInfo.descriptionSlices.top();
 	if (range.first->vertData)
 	{
 		Vector batchedMins{INFINITY};
@@ -580,25 +571,25 @@ void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentR
 			VectorMin(it->unitWrapper->posInfo.mins, batchedMins, batchedMins);
 			VectorMax(it->unitWrapper->posInfo.maxs, batchedMaxs, batchedMaxs);
 
-			debugList.emplace_back(it->unitWrapper->posInfo.mins - Vector{1},
-			                        it->unitWrapper->posInfo.maxs + Vector{1},
-			                        it->unitWrapper->callback ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
-			                                                  : DEBUG_COLOR_DYNAMIC_MESH);
+			debugList.emplace_back(it->unitWrapper->posInfo.mins - Vector{1.f},
+			                       it->unitWrapper->posInfo.maxs + Vector{1.f},
+			                       it->unitWrapper->callback ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
+			                                                 : DEBUG_COLOR_DYNAMIC_MESH);
 		}
 		if (std::distance(range.first, range.second) > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
 		{
-			debugList.emplace_back(batchedMins - Vector{2},
-			                        batchedMaxs + Vector{2},
-			                        opaques ? DEBUG_COLOR_MERGED_DYNAMIC_MESH_OPAQUE
-			                                : DEBUG_COLOR_MERGED_DYNAMIC_MESH_TRANSLUCENT);
+			debugList.emplace_back(batchedMins - Vector{opaques ? 2.5f : 2.f},
+			                       batchedMaxs + Vector{opaques ? 2.5f : 2.f},
+			                       opaques ? DEBUG_COLOR_MERGED_DYNAMIC_MESH_OPAQUE
+			                               : DEBUG_COLOR_MERGED_DYNAMIC_MESH_TRANSLUCENT);
 		}
 	}
 	else
 	{
 		Assert(std::distance(range.first, range.second) == 1);
 		debugList.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1},
-		                        range.first->unitWrapper->posInfo.maxs + Vector{1},
-		                        DEBUG_COLOR_STATIC_MESH);
+		                       range.first->unitWrapper->posInfo.maxs + Vector{1},
+		                       DEBUG_COLOR_STATIC_MESH);
 	}
 }
 

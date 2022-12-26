@@ -35,7 +35,7 @@ bool MeshVertData::Empty() const
 MeshVertData::~MeshVertData()
 {
 	if (material)
-		material->DecrementReferenceCount();
+		material->DecrementReferenceCount(); // TODO
 }
 
 /**************************************** MESH UNITS ****************************************/
