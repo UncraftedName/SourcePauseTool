@@ -21,7 +21,8 @@ ConVar y_spt_draw_mesh_debug("y_spt_draw_mesh_debug",
 #define DEBUG_COLOR_STATIC_MESH (color32{150, 20, 10, 255})
 #define DEBUG_COLOR_DYNAMIC_MESH (color32{0, 0, 255, 255})
 #define DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK (color32{255, 150, 50, 255})
-#define DEBUG_COLOR_MERGED_DYNAMIC_MESH (color32{0, 255, 0, 255})
+#define DEBUG_COLOR_MERGED_DYNAMIC_MESH_OPAQUE (color32{0, 255, 0, 255})
+#define DEBUG_COLOR_MERGED_DYNAMIC_MESH_TRANSLUCENT (color32{150, 255, 200, 255})
 #define DEBUG_COLOR_CROSS (color32{255, 0, 0, 255})
 
 /*
@@ -94,10 +95,10 @@ struct MeshRendererInternal
 	void OnDrawOpaques(CRendering3dView* rendering3dView);
 	void OnDrawTranslucents(CRendering3dView* rendering3dView);
 	ComponentRange CollectRenderableComponents(bool opaques);
-	void AddDebugCrosses(ConstComponentRange range);
-	void AddDebugBox(ConstComponentRange range);
+	void AddDebugCrosses(ConstComponentRange range, bool opaques);
+	void AddDebugBox(ConstComponentRange range, bool opaques);
 	void DrawDebugMeshes();
-	void DrawAll(ConstComponentRange range);
+	void DrawAll(ConstComponentRange range, bool addDebugMeshes, bool opaques);
 
 } g_meshRendererInternal;
 
@@ -367,7 +368,7 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 
 	ComponentRange range = CollectRenderableComponents(true);
 	std::sort(range.first, range.second);
-	DrawAll(range);
+	DrawAll(range, y_spt_draw_mesh_debug.GetBool(), true);
 }
 
 void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
@@ -398,11 +399,11 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 		    return a < b;
 	    });
 
-	DrawAll(range);
+	DrawAll(range, y_spt_draw_mesh_debug.GetBool(), false);
 
 	if (y_spt_draw_mesh_debug.GetBool())
 	{
-		AddDebugCrosses(range);
+		AddDebugCrosses(range, false);
 		DrawDebugMeshes();
 	}
 	debugMeshInfo.descriptionSlices.pop();
@@ -410,24 +411,24 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 
 ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
 {
-	static std::vector<MeshComponent> vec;
-	vec.clear();
+	static std::vector<MeshComponent> components;
+	components.clear();
 
-	for (MeshUnitWrapper& meshUnitWrapper : queuedUnitWrappers)
+	for (MeshUnitWrapper& unitWrapper : queuedUnitWrappers)
 	{
-		if (!meshUnitWrapper.ApplyCallbackAndCalcCamDist(*viewInfo.viewSetup, viewInfo.frustum))
+		if (!unitWrapper.ApplyCallbackAndCalcCamDist(*viewInfo.viewSetup, viewInfo.frustum))
 			continue; // the mesh is outside our frustum or the user wants to skip rendering
 
-		if (meshUnitWrapper.callback && meshUnitWrapper.cbInfoOut.colorModulate.a < 1)
+		if (unitWrapper.callback && unitWrapper.cbInfoOut.colorModulate.a < 1)
 			continue; // color modulation makes this mesh unit translucent
 
-		auto shouldRender = [&meshUnitWrapper, opaques](IMaterial* material)
+		auto shouldRender = [&unitWrapper, opaques](IMaterial* material)
 		{
 			if (!material)
 				return false;
 
-			if (meshUnitWrapper.callback)
-				if (meshUnitWrapper.cbInfoOut.colorModulate.a < 255 && !opaques)
+			if (unitWrapper.callback)
+				if (unitWrapper.cbInfoOut.colorModulate.a < 255 && !opaques)
 					return true; // callback changed the alpha component, make translucent if < 1 otherwise opaque
 
 			bool opaqueMaterial = !material->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ)
@@ -436,26 +437,27 @@ ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
 			return opaques == opaqueMaterial;
 		};
 
-		if (meshUnitWrapper._staticMeshPtr)
+		if (unitWrapper._staticMeshPtr)
 		{
-			auto& unit = *meshUnitWrapper._staticMeshPtr;
+			auto& unit = *unitWrapper._staticMeshPtr;
 			for (size_t i = 0; i < unit.nMeshes; i++)
 				if (shouldRender(unit.meshesArr[i].material))
-					vec.emplace_back(&meshUnitWrapper, nullptr, unit.meshesArr[i]);
+					components.emplace_back(&unitWrapper, nullptr, unit.meshesArr[i]);
 		}
 		else
 		{
-			auto& unit = g_meshBuilderInternal.GetDynamicMeshFromToken(meshUnitWrapper._dynamicToken);
+			auto& unit = g_meshBuilderInternal.GetDynamicMeshFromToken(unitWrapper._dynamicToken);
 			for (MeshVertData& vData : unit.vDataSlice)
 				if (!vData.verts.empty() && shouldRender(vData.material))
-					vec.emplace_back(&meshUnitWrapper, &vData, IMeshWrapper{});
+					components.emplace_back(&unitWrapper, &vData, IMeshWrapper{});
 		}
 	}
-	return ComponentRange{vec.begin(), vec.end()};
+	return ComponentRange{components.begin(), components.end()};
 }
 
-void MeshRendererInternal::AddDebugCrosses(ConstComponentRange range)
+void MeshRendererInternal::AddDebugCrosses(ConstComponentRange range, bool opaques)
 {
+	(void)opaques;
 	for (auto it = range.first; it < range.second; it++)
 	{
 		const MeshPositionInfo& posInfo = it->unitWrapper->posInfo;
@@ -510,10 +512,10 @@ void MeshRendererInternal::DrawDebugMeshes()
 				debugComponents.emplace_back(&debugMesh, &component, IMeshWrapper{});
 	}
 	std::sort(debugComponents.begin(), debugComponents.end());
-	DrawAll({debugComponents.begin(), debugComponents.end()});
+	DrawAll({debugComponents.begin(), debugComponents.end()}, false, true);
 }
 
-void MeshRendererInternal::DrawAll(ConstComponentRange fullRange)
+void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugMeshes, bool opaques)
 {
 	if (std::distance(fullRange.first, fullRange.second) == 0)
 		return;
@@ -536,21 +538,21 @@ void MeshRendererInternal::DrawAll(ConstComponentRange fullRange)
 			while (mw = g_meshBuilderInternal.GetNextIMeshWrapper(), mw.iMesh)
 			{
 				range.first->unitWrapper->Render(mw);
-				if (y_spt_draw_mesh_debug.GetBool())
-					AddDebugBox(g_meshBuilderInternal.creationStatus.batchRange);
+				if (addDebugMeshes)
+					AddDebugBox(g_meshBuilderInternal.creationStatus.batchRange, opaques);
 			}
 		}
 		else
 		{
 			// a single static mesh
 			range.first->unitWrapper->Render(range.first->iMeshWrapper);
-			if (y_spt_draw_mesh_debug.GetBool())
-				AddDebugBox(range);
+			if (addDebugMeshes)
+				AddDebugBox(range, opaques);
 		}
 	}
 }
 
-void MeshRendererInternal::AddDebugBox(ConstComponentRange range)
+void MeshRendererInternal::AddDebugBox(ConstComponentRange range, bool opaques)
 {
 	auto& debugDescs = debugMeshInfo.descriptionSlices.top();
 	if (range.first->vertData)
@@ -571,11 +573,13 @@ void MeshRendererInternal::AddDebugBox(ConstComponentRange range)
 		{
 			debugDescs.emplace_back(batchedMins - Vector{2},
 			                        batchedMaxs + Vector{2},
-			                        DEBUG_COLOR_MERGED_DYNAMIC_MESH);
+			                        opaques ? DEBUG_COLOR_MERGED_DYNAMIC_MESH_OPAQUE
+			                                : DEBUG_COLOR_MERGED_DYNAMIC_MESH_TRANSLUCENT);
 		}
 	}
 	else
 	{
+		Assert(std::distance(range.first, range.second) == 1);
 		debugDescs.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1},
 		                        range.first->unitWrapper->posInfo.maxs + Vector{1},
 		                        DEBUG_COLOR_STATIC_MESH);
