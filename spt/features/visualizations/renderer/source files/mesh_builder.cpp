@@ -144,7 +144,7 @@ IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(MeshComponentIterator 
 
 	iMesh->UnlockMesh(totalVerts, totalIndices, desc);
 
-	return IMeshWrapper{iMesh, from->material};
+	return {iMesh, from->material};
 }
 
 IMeshWrapper MeshBuilderInternal::CreateIMeshFromVertData(const MeshVertData& vData, bool dynamic)
@@ -185,12 +185,12 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 	MeshComponentIterator batchEnd = creationStatus.from + 1;
 	for (; batchEnd < creationStatus.to; batchEnd++)
 	{
+		Assert((**batchEnd).indices.size() >= (**batchEnd).verts.size());
 		if (totalNumIndices + (**batchEnd).indices.size() > MAX_MESH_INDICES
 		    || totalNumVerts + (**batchEnd).verts.size() > MAX_MESH_VERTS)
 		{
 			break;
 		}
-		Assert((**batchEnd).indices.size() >= (**batchEnd).verts.size());
 		totalNumVerts += (**batchEnd).verts.size();
 		totalNumIndices += (**batchEnd).indices.size();
 	}
@@ -234,7 +234,7 @@ MeshPositionInfo MeshBuilderInternal::_CalcPosInfoForCurrentMesh()
 	return pi;
 }
 
-const MeshUnit& MeshBuilderInternal::GetDynamicMeshFromToken(DynamicMesh token) const
+const DynamicMeshUnit& MeshBuilderInternal::GetDynamicMeshFromToken(DynamicMesh token) const
 {
 	return dynamicMeshUnits._Get_container()[token.dynamicMeshIdx];
 }
@@ -243,29 +243,29 @@ const MeshUnit& MeshBuilderInternal::GetDynamicMeshFromToken(DynamicMesh token) 
 
 StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 {
-	g_meshBuilderInternal.curMeshVertData = {g_meshBuilderInternal.sharedVertDataArrays};
+	auto& builder = g_meshBuilderInternal;
+
+	builder.curMeshVertData = {builder.sharedVertDataArrays};
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
 
-	const auto& vDataSlice = g_meshBuilderInternal.curMeshVertData;
+	const auto& vDataSlice = builder.curMeshVertData;
 
 	size_t nonEmptyComponents =
-	    std::count_if(vDataSlice.begin(),
-	                  vDataSlice.end(),
-	                  [](MeshVertData& vd) { return vd.verts.size() > 0 && vd.verts.size() > 0; });
+	    std::count_if(vDataSlice.begin(), vDataSlice.end(), [](MeshVertData& vd) { return !vd.Empty(); });
 
-	MeshUnit* mu = new MeshUnit{
+	StaticMeshUnit* mu = new StaticMeshUnit{
 	    new IMeshWrapper[nonEmptyComponents],
 	    nonEmptyComponents,
-	    g_meshBuilderInternal._CalcPosInfoForCurrentMesh(),
+	    builder._CalcPosInfoForCurrentMesh(),
 	};
 
 	int i = 0;
 	for (const MeshVertData& vd : vDataSlice)
-		if (vd.verts.size() > 0 && vd.verts.size() > 0)
-			mu->staticData.meshesArr[i++] = g_meshBuilderInternal.CreateIMeshFromVertData(vd, false);
+		if (!vd.Empty())
+			mu->meshesArr[i++] = builder.CreateIMeshFromVertData(vd, false);
 
-	g_meshBuilderInternal.curMeshVertData.pop();
+	builder.curMeshVertData.pop();
 	// TODO EMPLACE
 	return StaticMesh{mu};
 }
@@ -273,12 +273,13 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESHBUILDER);
-	g_meshBuilderInternal.curMeshVertData = {g_meshBuilderInternal.sharedVertDataArrays};
+	auto& builder = g_meshBuilderInternal;
+	builder.curMeshVertData = {builder.sharedVertDataArrays};
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
-	MeshPositionInfo posInfo = g_meshBuilderInternal._CalcPosInfoForCurrentMesh();
-	g_meshBuilderInternal.dynamicMeshUnits.emplace(g_meshBuilderInternal.curMeshVertData, posInfo);
-	return {g_meshBuilderInternal.dynamicMeshUnits.size() - 1, g_meshRenderFrameNum};
+	MeshPositionInfo posInfo = builder._CalcPosInfoForCurrentMesh();
+	builder.dynamicMeshUnits.emplace(builder.curMeshVertData, posInfo);
+	return {builder.dynamicMeshUnits.size() - 1, g_meshRenderFrameNum};
 }
 
 #endif

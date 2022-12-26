@@ -115,7 +115,7 @@ struct VectorSlice
 	size_t len;
 
 	// TODO TRY SETTING TO DEFAULT
-	VectorSlice() : vec(nullptr), off(0), len(0){};
+	VectorSlice() = default;
 
 	VectorSlice(VectorSlice&) = delete;
 
@@ -152,9 +152,9 @@ struct VectorSlice
 		{
 			Assert(off + len == vec->size());
 			vec->resize(vec->size() - len);
+			vec = nullptr;
+			off = len = 0;
 		}
-		vec = nullptr;
-		off = len = 0;
 	}
 
 	inline std::vector<T>::iterator begin() const
@@ -186,6 +186,15 @@ struct VectorSlice
 	{
 		vec->resize(off + n);
 		len = n;
+	}
+
+	template<class _Pr>
+	inline void erase_if(_Pr pred)
+	{
+		auto it = std::remove_if(begin(), end(), pred);
+		auto removed = std::distance(it, end());
+		vec->erase(it, end());
+		len -= removed;
 	}
 
 	inline void push_back(const T& elem)
@@ -258,11 +267,30 @@ struct MeshVertData
 		material->IncrementReferenceCount();
 	}
 
+	bool Empty() const
+	{
+		return verts.size() == 0 || indices.size() == 0;
+	}
+
 	~MeshVertData()
 	{
 		if (material)
 			material->DecrementReferenceCount();
 	}
+};
+
+struct DynamicMeshUnit
+{
+	VectorSlice<MeshVertData> vDataSlice;
+	const MeshPositionInfo posInfo;
+
+	DynamicMeshUnit(VectorSlice<MeshVertData>& vDataSlice, const MeshPositionInfo& posInfo)
+	    : vDataSlice(std::move(vDataSlice)), posInfo(posInfo)
+	{
+	}
+
+	DynamicMeshUnit(const DynamicMeshUnit&) = delete;
+	DynamicMeshUnit(DynamicMeshUnit&& other) : vDataSlice(std::move(other.vDataSlice)), posInfo(other.posInfo) {}
 };
 
 struct IMeshWrapper
@@ -271,73 +299,33 @@ struct IMeshWrapper
 	IMaterial* material;
 };
 
-// TODO - two different mesh units?
-struct MeshUnit
+struct StaticMeshUnit
 {
-	union
-	{
-		struct
-		{
-			IMeshWrapper* meshesArr;
-			size_t nMeshes;
-		} staticData; // TODO simplify?
-		VectorSlice<MeshVertData> dynamicData;
-	};
+	IMeshWrapper* meshesArr;
+	const size_t nMeshes;
 	const MeshPositionInfo posInfo;
-	const bool dynamic;
 
-	MeshUnit() = default;
-
-	MeshUnit(MeshUnit&& other) : posInfo(other.posInfo), dynamic(other.dynamic)
+	~StaticMeshUnit()
 	{
-		if (dynamic)
+		if (meshesArr)
 		{
-			dynamicData = std::move(other.dynamicData);
-		}
-		else
-		{
-			staticData.meshesArr = other.staticData.meshesArr;
-			staticData.nMeshes = other.staticData.nMeshes;
-			other.staticData.meshesArr = nullptr;
-		}
-	}
-
-	MeshUnit(IMeshWrapper* meshesArr, size_t nMeshes, const MeshPositionInfo& posInfo)
-	    : posInfo(posInfo), dynamic(false)
-	{
-		staticData.meshesArr = meshesArr;
-		staticData.nMeshes = nMeshes;
-	}
-
-	MeshUnit(VectorSlice<MeshVertData>& dynamicData, const MeshPositionInfo& posInfo)
-	    : dynamicData(std::move(dynamicData)), posInfo(posInfo), dynamic(true)
-	{
-	}
-
-	~MeshUnit()
-	{
-		if (dynamic)
-		{
-			if (!dynamicData.vec)
-				return;
-			for (auto& vData : dynamicData)
-				vData.material->DecrementReferenceCount();
-			dynamicData.~VectorSlice();
-		}
-		else
-		{
-			if (!staticData.meshesArr)
-				return;
-			for (size_t i = 0; i < staticData.nMeshes; i++)
+			for (size_t i = 0; i < nMeshes; i++)
 			{
-				// TODO delete if unreferenced?
-				staticData.meshesArr[i].material->DecrementReferenceCount();
-				CMatRenderContextPtr(interfaces::materialSystem)
-				    ->DestroyStaticMesh(staticData.meshesArr[i].iMesh);
+				meshesArr[i].material->DecrementReferenceCount();
+				CMatRenderContextPtr(interfaces::materialSystem)->DestroyStaticMesh(meshesArr[i].iMesh);
 			}
-			delete[] staticData.meshesArr;
+			delete[] meshesArr;
 		}
 	}
+};
+
+struct MeshComponent
+{
+	struct MeshUnitWrapper* unitWrapper;
+	MeshVertData* vertData; // null for statics
+	IMeshWrapper iMeshWrapper;
+
+	std::weak_ordering operator<=>(const MeshComponent& rhs) const;
 };
 
 // TODO add functionality to convert to collides????? :eyes:
@@ -350,7 +338,7 @@ struct MeshBuilderInternal
 
 	VectorSlice<MeshVertData> curMeshVertData;
 
-	VectorStack<MeshUnit> dynamicMeshUnits;
+	VectorStack<DynamicMeshUnit> dynamicMeshUnits;
 
 	MeshVertData& FindOrAddVData(MeshPrimitiveType type, IMaterial* material);
 
@@ -374,7 +362,7 @@ struct MeshBuilderInternal
 
 	void FrameCleanup();
 	MeshPositionInfo _CalcPosInfoForCurrentMesh();
-	const MeshUnit& GetDynamicMeshFromToken(DynamicMesh token) const;
+	const DynamicMeshUnit& GetDynamicMeshFromToken(DynamicMesh token) const;
 };
 
 inline MeshBuilderInternal g_meshBuilderInternal;

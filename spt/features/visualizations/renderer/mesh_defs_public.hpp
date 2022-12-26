@@ -6,7 +6,7 @@
 
 #define SPT_MESH_RENDERING_ENABLED
 
-struct MeshUnit;
+struct StaticMeshUnit;
 
 /*
 * The renderer needs some position metric for meshes to figure out which order to render translucent meshes in.
@@ -61,7 +61,7 @@ enum WindingDir
 class StaticMesh
 {
 public:
-	std::shared_ptr<MeshUnit> meshPtr;
+	std::shared_ptr<StaticMeshUnit> meshPtr;
 
 private:
 	// keep a linked list through all static meshes for proper cleanup w/ tas_restart
@@ -74,7 +74,7 @@ public:
 	StaticMesh();
 	StaticMesh(const StaticMesh& other);
 	StaticMesh(StaticMesh&& other);
-	StaticMesh(MeshUnit* mesh);
+	StaticMesh(StaticMeshUnit* mesh);
 	StaticMesh& operator=(const StaticMesh& r);
 	bool Valid() const;
 	void Destroy();
