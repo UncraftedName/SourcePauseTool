@@ -238,7 +238,7 @@ BEGIN_TEST_CASE("AddQuad()", Vector(1400, 0, 0))
 				numUpdated += curCell != newBoard[curCellIdx];
 			}
 		}
-		if (numUpdated < 10) // naive check to speed up simulation
+		if (numUpdated < 10 && minigameTick + 2 <= maxMinigameTicks) // naive check to speed up simulation
 			minigameTick += 2;
 	}
 	mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
