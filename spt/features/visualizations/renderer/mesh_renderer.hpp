@@ -1,6 +1,6 @@
 #pragma once
 
-#include "mesh_defs_public.hpp"
+#include "mesh_defs.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 

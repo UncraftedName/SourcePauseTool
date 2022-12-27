@@ -277,29 +277,29 @@
     <ClCompile Include="spt\utils\portal_utils.cpp">
       <Filter>spt\utils</Filter>
     </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_builder.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_construction.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\mesh_renderer.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\materials_manager.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\create_collide.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
-    <ClCompile Include="spt\features\visualizations\renderer\source files\static_mesh.cpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
-    </ClCompile>
     <ClCompile Include="spt\features\property_getter.cpp">
       <Filter>spt\features</Filter>
     </ClCompile>
     <ClCompile Include="spt\features\visualizations\portal_placement.cpp">
       <Filter>spt\features\visualizations</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\visualizations\renderer\internal\create_collide.cpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\visualizations\renderer\internal\materials_manager.cpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\visualizations\renderer\internal\mesh_builder.cpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\visualizations\renderer\internal\mesh_construction.cpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\visualizations\renderer\internal\mesh_renderer.cpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\visualizations\renderer\internal\static_mesh.cpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -591,10 +591,7 @@
     <ClInclude Include="spt\features\visualizations\renderer\mesh_renderer.hpp">
       <Filter>spt\features\visualizations\renderer</Filter>
     </ClInclude>
-    <ClInclude Include="spt\features\visualizations\renderer\mesh_defs_private.hpp">
-      <Filter>spt\features\visualizations\renderer</Filter>
-    </ClInclude>
-    <ClInclude Include="spt\features\visualizations\renderer\mesh_defs_public.hpp">
+    <ClInclude Include="spt\features\visualizations\renderer\mesh_defs.hpp">
       <Filter>spt\features\visualizations\renderer</Filter>
     </ClInclude>
     <ClInclude Include="spt\utils\typeinfo.h">
@@ -606,8 +603,11 @@
     <ClInclude Include="spt\features\property_getter.hpp">
       <Filter>spt\features</Filter>
     </ClInclude>
-    <ClInclude Include="spt\features\visualizations\renderer\source files\vector_slice.hpp">
-      <Filter>spt\features\visualizations\renderer\source files</Filter>
+    <ClInclude Include="spt\features\visualizations\renderer\internal\vector_slice.hpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\internal\internal_defs.hpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -670,7 +670,7 @@
     <Filter Include="spt\features\visualizations\renderer">
       <UniqueIdentifier>{84fb8368-d0e8-4d2a-9327-96b181523bfe}</UniqueIdentifier>
     </Filter>
-    <Filter Include="spt\features\visualizations\renderer\source files">
+    <Filter Include="spt\features\visualizations\renderer\internal">
       <UniqueIdentifier>{84814768-34cb-4968-8ef2-07312a178bc4}</UniqueIdentifier>
     </Filter>
   </ItemGroup>

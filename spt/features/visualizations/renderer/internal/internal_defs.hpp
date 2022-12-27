@@ -58,7 +58,7 @@
 
 #pragma once
 
-#include "mesh_defs_public.hpp"
+#include "..\mesh_defs.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
@@ -82,7 +82,7 @@
 #include <stack>
 
 #include "spt\utils\interfaces.hpp"
-#include "source files\vector_slice.hpp"
+#include "vector_slice.hpp"
 
 #define MAX_MESH_VERTS 32767
 #define MAX_MESH_INDICES 32767

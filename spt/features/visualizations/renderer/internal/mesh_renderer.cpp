@@ -7,7 +7,7 @@
 #include <algorithm>
 #include <iterator>
 
-#include "..\mesh_defs_private.hpp"
+#include "internal_defs.hpp"
 #include "interfaces.hpp"
 #include "signals.hpp"
 

@@ -8,7 +8,7 @@
 
 #include "interfaces.hpp"
 
-#include "..\mesh_defs_private.hpp"
+#include "internal_defs.hpp"
 
 /**************************************** MESH VERT DATA ****************************************/
 
