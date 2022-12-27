@@ -97,7 +97,7 @@ struct MeshRendererInternal
 	void OnDrawTranslucents(CRendering3dView* rendering3dView);
 
 	void SetupViewInfo(CRendering3dView* rendering3dView);
-	ComponentRange CollectRenderableComponents(bool opaques);
+	void CollectRenderableComponents(std::vector<MeshComponent>& components, bool opaques);
 	void AddDebugCrosses(ConstComponentRange range, bool opaques);
 	void AddDebugBox(ConstComponentRange range, bool opaques);
 	void DrawDebugMeshes();
@@ -375,9 +375,11 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 	// push a new debug slice, the corresponding pop will be in DrawTranslucents
 	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionArray);
 
-	ComponentRange range = CollectRenderableComponents(true);
-	std::sort(range.first, range.second);
-	DrawAll(range, y_spt_draw_mesh_debug.GetBool(), true);
+	static std::vector<MeshComponent> components;
+	CollectRenderableComponents(components, true);
+	std::sort(components.begin(), components.end());
+	DrawAll({components.begin(), components.end()}, y_spt_draw_mesh_debug.GetBool(), true);
+	components.clear();
 }
 
 void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
@@ -385,7 +387,9 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
 
-	ComponentRange range = CollectRenderableComponents(false);
+	static std::vector<MeshComponent> components;
+	CollectRenderableComponents(components, false);
+	ComponentRange range{components.begin(), components.end()};
 
 	std::sort(range.first,
 	          range.second,
@@ -412,14 +416,12 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 		AddDebugCrosses(debugMeshInfo.descriptionSlices.top(), range, false);
 		DrawDebugMeshes(debugMeshInfo.descriptionSlices.top());
 	}
+	components.clear();
 	debugMeshInfo.descriptionSlices.pop();
 }
 
-ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
+void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent>& components, bool opaques)
 {
-	static std::vector<MeshComponent> components;
-	components.clear();
-
 	for (MeshUnitWrapper& unitWrapper : queuedUnitWrappers)
 	{
 		if (!unitWrapper.ApplyCallbackAndCalcCamDist())
@@ -454,11 +456,10 @@ ComponentRange MeshRendererInternal::CollectRenderableComponents(bool opaques)
 		{
 			auto& unit = g_meshBuilderInternal.GetDynamicMeshFromToken(unitWrapper._dynamicToken);
 			for (MeshVertData& vData : unit.vDataSlice)
-				if (!vData.verts.empty() && shouldRender(vData.material))
+				if (shouldRender(vData.material))
 					components.emplace_back(&unitWrapper, &vData, IMeshWrapper{});
 		}
 	}
-	return ComponentRange{components.begin(), components.end()};
 }
 
 void MeshRendererInternal::AddDebugCrosses(DebugDescList& debugList, ConstComponentRange range, bool opaques)
@@ -479,7 +480,6 @@ void MeshRendererInternal::AddDebugCrosses(DebugDescList& debugList, ConstCompon
 void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 {
 	static std::vector<MeshUnitWrapper> debugUnitWrappers;
-	debugUnitWrappers.clear();
 
 	for (auto& debugDesc : debugList)
 	{
@@ -503,7 +503,6 @@ void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 	}
 
 	static std::vector<MeshComponent> debugComponents;
-	debugComponents.clear();
 
 	for (MeshUnitWrapper& debugMesh : debugUnitWrappers)
 	{
@@ -517,6 +516,9 @@ void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 	}
 	std::sort(debugComponents.begin(), debugComponents.end());
 	DrawAll({debugComponents.begin(), debugComponents.end()}, false, true);
+
+	debugUnitWrappers.clear(); // decrement material refs
+	debugComponents.clear();
 }
 
 void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugMeshes, bool opaques)
@@ -545,7 +547,7 @@ void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugM
 				if (addDebugMeshes)
 				{
 					AddDebugBox(debugMeshInfo.descriptionSlices.top(),
-					            g_meshBuilderInternal.creationStatus.batchRange,
+					            g_meshBuilderInternal.creationState.fusedRange,
 					            opaques);
 				}
 			}
@@ -587,8 +589,8 @@ void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentR
 	else
 	{
 		Assert(std::distance(range.first, range.second) == 1);
-		debugList.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1},
-		                       range.first->unitWrapper->posInfo.maxs + Vector{1},
+		debugList.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1.f},
+		                       range.first->unitWrapper->posInfo.maxs + Vector{1.f},
 		                       DEBUG_COLOR_STATIC_MESH);
 	}
 }

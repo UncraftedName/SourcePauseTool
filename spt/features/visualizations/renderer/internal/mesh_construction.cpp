@@ -26,10 +26,10 @@ Vector* Scratch(size_t n)
 #define INVERT_WD(wd) (((wd)&WD_BOTH) == WD_BOTH ? WD_BOTH : (WindingDir)((wd & WD_BOTH) ^ WD_BOTH))
 
 #define GET_VDATA_FACES_CUSTOM_MATERIAL(material) \
-	g_meshBuilderInternal.FindOrAddVData(MeshPrimitiveType::Triangles, material)
+	g_meshBuilderInternal.GetComponentInCurrentMesh(MeshPrimitiveType::Triangles, material)
 
 #define GET_VDATA_LINES_CUSTOM_MATERIAL(material) \
-	g_meshBuilderInternal.FindOrAddVData(MeshPrimitiveType::Lines, material)
+	g_meshBuilderInternal.GetComponentInCurrentMesh(MeshPrimitiveType::Lines, material)
 
 #define BASIC_MATERIAL(color, zTest) \
 	((zTest) ? ((color).a == 255 ? g_meshMaterialMgr.matOpaque : g_meshMaterialMgr.matAlpha) \

@@ -27,6 +27,19 @@ MeshVertData::MeshVertData(std::vector<VertexData>& vertDataVec,
 	material->IncrementReferenceCount();
 }
 
+MeshVertData& MeshVertData::operator=(MeshVertData&& other)
+{
+	if (this != &other)
+	{
+		verts = std::move(other.verts);
+		indices = std::move(other.indices);
+		type = other.type;
+		material = other.material;
+		other.material = nullptr;
+	}
+	return *this;
+}
+
 bool MeshVertData::Empty() const
 {
 	return verts.size() == 0 || indices.size() == 0;
@@ -67,8 +80,9 @@ StaticMeshUnit::~StaticMeshUnit()
 
 /**************************************** MESH BUILDER INTERNAL ****************************************/
 
-MeshVertData& MeshBuilderInternal::FindOrAddVData(MeshPrimitiveType type, IMaterial* material)
+MeshVertData& MeshBuilderInternal::GetComponentInCurrentMesh(MeshPrimitiveType type, IMaterial* material)
 {
+	// look through all components that we already have in the current mesh and see if any match the type/material
 	auto vDataIt = std::find_if(curMeshVertData.begin(),
 	                            curMeshVertData.end(),
 	                            [=](const MeshVertData& vd) { return vd.type == type && vd.material == material; });
@@ -76,28 +90,37 @@ MeshVertData& MeshBuilderInternal::FindOrAddVData(MeshPrimitiveType type, IMater
 	if (vDataIt != curMeshVertData.end())
 		return *vDataIt;
 
-	decltype(sharedVertArrays)::iterator vertIt;
-	decltype(sharedIndexArrays)::iterator idxIt;
+	/*
+	* We didn't find a matching component, so we need to create a new one. If this is the Nth component, we'll
+	* find the Nth shared list (for verts & indices) to initialize the component from. If there aren't N shared
+	* lists, then we'll just add a new one to the end of the linked lists.
+	*/
 
-	if (curMeshVertData.size() + 1 > sharedVertArrays.size())
+	auto vertIt = sharedLists.verts.begin();
+	auto idxIt = sharedLists.indices.begin();
+
+	if (vertIt == sharedLists.verts.end())
 	{
-		sharedVertArrays.emplace_back();
-		sharedIndexArrays.emplace_back();
-		vertIt = --sharedVertArrays.end();
-		idxIt = --sharedIndexArrays.end();
+		Assert(curMeshVertData.size() == 0);
+		Assert(idxIt == sharedLists.indices.end());
+		return curMeshVertData.emplace_back(sharedLists.verts.emplace_front(),
+		                                    sharedLists.indices.emplace_front(),
+		                                    type,
+		                                    material);
 	}
-	else
+
+	for (size_t i = 0; i < curMeshVertData.size(); i++)
 	{
-		vertIt = sharedVertArrays.begin();
-		idxIt = sharedIndexArrays.begin();
-		for (size_t _ = 0; _ < curMeshVertData.size(); _++)
+		auto prevVertIt = vertIt++;
+		auto prevIdxIt = idxIt++;
+		if (vertIt == sharedLists.verts.end())
 		{
-			vertIt++;
-			idxIt++;
+			Assert(idxIt == sharedLists.indices.end());
+			vertIt = sharedLists.verts.emplace_after(prevVertIt);
+			idxIt = sharedLists.indices.emplace_after(prevIdxIt);
 		}
 	}
-	curMeshVertData.emplace_back(*vertIt, *idxIt, type, material);
-	return *--curMeshVertData.end();
+	return curMeshVertData.emplace_back(*vertIt, *idxIt, type, material);
 }
 
 IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange range,
@@ -203,13 +226,13 @@ IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange rang
 
 void MeshBuilderInternal::BeginIMeshCreation(ConstComponentRange range, bool dynamic)
 {
-	creationStatus.curRange = range;
-	creationStatus.dynamic = dynamic;
+	creationState.curRange = range;
+	creationState.dynamic = dynamic;
 }
 
 IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 {
-	auto& cs = creationStatus;
+	auto& cs = creationState;
 	size_t totalNumVerts, totalNumIndices;
 	for (;;)
 	{
@@ -231,11 +254,11 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 			break;
 		}
 	}
-	cs.batchRange = ConstComponentRange{cs.curRange.first, cs.curRange.first + 1};
-	for (; cs.batchRange.second < cs.curRange.second; cs.batchRange.second++)
+	cs.fusedRange = ConstComponentRange{cs.curRange.first, cs.curRange.first + 1};
+	for (; cs.fusedRange.second < cs.curRange.second; cs.fusedRange.second++)
 	{
-		size_t curNumVerts = cs.batchRange.second->vertData->verts.size();
-		size_t curNumIndices = cs.batchRange.second->vertData->indices.size();
+		size_t curNumVerts = cs.fusedRange.second->vertData->verts.size();
+		size_t curNumIndices = cs.fusedRange.second->vertData->indices.size();
 		Assert(curNumIndices >= curNumVerts);
 
 		if (totalNumIndices + curNumIndices > MAX_MESH_INDICES || totalNumVerts + curNumVerts > MAX_MESH_VERTS)
@@ -243,8 +266,8 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 		totalNumVerts += curNumVerts;
 		totalNumIndices += curNumIndices;
 	}
-	cs.curRange.first = cs.batchRange.second;
-	return _CreateIMeshFromRange(cs.batchRange, totalNumVerts, totalNumIndices, cs.dynamic);
+	cs.curRange.first = cs.fusedRange.second;
+	return _CreateIMeshFromRange(cs.fusedRange, totalNumVerts, totalNumIndices, cs.dynamic);
 }
 
 void MeshBuilderInternal::FrameCleanup()
@@ -254,9 +277,9 @@ void MeshBuilderInternal::FrameCleanup()
 	while (!dynamicMeshUnits.empty())
 		dynamicMeshUnits.pop();
 #ifdef DEBUG
-	for (auto& vertArray : sharedVertArrays)
+	for (auto& vertArray : sharedLists.verts)
 		Assert(vertArray.size() == 0);
-	for (auto& idxArray : sharedIndexArrays)
+	for (auto& idxArray : sharedLists.indices)
 		Assert(idxArray.size() == 0);
 #endif
 }
@@ -290,28 +313,26 @@ const DynamicMeshUnit& MeshBuilderInternal::GetDynamicMeshFromToken(DynamicMeshT
 StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 {
 	auto& builder = g_meshBuilderInternal;
-	builder.curMeshVertData.assign_to_end(builder.sharedVertDataArrays);
+	builder.curMeshVertData.assign_to_end(builder.sharedLists.vertData);
 
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
 
-	size_t nonEmptyComponents = std::count_if(builder.curMeshVertData.begin(),
-	                                          builder.curMeshVertData.end(),
-	                                          [](MeshVertData& vd) { return !vd.Empty(); });
+	builder.curMeshVertData.erase_if([](const MeshVertData& vd) { return vd.Empty(); });
 
-	StaticMeshUnit* mu = new StaticMeshUnit{nonEmptyComponents, builder._CalcPosInfoForCurrentMesh()};
+	StaticMeshUnit* mu = new StaticMeshUnit{builder.curMeshVertData.size(), builder._CalcPosInfoForCurrentMesh()};
 
-	int i = 0;
-	for (auto& vd : builder.curMeshVertData)
+	for (size_t i = 0; i < builder.curMeshVertData.size(); i++)
 	{
+		auto& vd = builder.curMeshVertData[i];
 		if (!vd.Empty())
 		{
 			static std::vector<MeshComponent> tmp{1};
 			tmp[0] = {nullptr, &vd, IMeshWrapper{}};
-			mu->meshesArr[i++] = builder._CreateIMeshFromRange(ConstComponentRange{tmp.begin(), tmp.end()},
-			                                                   vd.verts.size(),
-			                                                   vd.indices.size(),
-			                                                   false);
+			mu->meshesArr[i] = builder._CreateIMeshFromRange(ConstComponentRange{tmp.begin(), tmp.end()},
+			                                                 vd.verts.size(),
+			                                                 vd.indices.size(),
+			                                                 false);
 		}
 	}
 
@@ -324,10 +345,12 @@ DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESHBUILDER);
 	auto& builder = g_meshBuilderInternal;
-	builder.curMeshVertData.assign_to_end(builder.sharedVertDataArrays);
+	builder.curMeshVertData.assign_to_end(builder.sharedLists.vertData);
 
 	MeshBuilderDelegate builderDelegate{};
 	createFunc(builderDelegate);
+
+	builder.curMeshVertData.erase_if([](const MeshVertData& vd) { return vd.Empty(); });
 
 	MeshPositionInfo posInfo = builder._CalcPosInfoForCurrentMesh();
 	builder.dynamicMeshUnits.emplace(builder.curMeshVertData, posInfo);

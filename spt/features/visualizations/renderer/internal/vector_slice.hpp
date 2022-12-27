@@ -2,7 +2,12 @@
 
 #include <vector>
 
-// this allows arrays shared by all dynamic meshes; behaves kind of a stack - you can only edit the last slice
+/*
+* A slice of a vector. The primary purpose of this is to create a stack-like pool of shared memory for dynamic and
+* debug meshes. A valid slice can only be created at the end of a vector, and there it can be edited just mostly
+* like a normal vector. Upon being destroyed the vector will shrink to whatever size it was before the slice was
+* used. I only bothered to wrap some vector methods plus a couple additional ones.
+*/
 template<typename T>
 struct VectorSlice
 {
@@ -16,27 +21,47 @@ struct VectorSlice
 
 	VectorSlice(VectorSlice&& other) : vec(other.vec), off(other.off), len(other.len)
 	{
-		other.vec = nullptr;
-		other.off = other.len = 0;
+		other._clear();
 	}
 
 	VectorSlice(std::vector<T>& vec) : vec(&vec), off(vec.size()), len(0) {}
 
-	void assign_to_end(std::vector<T>& vec_)
+	inline VectorSlice& operator=(VectorSlice&& other)
 	{
-		vec = &vec_;
-		off = vec_.size();
+		if (this != &other)
+		{
+			memcpy(this, &other, sizeof VectorSlice<T>);
+			other._clear();
+		}
+		return *this;
+	}
+
+	inline void _clear()
+	{
+		vec = nullptr;
+		off = len = 0;
+	}
+
+	inline void assign_to_end(std::vector<T>& _vec)
+	{
+		Assert(!vec);
+		vec = &_vec;
+		off = _vec.size();
 		len = 0;
 	}
 
-	void pop()
+	inline void _verify_at_end() const
+	{
+		Assert(off + len == vec->size());
+	}
+
+	inline void pop()
 	{
 		if (vec)
 		{
-			Assert(off + len == vec->size());
+			_verify_at_end();
 			vec->resize(vec->size() - len);
-			vec = nullptr;
-			off = len = 0;
+			_clear();
 		}
 	}
 
@@ -53,6 +78,7 @@ struct VectorSlice
 	template<class _It>
 	inline void add_range(_It first, _It last)
 	{
+		_verify_at_end();
 		size_t dist = std::distance(first, last);
 		reserve_extra(dist);
 		vec->insert(vec->end(), first, last);
@@ -61,12 +87,14 @@ struct VectorSlice
 
 	inline void reserve_extra(size_t n)
 	{
+		_verify_at_end();
 		if (vec->capacity() < off + len + n)
 			vec->reserve(SmallestPowerOfTwoGreaterOrEqual(off + len + n));
 	}
 
 	inline void resize(size_t n)
 	{
+		_verify_at_end();
 		vec->resize(off + n);
 		len = n;
 	}
@@ -74,6 +102,7 @@ struct VectorSlice
 	template<class _Pr>
 	inline void erase_if(_Pr pred)
 	{
+		_verify_at_end();
 		auto it = std::remove_if(begin(), end(), pred);
 		auto removed = std::distance(it, end());
 		vec->erase(it, end());
@@ -82,17 +111,17 @@ struct VectorSlice
 
 	inline void push_back(const T& elem)
 	{
-		Assert(off + len == vec->size());
-		vec->push_back(elem);
+		_verify_at_end();
 		len++;
+		vec->push_back(elem);
 	}
 
 	template<class... Params>
-	inline void emplace_back(Params&&... params)
+	inline decltype(auto) emplace_back(Params&&... params)
 	{
-		Assert(off + len == vec->size());
-		vec->emplace_back(std::forward<Params>(params)...);
+		_verify_at_end();
 		len++;
+		return vec->emplace_back(std::forward<Params>(params)...);
 	}
 
 	inline T& operator[](size_t i) const

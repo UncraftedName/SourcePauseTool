@@ -39,18 +39,8 @@ void MeshBuilderMatMgr::Unload()
 		matAlpha->DecrementReferenceCount();
 	if (matAlphaNoZ)
 		matAlphaNoZ->DecrementReferenceCount();
+	interfaces::materialSystem->UncacheUnusedMaterials();
 	matOpaque = matAlpha = matAlphaNoZ = nullptr;
-}
-
-IMaterial* MeshBuilderMatMgr::GetMaterial(bool opaque, bool zTest, color32 colorMod)
-{
-	if (!materialsInitialized || colorMod.a == 0)
-		return nullptr;
-	IMaterial* mat = zTest ? (opaque && colorMod.a ? matOpaque : matAlpha) : matAlphaNoZ;
-	Assert(mat);
-	mat->ColorModulate(colorMod.r / 255.f, colorMod.g / 255.f, colorMod.b / 255.f);
-	mat->AlphaModulate(colorMod.a / 255.f);
-	return mat;
 }
 
 #endif

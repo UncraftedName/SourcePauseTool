@@ -8,12 +8,11 @@
 
 struct StaticMeshUnit;
 
-/*
-* The renderer needs some position metric for meshes to figure out which order to render translucent meshes in.
-* For simplicity, we only keep track of the each meshes' AABB and assume each mesh is a cubical cow. This position
-* info is also passed to mesh render callbacks which can be used to tweak the meshes's model matrix during
-* rendering.
-*/
+// these are limits imposed by the game
+#define MAX_MESH_VERTS 32767
+#define MAX_MESH_INDICES 32767
+
+// used internally for figuring out the render order of translucent meshes, but is also passed to callbacks
 struct MeshPositionInfo
 {
 	Vector mins, maxs;
@@ -52,7 +51,7 @@ inline color32 color32RgbLerp(color32 a, color32 b, float f)
 	};
 }
 
-// has no effect on lines
+// winding direction, has no effect on lines
 enum WindingDir
 {
 	WD_CW = 1,       // clockwise
@@ -60,7 +59,7 @@ enum WindingDir
 	WD_BOTH = WD_CW | WD_CCW
 };
 
-// typical use case - check Valid() and if it returns false recreate
+// a wrapper of a shared static mesh pointer, before rendering check if it's Valid() and if not recreate it
 class StaticMesh
 {
 public:
@@ -85,6 +84,7 @@ public:
 	~StaticMesh();
 };
 
+// a token representing a dynamic mesh
 struct DynamicMesh
 {
 	const size_t dynamicMeshIdx;
