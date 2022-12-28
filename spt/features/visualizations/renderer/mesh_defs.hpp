@@ -18,39 +18,6 @@ struct MeshPositionInfo
 	Vector mins, maxs;
 };
 
-// TODO rename to shape color
-struct MeshColor
-{
-	const color32 faceColor, lineColor;
-
-	static MeshColor Face(const color32& faceColor)
-	{
-		return MeshColor{faceColor, {0, 0, 0, 0}};
-	}
-
-	static MeshColor Wire(const color32& lineColor)
-	{
-		return MeshColor{{0, 0, 0, 0}, lineColor};
-	}
-
-	static MeshColor Outline(const color32& faceColor)
-	{
-		return MeshColor{faceColor, {faceColor.r, faceColor.g, faceColor.b, 255}};
-	}
-};
-
-// very basic color lerp for very basic needs
-inline color32 color32RgbLerp(color32 a, color32 b, float f)
-{
-	f = clamp(f, 0, 1);
-	return {
-	    RoundFloatToByte(a.r * (1 - f) + b.r * f),
-	    RoundFloatToByte(a.g * (1 - f) + b.g * f),
-	    RoundFloatToByte(a.b * (1 - f) + b.b * f),
-	    RoundFloatToByte(a.a * (1 - f) + b.a * f),
-	};
-}
-
 // winding direction, has no effect on lines
 enum WindingDir
 {

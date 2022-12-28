@@ -121,14 +121,12 @@ static void DrawPortal(MeshBuilderDelegate& mb, const PortalPlacement::Placement
 	              PORTAL_HALF_WIDTH,
 	              PORTAL_HALF_HEIGHT,
 	              32,
-	              MeshColor::Face(portalColor),
-	              false);
+	              {C_FACE(portalColor), false});
 
 	if (y_spt_draw_pp_bbox.GetBool())
 	{
 		const Vector portalMaxs(1, PORTAL_HALF_WIDTH, PORTAL_HALF_HEIGHT);
-		MeshColor outlinePortalColor(noDrawColor, portalColor);
-		mb.AddBox(info.finalPos, -portalMaxs, portalMaxs, info.finalAngles, outlinePortalColor, false);
+		mb.AddBox(info.finalPos, -portalMaxs, portalMaxs, info.finalAngles, {noDrawColor, portalColor, false});
 	}
 }
 

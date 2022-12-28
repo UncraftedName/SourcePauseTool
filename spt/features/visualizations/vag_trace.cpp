@@ -183,19 +183,11 @@ void VagTrace::OnMeshRenderSignal(MeshRendererDelegate& mr)
 		if (!targetMesh.Valid())
 		{
 			targetMesh = MB_STATIC({
-				color32 c(255, 255, 255, 40);
 				mb.AddBox({0, 0, 0},
 				          {-15, -15, -15},
 				          {15, 15, 15},
 				          {0, 0, 0},
-				          MeshColor::Face(c),
-				          false);
-				mb.AddBox({0, 0, 0},
-				          {-15, -15, -15},
-				          {15, 15, 15},
-				          {0, 0, 0},
-				          MeshColor::Wire(c),
-				          true);
+				          ShapeColor{C_OUTLINE(255, 255, 255, 40), false, true, WD_BOTH});
 			});
 		}
 		mr.DrawMesh(targetMesh,
@@ -531,9 +523,9 @@ void VagTrace::DrawTrace(MeshRendererDelegate& mr)
 	mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
 	                [&](MeshBuilderDelegate& mb)
 	                {
-		                mb.AddLine(cache.exitPortal.pos, cache.entryPortal.pos, {255, 0, 255, 255}, false);
-		                mb.AddLine(cache.entryPortal.pos, cache.vagDestination, {175, 0, 175, 255}, false);
-		                mb.AddSphere(cache.vagDestination, 1, 1, MeshColor::Face({255, 255, 255, 255}), false);
+		                mb.AddLine(cache.exitPortal.pos, cache.entryPortal.pos, {{255, 0, 255, 255}, false});
+		                mb.AddLine(cache.entryPortal.pos, cache.vagDestination, {{175, 0, 175, 255}, false});
+		                mb.AddSphere(cache.vagDestination, 1, 1, {C_FACE(255, 255, 255, 255), false});
 	                }),
 	            [](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
 	            {
@@ -545,11 +537,9 @@ void VagTrace::DrawTrace(MeshRendererDelegate& mr)
 	if (!arrowMesh.Valid() || !circleMesh.Valid())
 	{
 		arrowMesh = MB_STATIC({
-			mb.AddArrow3D({0, 0, 0}, {1, 0, 0}, ARROW_PARAMS, MeshColor::Outline({255, 255, 255, 40}));
+			mb.AddArrow3D({0, 0, 0}, {1, 0, 0}, ARROW_PARAMS, {C_OUTLINE(255, 255, 255, 40)});
 		});
-		circleMesh = MB_STATIC({
-			mb.AddCircle({0, 0, 0}, {0, 0, 0}, 1, 500, MeshColor::Wire({255, 255, 255, 255}));
-		});
+		circleMesh = MB_STATIC({ mb.AddCircle({0, 0, 0}, {0, 0, 0}, 1, 500, {C_WIRE(255, 255, 255, 255)}); });
 	}
 
 	auto drawNudgeArrows = [&](const color32 colors[3], int ax, bool freeEntry)
@@ -627,18 +617,16 @@ void VagTrace::DrawTargetTrace(MeshRendererDelegate& mr)
 		// box representing a portal w/ arrow towards local forward
 		portalMeshDetailed = MB_STATIC({
 			const Vector portalMaxs(1, 32, 54);
-			const MeshColor boxColor = MeshColor::Outline({255, 255, 255, 40});
-			mb.AddBox({0, 0, 0}, -portalMaxs, portalMaxs, vec3_angle, boxColor, false);
-			mb.AddArrow3D({1, 0, 0}, {2, 0, 0}, ARROW_PARAMS, MeshColor::Wire({255, 255, 255, 255}), false);
+			ShapeColor boxColor(C_OUTLINE(255, 255, 255, 40), false);
+			mb.AddBox({0, 0, 0}, -portalMaxs, portalMaxs, vec3_angle, boxColor);
+			mb.AddArrow3D({1, 0, 0}, {2, 0, 0}, ARROW_PARAMS, {C_WIRE(255, 255, 255, 255), false});
 		});
 		// an arrow for local forward & local up
 		portalMeshSimple = MB_STATIC({
-			mb.AddArrow3D({0, 0, 0}, {1, 0, 0}, ARROW_PARAMS, MeshColor::Wire({255, 255, 255, 255}));
-			mb.AddArrow3D({0, 0, 0}, {0, 0, 1}, ARROW_PARAMS, MeshColor::Wire({255, 255, 255, 255}));
+			mb.AddArrow3D({0, 0, 0}, {1, 0, 0}, ARROW_PARAMS, {C_WIRE(255, 255, 255, 255)});
+			mb.AddArrow3D({0, 0, 0}, {0, 0, 1}, ARROW_PARAMS, {C_WIRE(255, 255, 255, 255)});
 		});
-		circleMesh = MB_STATIC({
-			mb.AddCircle({0, 0, 0}, {0, 0, 0}, 1, 500, MeshColor::Wire({255, 255, 255, 255}));
-		});
+		circleMesh = MB_STATIC({ mb.AddCircle({0, 0, 0}, {0, 0, 0}, 1, 500, {C_WIRE(255, 255, 255, 255)}); });
 	}
 
 	const color32 orangeColor{255, 100, 0, 255};

@@ -7,9 +7,70 @@
 
 #include "mathlib\polyhedron.h"
 
-// TODO have a struct for color & ztest for both face and line components
+struct LineColor
+{
+	color32 lineColor;
+	bool zTestLines;
+
+	LineColor(color32 color, bool zTest = true) : lineColor(color), zTestLines(zTest) {}
+};
+
+struct ShapeColor
+{
+	color32 faceColor, lineColor;
+	bool zTestFaces, zTestLines;
+	WindingDir wd;
+
+	ShapeColor(color32 faceColor,
+	           color32 lineColor,
+	           bool zTestFaces = true,
+	           bool zTestLines = true,
+	           WindingDir wd = WD_CW)
+	    : faceColor(faceColor), lineColor(lineColor), zTestFaces(zTestFaces), zTestLines(zTestLines), wd(wd)
+	{
+	}
+};
 
 // clang-format off
+
+struct SweptBoxColor
+{
+	ShapeColor cStart, cSweep, cEnd;
+
+	SweptBoxColor(color32 startFaceColor, color32 startLineColor,
+	              color32 sweepFaceColor, color32 sweepLineColor,
+	              color32 endFaceColor, color32 endLineColor,
+	              bool zTestStart = true, bool zTestSweep = true, bool zTestEnd = true,
+	              WindingDir wdStart = WD_CW, WindingDir wdSweep = WD_CW, WindingDir wdEnd = WD_CW)
+	    : cStart(startFaceColor, startLineColor, zTestStart, wdStart)
+	    , cSweep(sweepFaceColor, sweepLineColor, zTestSweep, wdSweep)
+	    , cEnd(endFaceColor, endLineColor, zTestEnd, wdEnd)
+	{
+	}
+};
+
+// clang-format on
+
+// these macros can be used for ShapeColor & SweptBoxColor, e.g. ShapeColor{C_OUTLINE(255, 255, 255, 20)}
+
+#define _COLOR(...) (color32{__VA_ARGS__})
+
+#define C_FACE(...) _COLOR(__VA_ARGS__), _COLOR(0, 0, 0, 0)
+#define C_WIRE(...) _COLOR(0, 0, 0, 0), _COLOR(__VA_ARGS__)
+#define C_OUTLINE(...) \
+	_COLOR(__VA_ARGS__), _COLOR(_COLOR(__VA_ARGS__).r, _COLOR(__VA_ARGS__).g, _COLOR(__VA_ARGS__).b, 255)
+
+// very basic color lerp for very basic needs
+inline color32 color32RgbLerp(color32 a, color32 b, float f)
+{
+	f = clamp(f, 0, 1);
+	return {
+	    RoundFloatToByte(a.r * (1 - f) + b.r * f),
+	    RoundFloatToByte(a.g * (1 - f) + b.g * f),
+	    RoundFloatToByte(a.b * (1 - f) + b.b * f),
+	    RoundFloatToByte(a.a * (1 - f) + b.a * f),
+	};
+}
 
 /*
 * The game uses a CMeshBuilder to create meshes, but we can't use it directly because parts of its implementation
@@ -41,52 +102,76 @@ class MeshBuilderDelegate
 {
 public:
 	// a single line segment
-	void AddLine(const Vector& v1, const Vector& v2, color32 c, bool zTest = true);
+	void AddLine(const Vector& v1, const Vector& v2, LineColor c);
 
 	// points is a pair-wise array of separate line segments
-	void AddLines(const Vector* points, int nSegments, color32 c, bool zTest = true);
+	void AddLines(const Vector* points, int nSegments, LineColor c);
 
 	// points is an array of points connected by lines
-	void AddLineStrip(const Vector* points, int nPoints, bool loop, color32 c, bool zTest = true);
+	void AddLineStrip(const Vector* points, int nPoints, bool loop, LineColor c);
 
 	// simple position indicator
-	void AddCross(const Vector& pos, float radius, color32 c, bool zTest = true);
+	void AddCross(const Vector& pos, float radius, LineColor c);
 
-	void AddTri(const Vector& v1, const Vector& v2, const Vector& v3, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddTri(const Vector& v1, const Vector& v2, const Vector& v3, ShapeColor c);
 
 	// verts is a 3-pair-wise array of points
-	void AddTris(const Vector* verts, int nFaces, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddTris(const Vector* verts, int nFaces, ShapeColor c);
 
-	void AddQuad(const Vector& v1, const Vector& v2, const Vector& v3, const Vector& v4, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddQuad(const Vector& v1, const Vector& v2, const Vector& v3, const Vector& v4, ShapeColor c);
 
 	// verts is a 4-pair-wise array of points
-	void AddQuads(const Vector* verts, int nFaces, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddQuads(const Vector* verts, int nFaces, ShapeColor c);
 
 	// verts is a array of points, polygon is assumed to be simple & convex
-	void AddPolygon(const Vector* verts, int nVerts, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddPolygon(const Vector* verts, int nVerts, ShapeColor c);
 
 	// 'pos' is the circle center, an 'ang' of <0,0,0> means the circle normal points towards x+
-	void AddCircle(const Vector& pos, const QAngle& ang, float radius, int nPoints, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddCircle(const Vector& pos, const QAngle& ang, float radius, int nPoints, ShapeColor c);
 
-	void AddEllipse(const Vector& pos, const QAngle& ang, float radiusA, float radiusB, int nPoints, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddEllipse(const Vector& pos, const QAngle& ang, float radiusA, float radiusB, int nPoints, ShapeColor c);
 
-	void AddBox(const Vector& pos, const Vector& mins, const Vector& maxs, const QAngle& ang, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddBox(const Vector& pos, const Vector& mins, const Vector& maxs, const QAngle& ang, ShapeColor c);
 
 	// nSubdivisions >= 0, 0 subdivsions is just a cube :)
-	void AddSphere(const Vector& pos, float radius, int nSubdivisions, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddSphere(const Vector& pos, float radius, int nSubdivisions, ShapeColor c);
 
-	void AddSweptBox(const Vector& start, const Vector& end, const Vector& mins, const Vector& maxs, MeshColor mcStart, MeshColor mcEnd, MeshColor mcSweep, bool zTest = true, WindingDir wd = WD_CW);
+	void AddSweptBox(const Vector& start,
+	                 const Vector& end,
+	                 const Vector& mins,
+	                 const Vector& maxs,
+	                 const SweptBoxColor& c);
 
 	// 'pos' is at the center of the cone base, an 'ang' of <0,0,0> means the cone tip will point towards x+
-	void AddCone(const Vector& pos, const QAngle& ang, float height, float radius, int nCirclePoints, bool drawBase, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddCone(const Vector& pos,
+	             const QAngle& ang,
+	             float height,
+	             float radius,
+	             int nCirclePoints,
+	             bool drawBase,
+	             ShapeColor c);
 
 	// 'pos' is at the center of the base, an ang of <0,0,0> means the normals are facing x+/x- for top/base
-	void AddCylinder(const Vector& pos, const QAngle& ang, float height, float radius, int nCirclePoints, bool drawCap1, bool drawCap2, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddCylinder(const Vector& pos,
+	                 const QAngle& ang,
+	                 float height,
+	                 float radius,
+	                 int nCirclePoints,
+	                 bool drawCap1,
+	                 bool drawCap2,
+	                 ShapeColor c);
 
 	// a 3D arrow with its tail base at 'pos' pointing towards 'target'
-	void AddArrow3D(const Vector& pos, const Vector& target, float tailLength, float tailRadius, float tipHeight, float tipRadius, int nCirclePoints, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddArrow3D(const Vector& pos,
+	                const Vector& target,
+	                float tailLength,
+	                float tailRadius,
+	                float tipHeight,
+	                float tipRadius,
+	                int nCirclePoints,
+	                ShapeColor c);
 
-	void AddCPolyhedron(const CPolyhedron* polyhedron, MeshColor mc, bool zTest = true, WindingDir wd = WD_CW);
+	void AddCPolyhedron(const CPolyhedron* polyhedron, ShapeColor c);
 
 private:
 	MeshBuilderDelegate() = default;
@@ -96,17 +181,19 @@ private:
 
 	// internal construction helper methods
 
+	// clang-format off
+
 	void _AddLine(const Vector& v1, const Vector& v2, color32 c, struct MeshVertData& vd);
 	void _AddLineStrip(const Vector* points, int nPoints, bool loop, color32 c, struct MeshVertData& vd);
-	void _AddPolygon(const Vector* verts, int nVerts, MeshColor mc, WindingDir wd, struct MeshVertData& vdf, struct MeshVertData& vdl);
+	void _AddPolygon(const Vector* verts, int nVerts, ShapeColor c, struct MeshVertData& vdf, struct MeshVertData& vdl);
 	void _AddFaceTriangleStripIndices(struct MeshVertData& vdf, size_t vIdx1, size_t vIdx2, size_t nVerts, bool loop, bool mirror, WindingDir wd);
 	void _AddFacePolygonIndices(struct MeshVertData& vdf, size_t vertsIdx, int nVerts, WindingDir wd);
 	void _AddLineStripIndices(struct MeshVertData& vdl, size_t vertsIdx, int nVerts, bool loop);
-	void _AddSubdivCube(int nSubdivisions, MeshColor mc, WindingDir wd, struct MeshVertData& vdf, struct MeshVertData& vdl);
+	void _AddSubdivCube(int nSubdivisions, ShapeColor c, struct MeshVertData& vdf, struct MeshVertData& vdl);
 	Vector* _CreateEllipseVerts(const Vector& pos, const QAngle& ang, float radiusA, float radiusB, int nPoints);
-};
 
-// clang-format on
+	// clang-format on
+};
 
 typedef std::function<void(MeshBuilderDelegate& mb)> MeshCreateFunc;
 

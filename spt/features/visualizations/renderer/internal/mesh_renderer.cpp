@@ -492,12 +492,13 @@ void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 				              debugDesc.box.mins,
 				              debugDesc.box.maxs,
 				              vec3_angle,
-				              MeshColor::Wire(debugDesc.color),
-				              false);
+				              {C_WIRE(debugDesc.color), false, false});
 			    }
 			    else
 			    {
-				    mb.AddCross(debugDesc.cross.crossPos, debugDesc.cross.size, debugDesc.color);
+				    mb.AddCross(debugDesc.cross.crossPos,
+				                debugDesc.cross.size,
+				                {debugDesc.color, false});
 			    }
 		    }));
 	}

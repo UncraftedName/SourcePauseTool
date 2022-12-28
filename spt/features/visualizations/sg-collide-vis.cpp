@@ -55,18 +55,18 @@ ConVar y_spt_draw_portal_env_remote("y_spt_draw_portal_env_remote",
                                     "   - light red: world geometry cloned from the linked portal\n"
                                     "   - light yellow: static props cloned from the linked portal");
 
-#define MC_PORTAL_HOLE (MeshColor::Wire({255, 255, 255, 255}))
-#define MC_LOCAL_WORLD_BRUSHES (MeshColor{{255, 20, 20, 70}, {0, 0, 0, 255}})
-#define MC_REMOTE_WORLD_BRUSHES (MeshColor{{255, 150, 150, 15}, {0, 0, 0, 255}})
-#define MC_LOCAL_WALL_TUBE (MeshColor{{0, 255, 0, 200}, {0, 0, 0, 255}})
-#define MC_LOCAL_WALL_BRUSHES (MeshColor{{40, 40, 255, 60}, {0, 0, 0, 255}})
-#define MC_LOCAL_STATIC_PROPS (MeshColor{{255, 255, 40, 50}, {0, 0, 0, 255}})
-#define MC_REMOTE_STATIC_PROPS (MeshColor{{255, 255, 150, 15}, {0, 0, 0, 255}})
+#define MC_PORTAL_HOLE (ShapeColor{C_WIRE(255, 255, 255, 255)})
+#define MC_LOCAL_WORLD_BRUSHES (ShapeColor{{255, 20, 20, 70}, {0, 0, 0, 255}})
+#define MC_REMOTE_WORLD_BRUSHES (ShapeColor{{255, 150, 150, 15}, {0, 0, 0, 255}})
+#define MC_LOCAL_WALL_TUBE (ShapeColor{{0, 255, 0, 200}, {0, 0, 0, 255}})
+#define MC_LOCAL_WALL_BRUSHES (ShapeColor{{40, 40, 255, 60}, {0, 0, 0, 255}})
+#define MC_LOCAL_STATIC_PROPS (ShapeColor{{255, 255, 40, 50}, {0, 0, 0, 255}})
+#define MC_REMOTE_STATIC_PROPS (ShapeColor{{255, 255, 150, 15}, {0, 0, 0, 255}})
 
 // wire is owned ents, solid is what UTIL_PORTAL_TRACERAY collides with
-#define MC_ENTS (MeshColor{{0, 255, 0, 15}, {40, 255, 40, 255}})
+#define MC_ENTS (ShapeColor{{0, 255, 0, 15}, {40, 255, 40, 255}})
 // wire is shadow clones, solid is shadow clones from other portals that aren't supposed to™ collide with UTIL_PORTAL_TRACERAY
-#define MC_SHADOW_CLONES (MeshColor{{255, 0, 255, 15}, {255, 100, 255, 255}})
+#define MC_SHADOW_CLONES (ShapeColor{{255, 0, 255, 15}, {255, 100, 255, 255}})
 
 #define PORTAL_CLASS "CProp_Portal"
 
@@ -382,7 +382,7 @@ public:
 			{
 				int numTris;
 				auto verts = spt_collideToMesh.CreateCollideMesh(*(CPhysCollide**)(sim + 280), numTris);
-				cache.portalHole = MB_STATIC(mb.AddTris(verts.get(), numTris, MC_PORTAL_HOLE););
+				cache.portalHole = MB_STATIC(mb.AddTris(verts.get(), numTris, {MC_PORTAL_HOLE}););
 			}
 			mr.DrawMesh(cache.portalHole);
 		}
@@ -402,7 +402,7 @@ public:
 
 		if (cache.localWorld.empty())
 		{
-			auto cacheLocalCollide = [this](const CPhysCollide* pCollide, const MeshColor& c)
+			auto cacheLocalCollide = [this](const CPhysCollide* pCollide, const ShapeColor& c)
 			{
 				int numTris;
 				std::unique_ptr<Vector> verts = spt_collideToMesh.CreateCollideMesh(pCollide, numTris);
@@ -430,7 +430,7 @@ public:
 		if (!cache.remoteWorld.empty() && !cache.remoteWorld[0].mesh.Valid())
 			cache.remoteWorld.clear();
 
-		auto cacheRemotePhysObj = [this](const IPhysicsObject* pPhysObj, const MeshColor& c)
+		auto cacheRemotePhysObj = [this](const IPhysicsObject* pPhysObj, const ShapeColor& c)
 		{
 			if (!pPhysObj)
 				return;
@@ -468,7 +468,7 @@ public:
 
 	void DrawPortalEntities(MeshRendererDelegate& mr, uintptr_t sim)
 	{
-		auto drawEnt = [this, &mr](CBaseEntity* pEnt, MeshColor mc, bool outline)
+		auto drawEnt = [this, &mr](CBaseEntity* pEnt, ShapeColor c, bool outline)
 		{
 			if (!pEnt)
 				return;
@@ -490,7 +490,7 @@ public:
 				    {
 					    int numTris;
 					    auto verts = spt_collideToMesh.CreatePhysObjMesh(pPhysObj, numTris);
-					    mb.AddTris(verts.get(), numTris, mc);
+					    mb.AddTris(verts.get(), numTris, c);
 				    });
 			}
 			matrix3x4_t mat;
@@ -509,10 +509,10 @@ public:
 			            });
 		};
 
-		auto drawAllEnts = [this, &drawEnt](CUtlVector<CBaseEntity*>& ents, MeshColor mc, bool outline)
+		auto drawAllEnts = [this, &drawEnt](CUtlVector<CBaseEntity*>& ents, ShapeColor c, bool outline)
 		{
 			for (int i = 0; i < ents.Size(); i++)
-				drawEnt(ents[i], mc, outline);
+				drawEnt(ents[i], c, outline);
 		};
 
 		drawAllEnts(*(CUtlVector<CBaseEntity*>*)(sim + 8664), MC_SHADOW_CLONES, true);
