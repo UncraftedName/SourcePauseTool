@@ -450,7 +450,7 @@ void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent
 			auto& unit = *unitWrapper._staticMeshPtr;
 			for (size_t i = 0; i < unit.nMeshes; i++)
 				if (shouldRender(unit.meshesArr[i].material))
-					components.emplace_back(&unitWrapper, nullptr, unit.meshesArr[i]);
+					components.emplace_back(&unitWrapper, (MeshVertData*)0, unit.meshesArr[i]);
 		}
 		else
 		{
