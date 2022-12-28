@@ -20,14 +20,22 @@ static std::vector<class BaseMeshRenderTest*> tests;
 
 class BaseMeshRenderTest
 {
-protected:
-	BaseMeshRenderTest()
+public:
+	const Vector testPos;
+	const char* name;
+
+	explicit BaseMeshRenderTest(const Vector& pos, const char* name) : testPos(pos), name(name)
 	{
 		tests.push_back(this);
 	}
 
-public:
 	virtual void TestFunc(MeshRendererDelegate& mr) = 0;
+
+	virtual void DrawName(MeshRendererDelegate& mr)
+	{
+		if (interfaces::debugOverlay)
+			interfaces::debugOverlay->AddTextOverlay(testPos + Vector{0, 0, 150}, 0, name);
+	}
 };
 
 class MeshTestFeature : public FeatureWrapper<MeshTestFeature>
@@ -54,7 +62,10 @@ protected:
 		if (!y_spt_draw_mesh_examples.GetBool())
 			return;
 		for (auto testCase : tests)
+		{
+			testCase->DrawName(mr);
 			testCase->TestFunc(mr);
+		}
 	}
 
 public:
@@ -64,60 +75,52 @@ public:
 
 MeshTestFeature testFeature;
 
-// creates a new struct in a new namespace inheriting from the base test and implements the TestFunc
-#define BEGIN_TEST_CASE(desc, position) \
-	namespace CONCATENATE(_Test, __COUNTER__) \
+#define _TEST_CASE(name, position, counter) \
+	struct CONCATENATE(_Test, counter) : BaseMeshRenderTest \
 	{ \
-		class _Test : BaseMeshRenderTest \
-		{ \
-			const Vector testPos = position; \
-			virtual void TestFunc(MeshRendererDelegate& mr) override; \
-		}; \
-		static _Test _inst; \
-		void _Test::TestFunc(MeshRendererDelegate& mr) \
-		{ \
-			if (interfaces::debugOverlay) \
-				interfaces::debugOverlay->AddTextOverlay(testPos + Vector{0, 0, 150}, 0, desc);
+		using BaseMeshRenderTest::BaseMeshRenderTest; \
+		virtual void TestFunc(MeshRendererDelegate& mr) override; \
+	} static CONCATENATE(_inst, counter){position, name}; \
+	void CONCATENATE(_Test, counter)::TestFunc(MeshRendererDelegate& mr)
 
-#define END_TEST_CASE() \
-	} \
-	}
+#define TEST_CASE(name, position) _TEST_CASE(name, position, __COUNTER__)
 
-BEGIN_TEST_CASE("AddLine()", Vector(0, 0, 0))
-RENDER_DYNAMIC(mr, mb.AddLine(testPos + Vector(-70, -70, -80), testPos + Vector(70, 70, 80), {{255, 0, 255, 100}}););
-END_TEST_CASE()
+TEST_CASE("AddLine()", Vector(0, 0, 0))
+{
+	RENDER_DYNAMIC(mr,
+	               mb.AddLine(testPos + Vector(-70, -70, -80),
+	                          testPos + Vector(70, 70, 80),
+	                          {{255, 0, 255, 100}}););
+}
 
 const Vector lineTestVerts[] = {{0, 0, 80}, {-70, 70, 80}, {-70, 70, -80}, {0, 0, -80}, {70, 70, -80}, {70, 70, 80}};
 const int numLineTestVerts = sizeof(lineTestVerts) / sizeof(Vector);
 
-BEGIN_TEST_CASE("AddLines()", Vector(200, 0, 0))
+TEST_CASE("AddLines()", Vector(200, 0, 0))
 {
 	Vector v[numLineTestVerts];
 	for (int i = 0; i < numLineTestVerts; i++)
 		v[i] = lineTestVerts[i] + testPos;
 	RENDER_DYNAMIC(mr, mb.AddLines(v, numLineTestVerts / 2, {{255, 120, 120, 255}}););
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddLineStrip(loop=false)", Vector(400, 0, 0))
+TEST_CASE("AddLineStrip(loop=false)", Vector(400, 0, 0))
 {
 	Vector v[numLineTestVerts];
 	for (int i = 0; i < numLineTestVerts; i++)
 		v[i] = lineTestVerts[i] + testPos;
 	RENDER_DYNAMIC(mr, mb.AddLineStrip(v, numLineTestVerts, false, {{120, 255, 120, 255}}););
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddLineStrip(loop=true)", Vector(600, 0, 0))
+TEST_CASE("AddLineStrip(loop=true)", Vector(600, 0, 0))
 {
 	Vector v[numLineTestVerts];
 	for (int i = 0; i < numLineTestVerts; i++)
 		v[i] = lineTestVerts[i] + testPos;
 	RENDER_DYNAMIC(mr, mb.AddLineStrip(v, numLineTestVerts, true, {{120, 120, 255, 255}}););
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddPolygon()", Vector(800, 0, 0))
+TEST_CASE("AddPolygon()", Vector(800, 0, 0))
 {
 	// clang-format off
 	Vector v1[] = {testPos + Vector{-70, -70, 80}, testPos + Vector{0, 70, 80}, testPos + Vector{70, -70, 80}};
@@ -131,9 +134,8 @@ BEGIN_TEST_CASE("AddPolygon()", Vector(800, 0, 0))
 	RENDER_DYNAMIC(mr, mb.AddPolygon(v2, ARRAYSIZE(v2), {C_OUTLINE(255, 50, 50, 100)}););
 	RENDER_DYNAMIC(mr, mb.AddPolygon(v3, ARRAYSIZE(v3), {{150, 150, 150, 255}, {0, 0, 255, 250}}););
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddCircle()", Vector(1000, 0, 0))
+TEST_CASE("AddCircle()", Vector(1000, 0, 0))
 {
 	Vector dir(4, 2, 13);
 	QAngle ang;
@@ -166,9 +168,8 @@ BEGIN_TEST_CASE("AddCircle()", Vector(1000, 0, 0))
 		}
 	});
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddTris()", Vector(1200, 0, 0))
+TEST_CASE("AddTris()", Vector(1200, 0, 0))
 {
 	float c30, s30;
 	SinCos(DEG2RAD(30), &s30, &c30);
@@ -186,9 +187,8 @@ BEGIN_TEST_CASE("AddTris()", Vector(1200, 0, 0))
 		vNew[i] = v[i] + testPos;
 	RENDER_DYNAMIC(mr, mb.AddTris(vNew, numVerts / 3, {C_OUTLINE(50, 150, 200, 30)}););
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddQuad()", Vector(1400, 0, 0))
+TEST_CASE("AddQuad()", Vector(1400, 0, 0))
 {
 	// naive game of life implementation - alternate between two boards
 
@@ -273,9 +273,8 @@ BEGIN_TEST_CASE("AddQuad()", Vector(1400, 0, 0))
 		               {C_WIRE(50, 50, 50, 255)});
 	    }));
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddBox()", Vector(1600, 0, 0))
+TEST_CASE("AddBox()", Vector(1600, 0, 0))
 {
 	const Vector mins(-16, -16, 0);
 	const Vector maxs(16, 16, 72);
@@ -287,17 +286,15 @@ BEGIN_TEST_CASE("AddBox()", Vector(1600, 0, 0))
 		mb.AddBox(testPos, mins, maxs, {0, 0, 20}, {C_OUTLINE(255, 255, 0, 16)});
 	});
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddSphere()", Vector(1800, 0, 0))
+TEST_CASE("AddSphere()", Vector(1800, 0, 0))
 {
 	RENDER_DYNAMIC(mr, mb.AddSphere(testPos + Vector(0, 100, 20), 50, 8, {C_FACE(150, 100, 255, 50)}););
 	RENDER_DYNAMIC(mr, mb.AddSphere(testPos + Vector(60, 0, 20), 50, 4, {C_OUTLINE(0, 200, 200, 50)}););
 	RENDER_DYNAMIC(mr, mb.AddSphere(testPos + Vector(-60, 0, 20), 50, 9, {{20, 50, 80, 255}, {180, 99, 30, 255}}););
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddSweptBox()", Vector(2000, 0, 0))
+TEST_CASE("AddSweptBox()", Vector(2000, 0, 0))
 {
 	/*
 	* The sweep may be drawn differently if it has a zero component in any of the axes and
@@ -377,9 +374,8 @@ BEGIN_TEST_CASE("AddSweptBox()", Vector(2000, 0, 0))
 		}
 	}
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddCone()", Vector(2200, 0, 0))
+TEST_CASE("AddCone()", Vector(2200, 0, 0))
 {
 	{
 		const Vector org = testPos + Vector(-50, 0, 0);
@@ -398,9 +394,8 @@ BEGIN_TEST_CASE("AddCone()", Vector(2200, 0, 0))
 		RENDER_DYNAMIC(mr, mb.AddCone(org, ang, h, 20, 5, true, {C_OUTLINE(255, 50, 50, 20)}););
 	}
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddCylinder()", Vector(2400, 0, 0))
+TEST_CASE("AddCylinder()", Vector(2400, 0, 0))
 {
 	RENDER_DYNAMIC(mr, {
 		mb.AddCylinder(testPos, {0, 0, 0}, 20, 10, 5, true, true, {C_OUTLINE(255, 150, 0, 40)});
@@ -414,9 +409,8 @@ BEGIN_TEST_CASE("AddCylinder()", Vector(2400, 0, 0))
 		mb.AddCylinder(org, {-80, 90, 0}, 20, 10, 15, true, false, {C_OUTLINE(255, 50, 0, 20)});
 	});
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddArrow3D()", Vector(2600, 0, 0))
+TEST_CASE("AddArrow3D()", Vector(2600, 0, 0))
 {
 	const Vector target = testPos + Vector(0, 100, 50);
 	RENDER_DYNAMIC(mr, mb.AddCross(target, 7, {{255, 0, 0, 255}}););
@@ -432,9 +426,8 @@ BEGIN_TEST_CASE("AddArrow3D()", Vector(2600, 0, 0))
 		}
 	}
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("Timmy", Vector(0, -300, 0))
+TEST_CASE("Timmy", Vector(0, -300, 0))
 {
 	static StaticMesh timmyMesh;
 	if (!timmyMesh.Valid())
@@ -466,9 +459,8 @@ BEGIN_TEST_CASE("Timmy", Vector(0, -300, 0))
 			            infoOut.colorModulate.r = 0;
 	            });
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("Lorenz Attractor", Vector(200, -300, 0))
+TEST_CASE("Lorenz Attractor", Vector(200, -300, 0))
 {
 	// Intellisense doesn't do shit when you're in a macro, so I'm not gonna use RENDER_DYNAMIC_CALLBACK for something so big.
 	// Also, clang-format does literally the most stupid thing possible sometimes and using these macros makes it better.
@@ -540,9 +532,8 @@ BEGIN_TEST_CASE("Lorenz Attractor", Vector(200, -300, 0))
 #undef MB_CREATE_BEGIN
 #undef MB_CREATE_END
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("Reusing static/dynamic meshes", Vector(400, -300, 0))
+TEST_CASE("Reusing static/dynamic meshes", Vector(400, -300, 0))
 {
 	// returns a create func given a color
 	auto coloredCreateFunc = [](const ShapeColor& c) {
@@ -574,9 +565,8 @@ BEGIN_TEST_CASE("Reusing static/dynamic meshes", Vector(400, -300, 0))
 			mr.DrawMesh(dynamicMesh, callbackFunc);
 	}
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddCPolyhedron", Vector(600, -300, 0))
+TEST_CASE("AddCPolyhedron", Vector(600, -300, 0))
 {
 	static std::vector<VPlane> planes;
 	planes.clear();
@@ -618,9 +608,8 @@ BEGIN_TEST_CASE("AddCPolyhedron", Vector(600, -300, 0))
 
 	polyhedron->Release();
 }
-END_TEST_CASE()
 
-BEGIN_TEST_CASE("AddEllipse()", Vector(800, -300, 0))
+TEST_CASE("AddEllipse()", Vector(800, -300, 0))
 {
 	Vector dir(4, 2, 13);
 	QAngle ang;
@@ -638,6 +627,5 @@ BEGIN_TEST_CASE("AddEllipse()", Vector(800, -300, 0))
 		});
 	}
 }
-END_TEST_CASE()
 
 #endif

@@ -4,9 +4,9 @@
 
 /*
 * A slice of a vector. The primary purpose of this is to create a stack-like pool of shared memory for dynamic and
-* debug meshes. A valid slice can only be created at the end of a vector, and there it can be edited just mostly
-* like a normal vector. Upon being destroyed the vector will shrink to whatever size it was before the slice was
-* used. I only bothered to wrap some vector methods plus a couple additional ones.
+* debug meshes. A valid slice can only be created at the end of a vector, and there it can be edited mostly like a
+* normal vector. Upon being destroyed the vector will shrink to whatever size it was before the slice was used. I
+* only bothered to wrap the common vector methods plus a couple additional ones.
 */
 template<typename T>
 struct VectorSlice
