@@ -218,7 +218,7 @@ class IPhysicsObject;
 class CBaseEntity;
 
 // collide stuff - returned mesh is an array of tris, consider caching and/or using static meshes
-class CreateCollideFeature : public FeatureWrapper<CreateCollideFeature>
+class CreateCollideFeature
 {
 public:
 	// the verts don't contain pos/rot info, so they'll be at the origin
@@ -233,18 +233,9 @@ public:
 	// can be used after InitHooks()
 	static IPhysicsObject* GetPhysObj(const CBaseEntity* pEnt);
 
-	// can be used (after InitHooks()) to check if the above functions do anything
-	bool Works();
-
-protected:
-	void InitHooks() override;
-	void UnloadFeature() override;
-
 private:
 	inline static bool cachedOffset = false;
 	inline static int cached_phys_obj_off;
-
-	DECL_MEMBER_THISCALL(int, CPhysicsCollision__CreateDebugMesh, const CPhysCollide* pCollide, Vector** outVerts);
 };
 
 inline CreateCollideFeature spt_collideToMesh;
