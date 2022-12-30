@@ -12,6 +12,8 @@ struct LineColor
 	color32 lineColor;
 	bool zTestLines;
 
+	LineColor() = default;
+
 	LineColor(color32 color, bool zTest = true) : lineColor(color), zTestLines(zTest) {}
 };
 
@@ -20,6 +22,8 @@ struct ShapeColor
 	color32 faceColor, lineColor;
 	bool zTestFaces, zTestLines;
 	WindingDir wd;
+
+	ShapeColor() = default;
 
 	ShapeColor(color32 faceColor,
 	           color32 lineColor,
@@ -36,6 +40,8 @@ struct ShapeColor
 struct SweptBoxColor
 {
 	ShapeColor cStart, cSweep, cEnd;
+
+	SweptBoxColor() = default;
 
 	SweptBoxColor(color32 startFaceColor, color32 startLineColor,
 	              color32 sweepFaceColor, color32 sweepLineColor,

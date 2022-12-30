@@ -11,18 +11,31 @@
 #include "interfaces.hpp"
 #include "signals.hpp"
 
-ConVar y_spt_draw_mesh_debug("y_spt_draw_mesh_debug",
-                             "0",
-                             FCVAR_CHEAT | FCVAR_DONTRECORD,
-                             "Draws the distance metric and AABBs of all meshes.");
+ConVar y_spt_draw_mesh_debug(
+    "y_spt_draw_mesh_debug",
+    "0",
+    FCVAR_CHEAT | FCVAR_DONTRECORD,
+    "Draws the AABB and distance metric of all meshes, uses the following colors:\n"
+    "   - red: static mesh\n"
+    "   - blue: dynamic mesh\n"
+    "   - yellow: dynamic mesh with a callback\n"
+    "   - red cross: the distance metric to a translucent mesh, used to determine the render order\n"
+    "   - green: fused opaque dynamic meshes (only available with a cvar value of 2)\n"
+    "   - light green: fused translucent dynamic meshes (only available with a cvar value of 2)");
 
-// TODO comments
+CON_COMMAND_F(y_spt_destroy_all_static_meshes,
+              "Destroy all static meshes created with the mesh builder, used for debugging",
+              FCVAR_DONTRECORD)
+{
+	StaticMesh::DestroyAll();
+	Msg("Done\n");
+};
 
 #define DEBUG_COLOR_STATIC_MESH (color32{150, 20, 10, 255})
 #define DEBUG_COLOR_DYNAMIC_MESH (color32{0, 0, 255, 255})
 #define DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK (color32{255, 150, 50, 255})
-#define DEBUG_COLOR_MERGED_DYNAMIC_MESH_OPAQUE (color32{0, 255, 0, 255})
-#define DEBUG_COLOR_MERGED_DYNAMIC_MESH_TRANSLUCENT (color32{150, 255, 200, 255})
+#define DEBUG_COLOR_FUSED_DYNAMIC_MESH_OPAQUE (color32{0, 255, 0, 255})
+#define DEBUG_COLOR_FUSED_DYNAMIC_MESH_TRANSLUCENT (color32{150, 255, 200, 255})
 #define DEBUG_COLOR_CROSS (color32{255, 0, 0, 255})
 
 /*
@@ -192,6 +205,7 @@ void MeshRendererFeature::LoadFeature()
 		return;
 	RenderViewPre_Signal.Connect(&g_meshRendererInternal, &MeshRendererInternal::OnRenderViewPre_Signal);
 	InitConcommandBase(y_spt_draw_mesh_debug);
+	InitCommand(y_spt_destroy_all_static_meshes);
 }
 
 void MeshRendererFeature::UnloadFeature()
@@ -231,7 +245,7 @@ HOOK_THISCALL(void, MeshRendererFeature, CRendering3dView__DrawTranslucentRender
 
 struct MeshUnitWrapper
 {
-	// keep statics alive as long as we render
+	// keep statics alive as long as we're rendering, dynamics are kept alive in the mesh builder
 	const std::shared_ptr<StaticMeshUnit> _staticMeshPtr;
 	const DynamicMeshToken _dynamicToken;
 	const RenderCallback callback;
@@ -404,7 +418,7 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 			          if (ignoreZA != ignoreZB)
 				          return ignoreZB; // TODO test me!!
 		          }
-		          if (a.unitWrapper->camDistSqr != b.unitWrapper->camDistSqr)
+		          if (&a.unitWrapper != &b.unitWrapper)
 			          return a.unitWrapper->camDistSqr > b.unitWrapper->camDistSqr;
 		          return a < b;
 	          });
@@ -427,8 +441,8 @@ void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent
 		if (!unitWrapper.ApplyCallbackAndCalcCamDist())
 			continue; // the mesh is outside our frustum or the user wants to skip rendering
 
-		if (unitWrapper.callback && unitWrapper.cbInfoOut.colorModulate.a < 1)
-			continue; // color modulation makes this mesh unit translucent
+		if (unitWrapper.callback && opaques && unitWrapper.cbInfoOut.colorModulate.a < 1)
+			continue; // color modulation forces all meshes in this unit to be translucent
 
 		auto shouldRender = [&unitWrapper, opaques](IMaterial* material)
 		{
@@ -583,8 +597,8 @@ void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentR
 		{
 			debugList.emplace_back(batchedMins - Vector{opaques ? 2.5f : 2.f},
 			                       batchedMaxs + Vector{opaques ? 2.5f : 2.f},
-			                       opaques ? DEBUG_COLOR_MERGED_DYNAMIC_MESH_OPAQUE
-			                               : DEBUG_COLOR_MERGED_DYNAMIC_MESH_TRANSLUCENT);
+			                       opaques ? DEBUG_COLOR_FUSED_DYNAMIC_MESH_OPAQUE
+			                               : DEBUG_COLOR_FUSED_DYNAMIC_MESH_TRANSLUCENT);
 		}
 	}
 	else
@@ -604,10 +618,10 @@ std::weak_ordering MeshComponent::operator<=>(const MeshComponent& rhs) const
 	// group dynamics together
 	if (!vertData != !rhs.vertData)
 		return !vertData <=> !rhs.vertData;
+	// group the same primitive type together
 	// between dynamics
 	if (vertData && rhs.vertData)
 	{
-		// group the same primitive type together
 		if (vertData->type != rhs.vertData->type)
 			return vertData->type <=> rhs.vertData->type;
 		// group those without a callback together
@@ -619,6 +633,8 @@ std::weak_ordering MeshComponent::operator<=>(const MeshComponent& rhs) const
 	}
 	else
 	{
+		if (iMeshWrapper.type != rhs.iMeshWrapper.type)
+			return iMeshWrapper.type <=> rhs.iMeshWrapper.type;
 		// between statics, if both are in the same unit they'll have the same material, callback, colormod, etc.
 		if (&unitWrapper == &rhs.unitWrapper)
 			return W::equivalent;

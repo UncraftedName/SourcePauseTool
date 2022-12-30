@@ -6,6 +6,68 @@
 
 #include "interfaces.hpp"
 
+/**************************************** MATERIAL REF ****************************************/
+
+MaterialRef::MaterialRef() : mat(nullptr) {}
+
+MaterialRef::MaterialRef(IMaterial* mat) : mat(mat)
+{
+	if (mat)
+		mat->IncrementReferenceCount();
+}
+
+MaterialRef::MaterialRef(const MaterialRef& other) : MaterialRef(other.mat) {}
+
+MaterialRef::MaterialRef(MaterialRef&& other) : mat(other.mat)
+{
+	other.mat = nullptr;
+}
+
+MaterialRef& MaterialRef::operator=(const MaterialRef& other)
+{
+	return *this = other.mat;
+}
+
+MaterialRef& MaterialRef::operator=(IMaterial* newMaterial)
+{
+	if (mat != newMaterial)
+	{
+		if (mat)
+			mat->DecrementReferenceCount();
+		if (newMaterial)
+			newMaterial->IncrementReferenceCount();
+	}
+	mat = newMaterial;
+	return *this;
+}
+
+bool MaterialRef::operator==(const MaterialRef& other) const
+{
+	return mat == other.mat;
+}
+
+auto MaterialRef::operator<=>(const MaterialRef& other) const
+{
+	return mat <=> other.mat;
+}
+
+MaterialRef::operator IMaterial*() const
+{
+	return mat;
+}
+
+IMaterial* MaterialRef::operator->() const
+{
+	return mat;
+}
+
+MaterialRef::~MaterialRef()
+{
+	*this = nullptr;
+}
+
+/**************************************** MATERIAL MANAGER ****************************************/
+
 void MeshBuilderMatMgr::Load()
 {
 	KeyValues* kv;
@@ -24,22 +86,19 @@ void MeshBuilderMatMgr::Load()
 	kv->SetInt("$vertexalpha", 1);
 	kv->SetInt("$ignorez", 1);
 	matAlphaNoZ = interfaces::materialSystem->CreateMaterial("_spt_UnlitTranslucentNoZ", kv);
-
-	materialsInitialized = matOpaque && matAlpha && matAlphaNoZ;
-	if (!materialsInitialized)
-		matOpaque = matAlpha = matAlphaNoZ = nullptr;
 }
 
 void MeshBuilderMatMgr::Unload()
 {
-	materialsInitialized = false;
-	if (matOpaque)
-		matOpaque->DecrementReferenceCount();
-	if (matAlpha)
-		matAlpha->DecrementReferenceCount();
-	if (matAlphaNoZ)
-		matAlphaNoZ->DecrementReferenceCount();
-	interfaces::materialSystem->UncacheUnusedMaterials();
+	std::vector<IMaterial*> mats{matOpaque, matAlpha, matAlphaNoZ};
+	for (IMaterial* mat : mats)
+	{
+		if (!mat)
+			continue;
+		mat->DecrementReferenceCount();
+		mat->DeleteIfUnreferenced();
+	}
+
 	matOpaque = matAlpha = matAlphaNoZ = nullptr;
 }
 

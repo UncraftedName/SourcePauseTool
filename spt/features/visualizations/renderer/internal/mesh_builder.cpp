@@ -21,10 +21,9 @@ MeshVertData::MeshVertData(MeshVertData&& other)
 MeshVertData::MeshVertData(std::vector<VertexData>& vertDataVec,
                            std::vector<VertIndex>& vertIndexVec,
                            MeshPrimitiveType type,
-                           IMaterial* material)
+                           MaterialRef material)
     : verts(vertDataVec), indices(vertIndexVec), type(type), material(material)
 {
-	material->IncrementReferenceCount();
 }
 
 MeshVertData& MeshVertData::operator=(MeshVertData&& other)
@@ -35,7 +34,6 @@ MeshVertData& MeshVertData::operator=(MeshVertData&& other)
 		indices = std::move(other.indices);
 		type = other.type;
 		material = other.material;
-		other.material = nullptr;
 	}
 	return *this;
 }
@@ -43,12 +41,6 @@ MeshVertData& MeshVertData::operator=(MeshVertData&& other)
 bool MeshVertData::Empty() const
 {
 	return verts.size() == 0 || indices.size() == 0;
-}
-
-MeshVertData::~MeshVertData()
-{
-	if (material)
-		material->DecrementReferenceCount(); // TODO
 }
 
 /**************************************** MESH UNITS ****************************************/
@@ -71,16 +63,13 @@ StaticMeshUnit::StaticMeshUnit(size_t nMeshes, const MeshPositionInfo& posInfo)
 StaticMeshUnit::~StaticMeshUnit()
 {
 	for (size_t i = 0; i < nMeshes; i++)
-	{
-		meshesArr[i].material->DecrementReferenceCount();
 		CMatRenderContextPtr(interfaces::materialSystem)->DestroyStaticMesh(meshesArr[i].iMesh);
-	}
 	delete[] meshesArr;
 }
 
 /**************************************** MESH BUILDER INTERNAL ****************************************/
 
-MeshVertData& MeshBuilderInternal::GetComponentInCurrentMesh(MeshPrimitiveType type, IMaterial* material)
+MeshVertData& MeshBuilderInternal::GetComponentInCurrentMesh(MeshPrimitiveType type, MaterialRef material)
 {
 	// look through all components that we already have in the current mesh and see if any match the type/material
 	auto vDataIt = std::find_if(curMeshVertData.begin(),
@@ -128,13 +117,13 @@ IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange rang
                                                         size_t totalIndices,
                                                         bool dynamic)
 {
-	Assert(range.first->vertData);
-	Assert(totalVerts <= totalIndices);
-	Assert(0 < totalVerts && totalVerts <= MAX_MESH_VERTS);
-	Assert(0 < totalIndices && totalIndices <= MAX_MESH_INDICES);
-
 	if (totalVerts == 0 || totalIndices == 0)
 		return IMeshWrapper{};
+
+	Assert(range.first->vertData);
+	Assert(totalVerts <= totalIndices);
+	Assert(totalVerts <= MAX_MESH_VERTS);
+	Assert(totalIndices <= MAX_MESH_INDICES);
 
 #ifdef DEBUG
 	for (auto it = range.first + 1; it < range.second; it++)
@@ -221,7 +210,7 @@ IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange rang
 
 	iMesh->UnlockMesh(totalVerts, totalIndices, desc);
 
-	return {iMesh, material};
+	return {iMesh, range.first->vertData->type, material};
 }
 
 void MeshBuilderInternal::BeginIMeshCreation(ConstComponentRange range, bool dynamic)
@@ -335,9 +324,7 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 			                                                 false);
 		}
 	}
-
 	builder.curMeshVertData.pop();
-	// TODO EMPLACE
 	return StaticMesh{mu};
 }
 

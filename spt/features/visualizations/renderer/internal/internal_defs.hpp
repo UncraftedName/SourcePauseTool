@@ -95,13 +95,31 @@ enum class MeshPrimitiveType
 	Count
 };
 
-// contains the instructions for creating an IMeah* object
+struct MaterialRef
+{
+	MaterialRef();
+	MaterialRef(IMaterial* mat);
+	MaterialRef(const MaterialRef& other);
+	MaterialRef(MaterialRef&& other);
+	MaterialRef& operator=(const MaterialRef& other);
+	MaterialRef& operator=(IMaterial* mat);
+	bool operator==(const MaterialRef& other) const;
+	auto operator<=>(const MaterialRef& other) const;
+	operator IMaterial*() const;
+	IMaterial* operator->() const;
+	~MaterialRef();
+
+private:
+	IMaterial* mat;
+};
+
+// contains the instructions for creating an IMesh* object
 struct MeshVertData
 {
 	VectorSlice<VertexData> verts;
 	VectorSlice<VertIndex> indices;
 	MeshPrimitiveType type;
-	IMaterial* material;
+	MaterialRef material;
 
 	MeshVertData() = default;
 
@@ -110,20 +128,19 @@ struct MeshVertData
 	MeshVertData(std::vector<VertexData>& vertDataVec,
 	             std::vector<VertIndex>& vertIndexVec,
 	             MeshPrimitiveType type,
-	             IMaterial* material);
+	             MaterialRef material);
 
 	MeshVertData& operator=(MeshVertData&& other);
 
 	bool Empty() const;
-
-	~MeshVertData();
 };
 
-// both components and static mesh need the material when using an IMesh
+// does not handle destruction if the imesh
 struct IMeshWrapper
 {
 	IMesh* iMesh;
-	IMaterial* material;
+	MeshPrimitiveType type;
+	MaterialRef material;
 };
 
 /*
@@ -220,7 +237,7 @@ struct MeshBuilderInternal
 
 	VectorStack<DynamicMeshUnit> dynamicMeshUnits;
 
-	MeshVertData& GetComponentInCurrentMesh(MeshPrimitiveType type, IMaterial* material);
+	MeshVertData& GetComponentInCurrentMesh(MeshPrimitiveType type, MaterialRef material);
 	MeshPositionInfo _CalcPosInfoForCurrentMesh();
 
 	/*
@@ -251,8 +268,7 @@ inline MeshBuilderInternal g_meshBuilderInternal;
 
 struct MeshBuilderMatMgr
 {
-	IMaterial *matOpaque = nullptr, *matAlpha = nullptr, *matAlphaNoZ = nullptr;
-	bool materialsInitialized = false;
+	MaterialRef matOpaque = nullptr, matAlpha = nullptr, matAlphaNoZ = nullptr;
 
 	void Load();
 	void Unload();
