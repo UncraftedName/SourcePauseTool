@@ -35,13 +35,18 @@ struct ShapeColor
 	}
 };
 
-// clang-format off
-
 struct SweptBoxColor
 {
 	ShapeColor cStart, cSweep, cEnd;
 
 	SweptBoxColor() = default;
+
+	SweptBoxColor(ShapeColor cStart, ShapeColor cSweep, ShapeColor cEnd)
+	    : cStart(cStart), cSweep(cSweep), cEnd(cEnd)
+	{
+	}
+
+	// clang-format off
 
 	SweptBoxColor(color32 startFaceColor, color32 startLineColor,
 	              color32 sweepFaceColor, color32 sweepLineColor,
@@ -53,9 +58,9 @@ struct SweptBoxColor
 	    , cEnd(endFaceColor, endLineColor, zTestEnd, wdEnd)
 	{
 	}
-};
 
-// clang-format on
+	// clang-format on
+};
 
 // these macros can be used for ShapeColor & SweptBoxColor, e.g. ShapeColor{C_OUTLINE(255, 255, 255, 20)}
 
@@ -191,11 +196,13 @@ private:
 
 	void _AddLine(const Vector& v1, const Vector& v2, color32 c, struct MeshVertData& vd);
 	void _AddLineStrip(const Vector* points, int nPoints, bool loop, color32 c, struct MeshVertData& vd);
+	void _AddTris(const Vector* verts, int nFaces, ShapeColor c, struct MeshVertData& vdf, struct MeshVertData& vdl);
 	void _AddPolygon(const Vector* verts, int nVerts, ShapeColor c, struct MeshVertData& vdf, struct MeshVertData& vdl);
 	void _AddFaceTriangleStripIndices(struct MeshVertData& vdf, size_t vIdx1, size_t vIdx2, size_t nVerts, bool loop, bool mirror, WindingDir wd);
 	void _AddFacePolygonIndices(struct MeshVertData& vdf, size_t vertsIdx, int nVerts, WindingDir wd);
 	void _AddLineStripIndices(struct MeshVertData& vdl, size_t vertsIdx, int nVerts, bool loop);
 	void _AddSubdivCube(int nSubdivisions, ShapeColor c, struct MeshVertData& vdf, struct MeshVertData& vdl);
+	void _AddUnitCube(ShapeColor c, struct MeshVertData& vdf, struct MeshVertData& vdl);
 	Vector* _CreateEllipseVerts(const Vector& pos, const QAngle& ang, float radiusA, float radiusB, int nPoints);
 
 	// clang-format on

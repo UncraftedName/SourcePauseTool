@@ -75,14 +75,22 @@ struct VectorSlice
 		return vec->begin() + off + len;
 	}
 
+	inline std::vector<T>::reverse_iterator rbegin() const
+	{
+		return vec->rbegin();
+	}
+
+	inline std::vector<T>::reverse_iterator rend() const
+	{
+		return std::vector<T>::reverse_iterator(begin());
+	}
+
 	template<class _It>
 	inline void add_range(_It first, _It last)
 	{
 		_verify_at_end();
-		size_t dist = std::distance(first, last);
-		reserve_extra(dist);
+		len += std::distance(first, last);
 		vec->insert(vec->end(), first, last);
-		len += dist;
 	}
 
 	inline void reserve_extra(size_t n)

@@ -154,12 +154,17 @@ void MeshBuilderDelegate::AddTri(const Vector& v1, const Vector& v2, const Vecto
 
 void MeshBuilderDelegate::AddTris(const Vector* verts, int nFaces, ShapeColor c)
 {
+	DECLARE_MULTIPLE_COMPONENTS(2);
+	_AddTris(verts, nFaces, c, GET_VDATA_FACES(c), GET_VDATA_LINES(c));
+}
+
+void MeshBuilderDelegate::_AddTris(const Vector* verts, int nFaces, ShapeColor c, MeshVertData& vdf, MeshVertData& vdl)
+{
 	if (!verts || nFaces <= 0 || !(c.wd & WD_BOTH))
 		return;
 
 	if (c.faceColor.a != 0)
 	{
-		auto& vdf = GET_VDATA_FACES(c);
 		ReserveScope rs(vdf, nFaces * 3, nFaces * 3 * INDEX_COUNT_MULTIPLIER(c.wd));
 		for (int i = 0; i < nFaces; i++)
 		{
@@ -184,7 +189,6 @@ void MeshBuilderDelegate::AddTris(const Vector* verts, int nFaces, ShapeColor c)
 
 	if (c.lineColor.a != 0)
 	{
-		auto& vdl = GET_VDATA_LINES(c);
 		ReserveScope rs(vdl, nFaces * 3, nFaces * 6);
 		for (int i = 0; i < nFaces; i++)
 			_AddLineStrip(verts + 3 * i, 3, true, c.lineColor, vdl);
@@ -268,7 +272,7 @@ void MeshBuilderDelegate::AddBox(const Vector& pos,
 	auto& vdl = GET_VDATA_LINES(c);
 	size_t origNumFaceVerts = vdf.verts.size();
 	size_t origNumLineVerts = vdl.verts.size();
-	_AddSubdivCube(0, c, vdf, vdl);
+	_AddUnitCube(c, vdf, vdl);
 
 	Vector size, mins;
 	matrix3x4_t scaleMat, offMat, finalMat;
@@ -427,8 +431,6 @@ void MeshBuilderDelegate::AddSweptBox(const Vector& start,
 		* bits (1 << ax1) or (1 << ax2) in our encoding scheme to get to corners A or C.
 		*/
 
-		size_t origNumFaceIndices = vdf.indices.size();
-
 		// how to get from B2 to b2
 		Vector diagOffsetForEndBox = maxs - mins;
 		diagOffsetForEndBox[ax0] = 0;
@@ -455,21 +457,21 @@ void MeshBuilderDelegate::AddSweptBox(const Vector& start,
 		if (overlap[ax1] > 0 && overlap[ax2] > 0)
 		{
 			// start/end overlap
-			Vector overlapAx1 = overlap;
-			Vector overlapAx2 = overlap;
+			Vector overlapAx1 = overlap, overlapAx2 = overlap;
 			overlapAx1[ax0] = overlapAx1[ax2] = 0;
 			overlapAx2[ax0] = overlapAx2[ax1] = 0;
 			// clang-format off
-			// TODO convert to _AddTri
-			AddTri(start + v2, start + v1 - Sign(diff[ax1]) * overlapAx1, end + v2, c.cSweep);
-			AddTri(end + v3, start + v1 - Sign(diff[ax2]) * overlapAx2, start + v3, c.cSweep);
-			AddTri(end + v2 + ax0Off, start + v1 - Sign(diff[ax1]) * overlapAx1 + ax0Off, start + v2 + ax0Off, c.cSweep);
-			AddTri(start + v3 + ax0Off, start + v1 - Sign(diff[ax2]) * overlapAx2 + ax0Off, end + v3 + ax0Off, c.cSweep);
+			std::array<Vector, 12> tmpTris{
+			    start + v2,          start + v1 - Sign(diff[ax1]) * overlapAx1,          end   + v2,
+			    end   + v3,          start + v1 - Sign(diff[ax2]) * overlapAx2,          start + v3,
+			    end   + v2 + ax0Off, start + v1 - Sign(diff[ax1]) * overlapAx1 + ax0Off, start + v2 + ax0Off,
+			    start + v3 + ax0Off, start + v1 - Sign(diff[ax2]) * overlapAx2 + ax0Off, end   + v3 + ax0Off,
+			};
 			// clang-format on
+			_AddTris(tmpTris.data(), tmpTris.size() / 3, c.cSweep, vdf, vdl);
 		}
 		else
 		{
-			// TODO I need a reserve scope here
 			for (int i = 0; i < 2; i++)
 			{
 				bool doingFaces = i == 0;
@@ -529,24 +531,10 @@ void MeshBuilderDelegate::AddSweptBox(const Vector& start,
 				}
 			}
 		}
-
 		tmpQuad = {start + v2 + ax0Off, start + v2, end + v2, end + v2 + ax0Off};
 		_AddPolygon(tmpQuad.data(), 4, c.cSweep, vdf, vdl);
 		tmpQuad = {start + v3, start + v3 + ax0Off, end + v3 + ax0Off, end + v3};
 		_AddPolygon(tmpQuad.data(), 4, c.cSweep, vdf, vdl);
-
-		if ((c.cSweep.wd & WD_BOTH) == WD_BOTH)
-		{
-			vdf.indices.add_range(std::vector<VertIndex>::reverse_iterator(vdf.indices.begin()
-			                                                               + origNumFaceIndices),
-			                      std::vector<VertIndex>::reverse_iterator(vdf.indices.end()));
-		}
-		else if (((diff[ax1] < 0) != (diff[ax2] < 0)) == (bool)(c.cSweep.wd & WD_CW))
-		{
-			// parity
-			std::reverse(vdf.indices.begin() + origNumFaceIndices, vdf.indices.end());
-		}
-
 		break;
 	}
 	case 0:
@@ -567,11 +555,10 @@ void MeshBuilderDelegate::AddSweptBox(const Vector& start,
 				Vector off1(mm[cBits1 & 1].x, mm[(cBits1 & 2) >> 1].y, mm[(cBits1 & 4) >> 2].z);
 				Vector off2(mm[cBits2 & 1].x, mm[(cBits2 & 2) >> 1].y, mm[(cBits2 & 4) >> 2].z);
 				tmpQuad = {end + off1, end + off2, start + off2, start + off1};
-				// parity
 				ShapeColor cTmp = c.cSweep;
 				cTmp.wd = ((flipBitOff + (diff.x > 1) + (diff.y > 1) + (diff.z > 1)) % 2)
-				              ? INVERT_WD(c.cSweep.wd)
-				              : c.cSweep.wd;
+				              ? c.cSweep.wd
+				              : INVERT_WD(c.cSweep.wd); // parity
 				_AddPolygon(tmpQuad.data(), 4, cTmp, vdf, vdl);
 			}
 		}
@@ -603,7 +590,12 @@ void MeshBuilderDelegate::AddCone(const Vector& pos,
 	if (c.faceColor.a != 0)
 	{
 		auto& vdf = GET_VDATA_FACES(c);
-		ReserveScope rs(vdf, nCirclePoints + 1, nCirclePoints * 3 + (drawBase ? 3 * (nCirclePoints - 2) : 0));
+
+		size_t totalNumIndices = nCirclePoints * 3;
+		if (drawBase)
+			totalNumIndices += 3 * (nCirclePoints - 2);
+		ReserveScope rs(vdf, nCirclePoints + 1, totalNumIndices * INDEX_COUNT_MULTIPLIER(c.wd));
+
 		size_t tipIdx = vdf.verts.size();
 		vdf.verts.emplace_back(tip, c.faceColor);
 		for (int i = 0; i < nCirclePoints; i++)
@@ -611,16 +603,34 @@ void MeshBuilderDelegate::AddCone(const Vector& pos,
 			if (i > 0)
 			{
 				// faces on top of cone
-				vdf.indices.push_back(vdf.verts.size() - 1);
-				vdf.indices.push_back(vdf.verts.size());
-				vdf.indices.push_back(tipIdx);
+				if (c.wd & WD_CW)
+				{
+					vdf.indices.push_back(vdf.verts.size() - 1);
+					vdf.indices.push_back(vdf.verts.size());
+					vdf.indices.push_back(tipIdx);
+				}
+				if (c.wd & WD_CCW)
+				{
+					vdf.indices.push_back(tipIdx);
+					vdf.indices.push_back(vdf.verts.size());
+					vdf.indices.push_back(vdf.verts.size() - 1);
+				}
 			}
 			vdf.verts.emplace_back(circleVerts[i], c.faceColor);
 		}
 		// final face on top of cone
-		vdf.indices.push_back(vdf.verts.size() - 1);
-		vdf.indices.push_back(tipIdx + 1);
-		vdf.indices.push_back(tipIdx);
+		if (c.wd & WD_CW)
+		{
+			vdf.indices.push_back(vdf.verts.size() - 1);
+			vdf.indices.push_back(tipIdx + 1);
+			vdf.indices.push_back(tipIdx);
+		}
+		if (c.wd & WD_CCW)
+		{
+			vdf.indices.push_back(tipIdx);
+			vdf.indices.push_back(tipIdx + 1);
+			vdf.indices.push_back(vdf.verts.size() - 1);
+		}
 		if (drawBase)
 			_AddFacePolygonIndices(vdf, tipIdx + 1, nCirclePoints, INVERT_WD(c.wd));
 	}
@@ -890,8 +900,7 @@ void MeshBuilderDelegate::_AddFaceTriangleStripIndices(MeshVertData& vdf,
 
 	if ((wd & WD_BOTH) == WD_BOTH)
 	{
-		vdf.indices.add_range(std::vector<VertIndex>::reverse_iterator(vdf.indices.end()),
-		                      std::vector<VertIndex>::reverse_iterator(vdf.indices.begin() + origSize));
+		vdf.indices.add_range(vdf.indices.rbegin(), vdf.indices.rend() - origSize);
 	}
 	else if ((wd & WD_BOTH) == WD_CCW)
 	{
@@ -944,6 +953,12 @@ void MeshBuilderDelegate::_AddLineStripIndices(MeshVertData& vdl, size_t vertsId
 
 void MeshBuilderDelegate::_AddSubdivCube(int nSubdivisions, ShapeColor c, MeshVertData& vdf, MeshVertData& vdl)
 {
+	if (nSubdivisions == 0)
+	{
+		_AddUnitCube(c, vdf, vdl);
+		return;
+	}
+
 	bool doFaces = c.faceColor.a != 0;
 	bool doLines = c.lineColor.a != 0;
 	if (nSubdivisions < 0 || (!doFaces && !doLines))
@@ -1019,8 +1034,6 @@ void MeshBuilderDelegate::_AddSubdivCube(int nSubdivisions, ShapeColor c, MeshVe
 		}
 	}
 
-	// TODO add a special case here for no subdivisions
-
 	// fill caps
 	for (int top = 0; top <= 1; top++)
 	{
@@ -1058,6 +1071,58 @@ void MeshBuilderDelegate::_AddSubdivCube(int nSubdivisions, ShapeColor c, MeshVe
 		}
 	}
 }
+
+void MeshBuilderDelegate::_AddUnitCube(ShapeColor c, MeshVertData& vdf, MeshVertData& vdl)
+{
+	if ((c.faceColor.a == 0 && c.lineColor.a == 0) || !(c.wd & WD_BOTH))
+		return;
+
+	// we create a unit cube with mins at <0,0,0> and maxs at <1,1,1>
+	// I had to work all this out on a whiteboard if it seems completely unintuitive
+
+	static std::array<Vector, 8>
+	    verts{Vector{0, 0, 0}, {1, 0, 0}, {1, 1, 0}, {0, 1, 0}, {0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}};
+
+	static std::array<VertIndex, 36> faceIndices{0, 1, 3, 1, 2, 3, 4, 5, 1, 4, 1, 0, 5, 6, 2, 5, 2, 1,
+	                                             6, 7, 3, 6, 3, 2, 7, 4, 0, 7, 0, 3, 7, 6, 5, 7, 5, 4};
+
+	static std::array<VertIndex, 24> lineIndices{0, 1, 1, 2, 2, 3, 3, 0, 4, 5, 5, 6,
+	                                             6, 7, 7, 4, 0, 4, 1, 5, 2, 6, 3, 7};
+
+	if (c.faceColor.a != 0)
+	{
+		ReserveScope rs(vdf, verts.size(), faceIndices.size() * INDEX_COUNT_MULTIPLIER(c.wd));
+
+		size_t origVertCount = vdf.verts.size();
+		size_t origIdxCount = vdf.indices.size();
+
+		for (Vector pos : verts)
+			vdf.verts.emplace_back(pos, c.faceColor);
+
+		if (c.wd & WD_CW)
+			vdf.indices.add_range(faceIndices.cbegin(), faceIndices.cend());
+		if (c.wd & WD_CCW)
+			vdf.indices.add_range(faceIndices.crbegin(), faceIndices.crend());
+
+		for (size_t i = origIdxCount; i < vdf.indices.size(); i++)
+			vdf.indices[i] += origVertCount;
+	}
+	if (c.lineColor.a != 0)
+	{
+		ReserveScope rs(vdl, verts.size(), lineIndices.size());
+
+		size_t origVertCount = vdl.verts.size();
+		size_t origIdxCount = vdl.indices.size();
+
+		for (Vector pos : verts)
+			vdl.verts.emplace_back(pos, c.lineColor);
+		vdl.indices.add_range(lineIndices.cbegin(), lineIndices.cend());
+
+		for (size_t i = origIdxCount; i < vdl.indices.size(); i++)
+			vdl.indices[i] += origVertCount;
+	}
+}
+
 Vector* MeshBuilderDelegate::_CreateEllipseVerts(const Vector& pos,
                                                  const QAngle& ang,
                                                  float radiusA,
