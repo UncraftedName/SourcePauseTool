@@ -73,7 +73,7 @@ public:
 	float timeSinceLast = -666;
 };
 
-MeshTestFeature testFeature;
+static MeshTestFeature testFeature;
 
 #define _TEST_CASE(name, position, counter) \
 	struct CONCATENATE(_Test, counter) : BaseMeshRenderTest \
@@ -626,6 +626,121 @@ TEST_CASE("AddEllipse()", Vector(800, -300, 0))
 			              {C_OUTLINE((byte)(250 - i * 40), 200, (byte)(i * 40), 50)});
 		});
 	}
+}
+
+// this is just to ensure I don't rely on meshes not being empty
+TEST_CASE("Empty meshes", Vector(1000, -300, 0))
+{
+	static StaticMesh staticMesh;
+	if (!staticMesh.Valid())
+		staticMesh = spt_meshBuilder.CreateStaticMesh([](auto&) {});
+	DynamicMesh dynamicMesh = spt_meshBuilder.CreateDynamicMesh([](auto&) {});
+	mr.DrawMesh(staticMesh);
+	mr.DrawMesh(dynamicMesh);
+}
+
+TEST_CASE("Testing winding direction", Vector(1200, -300, 0))
+{
+	/*
+	* The purpose of this test is:
+	*  1) test all 3 winding directions for all primitives
+	*  2) test that the index math is correct when the indices don't start at 0
+	* It's not strictly necessary to test all mesh builder functions because internally some defer to others,
+	* e.g. AddTri() & AddTris() both defer to _AddTris().
+	*/
+
+	mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
+	    [this](MeshBuilderDelegate& mb)
+	    {
+		    ShapeColor colors[] = {
+		        {C_OUTLINE(0, 255, 0, 20), true, true, WD_CW},
+		        {C_OUTLINE(255, 0, 0, 20), true, true, WD_CCW},
+		        {C_OUTLINE(255, 255, 0, 20), true, true, WD_BOTH},
+		    };
+
+		    const float ySpacing = -40;
+		    const float shapeRadius = fabs(ySpacing) / 3.f;
+
+		    for (int i = 0; i < 3; i++)
+		    {
+			    ShapeColor color = colors[i];
+			    Vector pos = testPos;
+			    pos.x += (i - 1) * 50;
+
+			    mb.AddTri(pos, pos + Vector{20, -20, 0}, pos + Vector{-20, -20, 0}, color);
+
+			    pos.y += ySpacing;
+
+			    mb.AddQuad(pos + Vector{-10, 10, 0},
+			               pos + Vector{10, 10, 0},
+			               pos + Vector{10, -10, 0},
+			               pos + Vector{-10, -10, 0},
+			               color);
+
+			    pos.y += ySpacing;
+
+			    mb.AddCircle(pos, QAngle{-90, 0, 0}, shapeRadius, 17, color);
+
+			    pos.y += ySpacing;
+
+			    const Vector extents{10, 10, 10};
+			    mb.AddBox(pos, -extents, extents, vec3_angle, color);
+
+			    pos.y += ySpacing;
+
+			    mb.AddSphere(pos, shapeRadius, 1, color);
+
+			    pos.y += ySpacing;
+
+			    mb.AddCone(pos, QAngle{-90, 0, 0}, 30, shapeRadius, 4, true, color);
+
+			    pos.y += ySpacing;
+
+			    mb.AddCylinder(pos, QAngle{-90, 0, 0}, 30, shapeRadius, 6, true, true, color);
+
+			    pos.y += ySpacing;
+
+			    mb.AddArrow3D(pos, pos + Vector{0, 0, 1}, 30, 2, 6, 4, 8, color);
+
+			    pos.y += ySpacing;
+
+			    const float f3 = FastRSqrt(3);
+			    VMatrix translateMat{{1, 0, 0}, {0, 1, 0}, {0, 0, 1}};
+			    translateMat.SetTranslation(pos);
+			    std::array<VPlane, 4> polyPlanes{
+			        VPlane{{f3, f3, f3}, shapeRadius / 2},
+			        VPlane{{-f3, -f3, f3}, shapeRadius / 2},
+			        VPlane{{f3, -f3, -f3}, shapeRadius / 2},
+			        VPlane{{-f3, f3, -f3}, shapeRadius / 2},
+			    };
+			    for (VPlane& plane : polyPlanes)
+				    plane = translateMat * plane;
+			    CPolyhedron* poly = GeneratePolyhedronFromPlanes((float*)polyPlanes.data(), 4, 0, true);
+			    mb.AddCPolyhedron(poly, color);
+			    poly->Release();
+
+			    pos.y += ySpacing;
+
+			    // test main swept box types
+
+			    SweptBoxColor sbColor{{C_OUTLINE(255, 255, 255, 20)},
+			                          color,
+			                          {C_OUTLINE(100, 100, 100, 20)}};
+			    Vector mins{-5, -5, -5};
+			    Vector maxs{5, 5, 5};
+			    mb.AddSweptBox(pos, pos, mins, maxs, sbColor);
+			    pos.y += ySpacing;
+			    mb.AddSweptBox(pos, pos + Vector{5, 0, 0}, mins, maxs, sbColor);
+			    pos.y += ySpacing;
+			    mb.AddSweptBox(pos, pos + Vector{15, 0, 0}, mins, maxs, sbColor);
+			    pos.y += ySpacing;
+			    mb.AddSweptBox(pos, pos + Vector{5, 5, 0}, mins, maxs, sbColor);
+			    pos.y += ySpacing;
+			    mb.AddSweptBox(pos, pos + Vector{15, 15, 0}, mins, maxs, sbColor);
+			    pos.y += ySpacing;
+			    mb.AddSweptBox(pos, pos + Vector{15, 15, 15}, mins, maxs, sbColor);
+		    }
+	    }));
 }
 
 #endif
