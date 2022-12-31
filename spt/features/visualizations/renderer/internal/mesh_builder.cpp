@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include "..\mesh_builder.hpp"
+#include "mesh_builder_internal.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 

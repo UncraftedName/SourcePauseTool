@@ -609,6 +609,15 @@
     <ClInclude Include="spt\features\visualizations\renderer\internal\internal_defs.hpp">
       <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\internal\materials_manager.hpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\internal\mesh_builder_internal.hpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\internal\mesh_renderer_internal.hpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Library Include="..\..\lib\public\mathlib.lib">

@@ -25,11 +25,11 @@
 #include "stdafx.h"
 
 #include "..\mesh_renderer.hpp"
+#include "mesh_renderer_internal.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
 #include <algorithm>
-#include <iterator>
 
 #include "internal_defs.hpp"
 #include "interfaces.hpp"
@@ -61,103 +61,6 @@ CON_COMMAND_F(y_spt_destroy_all_static_meshes,
 #define DEBUG_COLOR_FUSED_DYNAMIC_MESH_OPAQUE (color32{0, 255, 0, 255})
 #define DEBUG_COLOR_FUSED_DYNAMIC_MESH_TRANSLUCENT (color32{150, 255, 200, 255})
 #define DEBUG_COLOR_CROSS (color32{255, 0, 0, 255})
-
-struct MeshUnitWrapper;
-
-struct MeshRendererInternal
-{
-	std::vector<MeshUnitWrapper> queuedUnitWrappers;
-
-	struct
-	{
-		const CRendering3dView* rendering3dView;
-		const CViewSetup* viewSetup;
-		cplane_t frustum[FRUSTUM_NUMPLANES];
-	} viewInfo;
-
-	/*
-	* If we assume that debug meshes don't do z-testing, then we can simply batch all of them together at the end
-	* of DrawTranslucents() which makes our lives a lot easier. We don't make debug meshes opaque and handle them
-	* properly because then we'd need to know which translucent meshes we're drawing by the time we're in
-	* DrawOpaques(). Suppose we have 3 portals that A,B,C that we can look through, and we can see portal C through
-	* portal B. Then the call stack of DrawOpaques() and DrawTranslucents() calls from the feature look like this:
-	* 
-	* - DrawOpaques()      (main view)
-	*   - DrawOpaques()      (view through portal A)
-	*   - DrawTranslucents() (view through portal A)
-	*   - DrawOpaques()      (view through portal B)
-	*     - DrawOpaques()      (view through portal C)
-	*     - DrawTranslucents() (view through portal C)
-	*   - DrawTranslucents() (view through portal B)
-	* - DrawTranslucents() (main view)
-	* 
-	* (This is a lie because the calls are actually recursed from DrawTranslucents() in game but we draw our
-	* translucent stuff after the game so for the purpose of debug meshes our stack looks like ^that^).
-	* 
-	* So when we start in DrawOpaques(), we'll "push" a debug slice to the debug description list, then we add all
-	* opaque debug meshes to that slice. Then we recursively get all the portal views, and once we're done with
-	* those we'll get to the corresponding DrawTranslucents() that will have the same view as the DrawOpaques()
-	* call. Once we're done with that, the top most slice will ahve all debug meshes for the current view, and we
-	* can batch all of them together at the end of DrawTranslucents().
-	*/
-	struct
-	{
-		struct DebugMeshDesc
-		{
-			union
-			{
-				struct
-				{
-					Vector mins, maxs;
-				} box; // mesh unit AABB
-
-				struct
-				{
-					Vector crossPos;
-					float size;
-				} cross; // translucent mesh unit position metric
-			};
-
-			bool isBox;
-			color32 color;
-
-			DebugMeshDesc(){};
-
-			DebugMeshDesc(const Vector& mins, const Vector& maxs, color32 c)
-			    : box{mins, maxs}, isBox(true), color(c)
-			{
-			}
-
-			DebugMeshDesc(const Vector& crossPos, float size, color32 c)
-			    : cross{crossPos, size}, isBox(false), color(c)
-			{
-			}
-		};
-
-		std::vector<DebugMeshDesc> sharedDescriptionList;
-		VectorStack<VectorSlice<DebugMeshDesc>> descriptionSlices;
-
-	} debugMeshInfo;
-
-	using DebugDescList = decltype(debugMeshInfo.descriptionSlices)::value_type;
-
-	void OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView);
-	void FrameCleanup();
-	void OnDrawOpaques(CRendering3dView* rendering3dView);
-	void OnDrawTranslucents(CRendering3dView* rendering3dView);
-
-	void SetupViewInfo(CRendering3dView* rendering3dView);
-	void CollectRenderableComponents(std::vector<MeshComponent>& components, bool opaques);
-	void AddDebugCrosses(ConstComponentInterval intrvl, bool opaques);
-	void AddDebugBox(ConstComponentInterval intrvl, bool opaques);
-	void DrawDebugMeshes();
-	void DrawAll(ConstComponentInterval intrvl, bool addDebugMeshes, bool opaques);
-
-	void AddDebugCrosses(DebugDescList& debugList, ConstComponentInterval intrvl);
-	void AddDebugBox(DebugDescList& debugList, ConstComponentInterval intrvl, bool opaques);
-	void DrawDebugMeshes(DebugDescList& debugList);
-
-} static g_meshRendererInternal;
 
 /**************************************** MESH RENDERER FEATURE ****************************************/
 
@@ -280,111 +183,92 @@ HOOK_THISCALL(void, MeshRendererFeature, CRendering3dView__DrawTranslucentRender
 
 /**************************************** MESH UNIT WRAPPER ****************************************/
 
-/*
-* We already have mesh units which are already wrappers of internal mesh representations, so you may be wondering
-* why we need another wrapper. In addition to the mesh units, this wrapper contains the user's render callback if
-* they gave one, and the position metric to the unit. The user can give us multiple of the same mesh with
-* different callbacks, so each one would have its own unit wrapper.
-*/
-struct MeshUnitWrapper
+MeshUnitWrapper::MeshUnitWrapper(DynamicMeshToken dynamicToken, const RenderCallback& callback)
+    : _staticMeshPtr(nullptr)
+    , _dynamicToken(dynamicToken)
+    , callback(callback)
+    , posInfo(g_meshBuilderInternal.GetDynamicMeshFromToken(dynamicToken).posInfo)
 {
-	// keep statics alive as long as we're rendering, dynamics are kept alive in the mesh builder
-	const std::shared_ptr<StaticMeshUnit> _staticMeshPtr;
-	const DynamicMeshToken _dynamicToken;
-	const RenderCallback callback;
+}
 
-	CallbackInfoOut cbInfoOut;
-	MeshPositionInfo posInfo;
-	Vector camDistSqrTo;
-	float camDistSqr; // translucent sorting metric
+MeshUnitWrapper::MeshUnitWrapper(const std::shared_ptr<StaticMeshUnit>& staticMeshPtr, const RenderCallback& callback)
+    : _staticMeshPtr(staticMeshPtr), _dynamicToken{}, callback(callback), posInfo(staticMeshPtr->posInfo)
+{
+}
 
-	MeshUnitWrapper(DynamicMeshToken dynamicToken, const RenderCallback& callback = nullptr)
-	    : _staticMeshPtr(nullptr)
-	    , _dynamicToken(dynamicToken)
-	    , callback(callback)
-	    , posInfo(g_meshBuilderInternal.GetDynamicMeshFromToken(dynamicToken).posInfo)
+// returns true if this unit should be rendered
+bool MeshUnitWrapper::ApplyCallbackAndCalcCamDist()
+{
+	auto& viewInfo = g_meshRendererInternal.viewInfo;
+
+	if (callback)
 	{
+		// apply callback
+
+		const MeshPositionInfo& unitPosInfo =
+		    _staticMeshPtr ? _staticMeshPtr->posInfo
+		                   : g_meshBuilderInternal.GetDynamicMeshFromToken(_dynamicToken).posInfo;
+
+		CallbackInfoIn infoIn = {
+		    *viewInfo.viewSetup,
+		    unitPosInfo,
+		    spt_meshRenderer.CurrentPortalRenderDepth(),
+		    spt_overlay.renderingOverlay,
+		};
+
+		callback(infoIn, cbInfoOut = CallbackInfoOut{});
+
+		if (cbInfoOut.skipRender || cbInfoOut.colorModulate.a == 0)
+			return false;
+		TransformAABB(cbInfoOut.mat, unitPosInfo.mins, unitPosInfo.maxs, posInfo.mins, posInfo.maxs);
 	}
 
-	MeshUnitWrapper(const std::shared_ptr<StaticMeshUnit>& staticMeshPtr, const RenderCallback& callback = nullptr)
-	    : _staticMeshPtr(staticMeshPtr), _dynamicToken{}, callback(callback), posInfo(staticMeshPtr->posInfo)
+	// do frustum check
+
+	auto& frustum = g_meshRendererInternal.viewInfo.frustum;
+	for (int i = 0; i < 6; i++)
+		if (BoxOnPlaneSide((float*)&posInfo.mins, (float*)&posInfo.maxs, &frustum[i]) == 2)
+			return false;
+
+	// calc camera to mesh "distance"
+
+	CalcClosestPointOnAABB(posInfo.mins, posInfo.maxs, viewInfo.viewSetup->origin, camDistSqrTo);
+	if (viewInfo.viewSetup->origin == camDistSqrTo)
+		camDistSqrTo = (posInfo.mins + posInfo.maxs) / 2.f; // if inside cube, use center idfk
+	camDistSqr = viewInfo.viewSetup->origin.DistToSqr(camDistSqrTo);
+
+	return true;
+}
+
+// We pretend this mesh wrapper contains a mesh from this unit, but it could be a fused mesh.
+// All that matters is that we use its material and our callback.
+void MeshUnitWrapper::Render(const IMeshWrapper mw)
+{
+	if (!mw.iMesh)
+		return;
+
+	CMatRenderContextPtr context{interfaces::materialSystem};
+	if (callback)
 	{
+		color32 cMod = cbInfoOut.colorModulate;
+		mw.material->ColorModulate(cMod.r / 255.f, cMod.g / 255.f, cMod.b / 255.f);
+		mw.material->AlphaModulate(cMod.a / 255.f);
+		context->MatrixMode(MATERIAL_MODEL);
+		context->PushMatrix();
+		context->LoadMatrix(cbInfoOut.mat);
 	}
-
-	// returns true if this unit should be rendered
-	bool ApplyCallbackAndCalcCamDist()
+	else
 	{
-		auto& viewInfo = g_meshRendererInternal.viewInfo;
-
-		if (callback)
-		{
-			// apply callback
-
-			const MeshPositionInfo& unitPosInfo =
-			    _staticMeshPtr ? _staticMeshPtr->posInfo
-			                   : g_meshBuilderInternal.GetDynamicMeshFromToken(_dynamicToken).posInfo;
-
-			CallbackInfoIn infoIn = {
-			    *viewInfo.viewSetup,
-			    unitPosInfo,
-			    spt_meshRenderer.CurrentPortalRenderDepth(),
-			    spt_overlay.renderingOverlay,
-			};
-
-			callback(infoIn, cbInfoOut = CallbackInfoOut{});
-
-			if (cbInfoOut.skipRender || cbInfoOut.colorModulate.a == 0)
-				return false;
-			TransformAABB(cbInfoOut.mat, unitPosInfo.mins, unitPosInfo.maxs, posInfo.mins, posInfo.maxs);
-		}
-
-		// do frustum check
-
-		auto& frustum = g_meshRendererInternal.viewInfo.frustum;
-		for (int i = 0; i < 6; i++)
-			if (BoxOnPlaneSide((float*)&posInfo.mins, (float*)&posInfo.maxs, &frustum[i]) == 2)
-				return false;
-
-		// calc camera to mesh "distance"
-
-		CalcClosestPointOnAABB(posInfo.mins, posInfo.maxs, viewInfo.viewSetup->origin, camDistSqrTo);
-		if (viewInfo.viewSetup->origin == camDistSqrTo)
-			camDistSqrTo = (posInfo.mins + posInfo.maxs) / 2.f; // if inside cube, use center idfk
-		camDistSqr = viewInfo.viewSetup->origin.DistToSqr(camDistSqrTo);
-
-		return true;
+		mw.material->ColorModulate(1, 1, 1);
+		mw.material->AlphaModulate(1);
 	}
-
-	// We pretend this mesh wrapper contains a mesh from this unit, but it could be a fused mesh.
-	// All that matters is that we use its material and our callback.
-	void Render(const IMeshWrapper mw)
-	{
-		if (!mw.iMesh)
-			return;
-
-		CMatRenderContextPtr context{interfaces::materialSystem};
-		if (callback)
-		{
-			color32 cMod = cbInfoOut.colorModulate;
-			mw.material->ColorModulate(cMod.r / 255.f, cMod.g / 255.f, cMod.b / 255.f);
-			mw.material->AlphaModulate(cMod.a / 255.f);
-			context->MatrixMode(MATERIAL_MODEL);
-			context->PushMatrix();
-			context->LoadMatrix(cbInfoOut.mat);
-		}
-		else
-		{
-			mw.material->ColorModulate(1, 1, 1);
-			mw.material->AlphaModulate(1);
-		}
-		context->Bind(mw.material);
-		mw.iMesh->Draw();
-		if (!_staticMeshPtr)
-			context->Flush();
-		if (callback)
-			context->PopMatrix();
-	}
-};
+	context->Bind(mw.material);
+	mw.iMesh->Draw();
+	if (!_staticMeshPtr)
+		context->Flush();
+	if (callback)
+		context->PopMatrix();
+}
 
 /**************************************** MESH RENDER FEATURE ****************************************/
 

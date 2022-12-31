@@ -1,6 +1,7 @@
 ﻿#include "stdafx.h"
 
 #include "internal_defs.hpp"
+#include "mesh_builder_internal.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 

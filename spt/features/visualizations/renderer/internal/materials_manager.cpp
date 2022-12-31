@@ -1,6 +1,7 @@
 #include "stdafx.h"
 
 #include "internal_defs.hpp"
+#include "materials_manager.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
