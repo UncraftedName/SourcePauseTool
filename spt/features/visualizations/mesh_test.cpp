@@ -502,6 +502,8 @@ TEST_CASE("Lorenz Attractor", Vector(200, -300, 0))
 				    verts[lastIdx %= maxVerts] = vNext;
 		    }
 
+			
+
 		    // draw line segments between each point
 		    Vector* prev = 0;
 		    for (size_t i = 0; i < verts.size(); i++)

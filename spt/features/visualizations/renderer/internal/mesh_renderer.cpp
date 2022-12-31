@@ -1,4 +1,28 @@
-﻿#include "stdafx.h"
+﻿/*
+* This file contains the implementations for all 3 mesh renderers! Their purpose is somewhat similar to the 3
+* mesh builders:
+* - MeshRendererFeature (spt_meshRenderer)
+* - MeshRendererDelegate
+* - MeshRendererInternal (g_meshRendererInternal)
+* The MeshBuilderFeature contains hooks and the mesh render signal, but is otherwise effectively stateless. At the
+* start of every frame, it will signal all users and give them a stateless delegate. The user then gives this
+* delegate dynamic or static meshes created with the mesh builder, and the delegate edits the state of the
+* internal renderer.
+* 
+* At the start of a frame, we'll get a signal from spt_overlay in which we do cleanup from the previous frame,
+* then we signal the users. The meshes from the users will get wrapped and queued for drawing later. We take
+* advantage of two passes the game does: DrawOpaques and DrawTranslucents. Both are called for each view, and you
+* may get a different view for each portal, saveglitch overlay, etc. We abstract this away from the user - when
+* the user calls DrawMesh() we defer the drawing until those two passes. When rendering opaques, we can render the
+* meshes in any order, but the same is not true for translucents. In that case we must figure out our own render
+* order. Nothing we do will be perfect - but a good enough solution for many cases is to approximate the distance
+* to each mesh from the camera as a single value and sort based on that.
+* 
+* This system would not exist without the absurd of times mlugg has helped me while making it; send him lots of
+* love, gifts, and fruit baskets.
+*/
+
+#include "stdafx.h"
 
 #include "..\mesh_renderer.hpp"
 
@@ -15,11 +39,11 @@ ConVar y_spt_draw_mesh_debug(
     "y_spt_draw_mesh_debug",
     "0",
     FCVAR_CHEAT | FCVAR_DONTRECORD,
-    "Draws the AABB and distance metric of all meshes, uses the following colors:\n"
+    "Draws the AABB and position metric of all meshes, uses the following colors:\n"
     "   - red: static mesh\n"
     "   - blue: dynamic mesh\n"
     "   - yellow: dynamic mesh with a callback\n"
-    "   - red cross: the distance metric to a translucent mesh, used to determine the render order\n"
+    "   - red cross: the position metric to a translucent mesh, used to determine the render order\n"
     "   - green: fused opaque dynamic meshes (only available with a cvar value of 2)\n"
     "   - light green: fused translucent dynamic meshes (only available with a cvar value of 2)");
 
@@ -38,18 +62,6 @@ CON_COMMAND_F(y_spt_destroy_all_static_meshes,
 #define DEBUG_COLOR_FUSED_DYNAMIC_MESH_TRANSLUCENT (color32{150, 255, 200, 255})
 #define DEBUG_COLOR_CROSS (color32{255, 0, 0, 255})
 
-/*
-* We take advantage of two passes the game does: DrawOpaques and DrawTranslucents. Both are called for each view,
-* and you may get a different view for each portal, saveglitch overlay, etc. We abstract this away from the user -
-* when the user calls DrawMesh() we defer the drawing until those two passes. When rendering opaques, we can
-* render the meshes in any order, but the same is not true for translucents. In that case we must figure out our
-* own render order. Nothing we do will be perfect - but a good enough solution for many cases is to approximate
-* the distance to each mesh from the camera as a single value and sort based on that.
-* 
-* This system would not exist without the absurd of times mlugg has helped me while making it; send him lots of
-* love, gifts, and fruit baskets.
-*/
-
 struct MeshUnitWrapper;
 
 struct MeshRendererInternal
@@ -63,6 +75,31 @@ struct MeshRendererInternal
 		cplane_t frustum[FRUSTUM_NUMPLANES];
 	} viewInfo;
 
+	/*
+	* If we assume that debug meshes don't do z-testing, then we can simply batch all of them together at the end
+	* of DrawTranslucents() which makes our lives a lot easier. We don't make debug meshes opaque and handle them
+	* properly because then we'd need to know which translucent meshes we're drawing by the time we're in
+	* DrawOpaques(). Suppose we have 3 portals that A,B,C that we can look through, and we can see portal C through
+	* portal B. Then the call stack of DrawOpaques() and DrawTranslucents() calls from the feature look like this:
+	* 
+	* - DrawOpaques()      (main view)
+	*   - DrawOpaques()      (view through portal A)
+	*   - DrawTranslucents() (view through portal A)
+	*   - DrawOpaques()      (view through portal B)
+	*     - DrawOpaques()      (view through portal C)
+	*     - DrawTranslucents() (view through portal C)
+	*   - DrawTranslucents() (view through portal B)
+	* - DrawTranslucents() (main view)
+	* 
+	* (This is a lie because the calls are actually recursed from DrawTranslucents() in game but we draw our
+	* translucent stuff after the game so for the purpose of debug meshes our stack looks like ^that^).
+	* 
+	* So when we start in DrawOpaques(), we'll "push" a debug slice to the debug description list, then we add all
+	* opaque debug meshes to that slice. Then we recursively get all the portal views, and once we're done with
+	* those we'll get to the corresponding DrawTranslucents() that will have the same view as the DrawOpaques()
+	* call. Once we're done with that, the top most slice will ahve all debug meshes for the current view, and we
+	* can batch all of them together at the end of DrawTranslucents().
+	*/
 	struct
 	{
 		struct DebugMeshDesc
@@ -72,13 +109,13 @@ struct MeshRendererInternal
 				struct
 				{
 					Vector mins, maxs;
-				} box;
+				} box; // mesh unit AABB
 
 				struct
 				{
 					Vector crossPos;
 					float size;
-				} cross;
+				} cross; // translucent mesh unit position metric
 			};
 
 			bool isBox;
@@ -97,7 +134,7 @@ struct MeshRendererInternal
 			}
 		};
 
-		std::vector<DebugMeshDesc> sharedDescriptionArray;
+		std::vector<DebugMeshDesc> sharedDescriptionList;
 		VectorStack<VectorSlice<DebugMeshDesc>> descriptionSlices;
 
 	} debugMeshInfo;
@@ -111,16 +148,16 @@ struct MeshRendererInternal
 
 	void SetupViewInfo(CRendering3dView* rendering3dView);
 	void CollectRenderableComponents(std::vector<MeshComponent>& components, bool opaques);
-	void AddDebugCrosses(ConstComponentRange range, bool opaques);
-	void AddDebugBox(ConstComponentRange range, bool opaques);
+	void AddDebugCrosses(ConstComponentInterval intrvl, bool opaques);
+	void AddDebugBox(ConstComponentInterval intrvl, bool opaques);
 	void DrawDebugMeshes();
-	void DrawAll(ConstComponentRange range, bool addDebugMeshes, bool opaques);
+	void DrawAll(ConstComponentInterval intrvl, bool addDebugMeshes, bool opaques);
 
-	void AddDebugCrosses(DebugDescList& debugList, ConstComponentRange range, bool opaques);
-	void AddDebugBox(DebugDescList& debugList, ConstComponentRange range, bool opaques);
+	void AddDebugCrosses(DebugDescList& debugList, ConstComponentInterval intrvl);
+	void AddDebugBox(DebugDescList& debugList, ConstComponentInterval intrvl, bool opaques);
 	void DrawDebugMeshes(DebugDescList& debugList);
 
-} g_meshRendererInternal;
+} static g_meshRendererInternal;
 
 /**************************************** MESH RENDERER FEATURE ****************************************/
 
@@ -243,6 +280,12 @@ HOOK_THISCALL(void, MeshRendererFeature, CRendering3dView__DrawTranslucentRender
 
 /**************************************** MESH UNIT WRAPPER ****************************************/
 
+/*
+* We already have mesh units which are already wrappers of internal mesh representations, so you may be wondering
+* why we need another wrapper. In addition to the mesh units, this wrapper contains the user's render callback if
+* they gave one, and the position metric to the unit. The user can give us multiple of the same mesh with
+* different callbacks, so each one would have its own unit wrapper.
+*/
 struct MeshUnitWrapper
 {
 	// keep statics alive as long as we're rendering, dynamics are kept alive in the mesh builder
@@ -268,7 +311,7 @@ struct MeshUnitWrapper
 	{
 	}
 
-	// returns true if this mesh should be rendered
+	// returns true if this unit should be rendered
 	bool ApplyCallbackAndCalcCamDist()
 	{
 		auto& viewInfo = g_meshRendererInternal.viewInfo;
@@ -312,6 +355,8 @@ struct MeshUnitWrapper
 		return true;
 	}
 
+	// We pretend this mesh wrapper contains a mesh from this unit, but it could be a fused mesh.
+	// All that matters is that we use its material and our callback.
 	void Render(const IMeshWrapper mw)
 	{
 		if (!mw.iMesh)
@@ -387,11 +432,11 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 	SetupViewInfo(renderingView);
 
 	// push a new debug slice, the corresponding pop will be in DrawTranslucents
-	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionArray);
+	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionList);
 
 	static std::vector<MeshComponent> components;
 	CollectRenderableComponents(components, true);
-	std::sort(components.begin(), components.end());
+	std::stable_sort(components.begin(), components.end());
 	DrawAll({components.begin(), components.end()}, y_spt_draw_mesh_debug.GetBool(), true);
 	components.clear();
 }
@@ -403,32 +448,40 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 
 	static std::vector<MeshComponent> components;
 	CollectRenderableComponents(components, false);
-	ComponentRange range{components.begin(), components.end()};
+	ComponentInterval intrvl{components.begin(), components.end()};
 
-	std::sort(range.first,
-	          range.second,
-	          [](const MeshComponent& a, const MeshComponent& b)
-	          {
-		          IMaterial* matA = a.vertData ? a.vertData->material : a.iMeshWrapper.material;
-		          IMaterial* matB = b.vertData ? b.vertData->material : b.iMeshWrapper.material;
-		          if (matA != matB)
-		          {
-			          bool ignoreZA = matA->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
-			          bool ignoreZB = matB->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
-			          if (ignoreZA != ignoreZB)
-				          return ignoreZB; // TODO test me!!
-		          }
-		          if (&a.unitWrapper != &b.unitWrapper)
-			          return a.unitWrapper->camDistSqr > b.unitWrapper->camDistSqr;
-		          return a < b;
-	          });
+	/*
+	* Translucent meshes must be sorted by distance first which makes them not as good for fusing. In theory
+	* there should be a way to ignore the position metric if the mesh units don't overlap in screen space, but
+	* I couldn't get that to work (maybe because such a comparison would not be transitive?). I think this sort
+	* should be stable because I want components from the same unit to remain the same order relative to each
+	* other in case <=> returns equivalent. I think this could be useful if I decide to spill components in case
+	* of overflow.
+	*/
+	std::stable_sort(intrvl.first,
+	                 intrvl.second,
+	                 [](const MeshComponent& a, const MeshComponent& b)
+	                 {
+		                 IMaterial* matA = a.vertData ? a.vertData->material : a.iMeshWrapper.material;
+		                 IMaterial* matB = b.vertData ? b.vertData->material : b.iMeshWrapper.material;
+		                 if (matA != matB)
+		                 {
+			                 bool ignoreZA = matA->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
+			                 bool ignoreZB = matB->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
+			                 if (ignoreZA != ignoreZB)
+				                 return ignoreZB; // TODO test me!!
+		                 }
+		                 if (&a.unitWrapper != &b.unitWrapper)
+			                 return a.unitWrapper->camDistSqr > b.unitWrapper->camDistSqr;
+		                 return a < b;
+	                 });
 
-	DrawAll(range, y_spt_draw_mesh_debug.GetBool(), false);
+	DrawAll(intrvl, y_spt_draw_mesh_debug.GetBool(), false);
 
 	if (y_spt_draw_mesh_debug.GetBool())
 	{
-		AddDebugCrosses(debugMeshInfo.descriptionSlices.top(), range, false);
-		DrawDebugMeshes(debugMeshInfo.descriptionSlices.top());
+		AddDebugCrosses(debugMeshInfo.descriptionSlices.top(), intrvl);
+		DrawDebugMeshes(debugMeshInfo.descriptionSlices.top()); // draw all translucent!!! debug meshes
 	}
 	components.clear();
 	debugMeshInfo.descriptionSlices.pop();
@@ -436,6 +489,7 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 
 void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent>& components, bool opaques)
 {
+	// go through all components of all queued meshes and return those that are eligable for rendering right now
 	for (MeshUnitWrapper& unitWrapper : queuedUnitWrappers)
 	{
 		if (!unitWrapper.ApplyCallbackAndCalcCamDist())
@@ -476,10 +530,9 @@ void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent
 	}
 }
 
-void MeshRendererInternal::AddDebugCrosses(DebugDescList& debugList, ConstComponentRange range, bool opaques)
+void MeshRendererInternal::AddDebugCrosses(DebugDescList& debugList, ConstComponentInterval intrvl)
 {
-	(void)opaques;
-	for (auto it = range.first; it < range.second; it++)
+	for (auto it = intrvl.first; it < intrvl.second; it++)
 	{
 		const MeshPositionInfo& posInfo = it->unitWrapper->posInfo;
 		float maxDiameter = VectorMaximum(posInfo.maxs - posInfo.mins);
@@ -493,6 +546,13 @@ void MeshRendererInternal::AddDebugCrosses(DebugDescList& debugList, ConstCompon
 
 void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 {
+	/*
+	* This is like a miniature version of what the whole renderer does, but we don't have to worry about drawing
+	* the meshes in DrawOpaques() and DrawTranslucents(). We create the dynamic debug meshes for this view, wrap
+	* them up in unit wrappers, sort them (which should do nothing since they all use the same materials), and
+	* batch them together.
+	*/
+
 	static std::vector<MeshUnitWrapper> debugUnitWrappers;
 
 	for (auto& debugDesc : debugList)
@@ -529,40 +589,47 @@ void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 			if (component.indices.size() > 0)
 				debugComponents.emplace_back(&debugMesh, &component, IMeshWrapper{});
 	}
-	std::sort(debugComponents.begin(), debugComponents.end());
+	std::stable_sort(debugComponents.begin(), debugComponents.end());
 	DrawAll({debugComponents.begin(), debugComponents.end()}, false, true);
 
-	debugUnitWrappers.clear(); // decrement material refs
+	debugUnitWrappers.clear();
 	debugComponents.clear();
 }
 
-void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugMeshes, bool opaques)
+void MeshRendererInternal::DrawAll(ConstComponentInterval fullIntrvl, bool addDebugMeshes, bool opaques)
 {
-	if (std::distance(fullRange.first, fullRange.second) == 0)
+	if (std::distance(fullIntrvl.first, fullIntrvl.second) == 0)
 		return;
 
-	ConstComponentRange range{{}, fullRange.first};
+	/*
+	* We create a subinterval of fullInterval: intrvl. Our goal is to give intervals to the builder that can be
+	* fused together. Static meshes can't be fused (they're already IMesh* objects), so we render those one at a
+	* time. For dynamic meshes, we start with the lower bound of the interval A, and find the next element B such
+	* that (A <=> B) != 0. We rely on operator<=> to tell us if two components are eligable for fusing.
+	*/
 
-	while (range.second != fullRange.second)
+	ConstComponentInterval intrvl{{}, fullIntrvl.first};
+
+	while (intrvl.second != fullIntrvl.second)
 	{
-		range.first = range.second++;
+		intrvl.first = intrvl.second++;
 
-		if (range.first->vertData)
+		if (intrvl.first->vertData)
 		{
-			range.second = std::find_if(range.first + 1,
-			                            fullRange.second,
-			                            [=](auto& mc) { return (*range.first <=> mc) != 0; });
+			intrvl.second = std::find_if(intrvl.first + 1,
+			                             fullIntrvl.second,
+			                             [=](auto& mc) { return (*intrvl.first <=> mc) != 0; });
 
-			// batch the whole range
-			g_meshBuilderInternal.BeginIMeshCreation(range, true);
+			// feed the interval that we just found to the builder
+			g_meshBuilderInternal.BeginIMeshCreation(intrvl, true);
 			IMeshWrapper mw;
 			while (mw = g_meshBuilderInternal.GetNextIMeshWrapper(), mw.iMesh)
 			{
-				range.first->unitWrapper->Render(mw);
+				intrvl.first->unitWrapper->Render(mw);
 				if (addDebugMeshes)
 				{
 					AddDebugBox(debugMeshInfo.descriptionSlices.top(),
-					            g_meshBuilderInternal.creationState.fusedRange,
+					            g_meshBuilderInternal.creationState.fusedIntrvl,
 					            opaques);
 				}
 			}
@@ -570,20 +637,20 @@ void MeshRendererInternal::DrawAll(ConstComponentRange fullRange, bool addDebugM
 		else
 		{
 			// a single static mesh
-			range.first->unitWrapper->Render(range.first->iMeshWrapper);
+			intrvl.first->unitWrapper->Render(intrvl.first->iMeshWrapper);
 			if (addDebugMeshes)
-				AddDebugBox(debugMeshInfo.descriptionSlices.top(), range, opaques);
+				AddDebugBox(debugMeshInfo.descriptionSlices.top(), intrvl, opaques);
 		}
 	}
 }
 
-void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentRange range, bool opaques)
+void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentInterval intrvl, bool opaques)
 {
-	if (range.first->vertData)
+	if (intrvl.first->vertData)
 	{
 		Vector batchedMins{INFINITY};
 		Vector batchedMaxs{-INFINITY};
-		for (auto it = range.first; it < range.second; it++)
+		for (auto it = intrvl.first; it < intrvl.second; it++)
 		{
 			VectorMin(it->unitWrapper->posInfo.mins, batchedMins, batchedMins);
 			VectorMax(it->unitWrapper->posInfo.maxs, batchedMaxs, batchedMaxs);
@@ -593,7 +660,7 @@ void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentR
 			                       it->unitWrapper->callback ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
 			                                                 : DEBUG_COLOR_DYNAMIC_MESH);
 		}
-		if (std::distance(range.first, range.second) > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
+		if (std::distance(intrvl.first, intrvl.second) > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
 		{
 			debugList.emplace_back(batchedMins - Vector{opaques ? 2.5f : 2.f},
 			                       batchedMaxs + Vector{opaques ? 2.5f : 2.f},
@@ -603,15 +670,21 @@ void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentR
 	}
 	else
 	{
-		Assert(std::distance(range.first, range.second) == 1);
-		debugList.emplace_back(range.first->unitWrapper->posInfo.mins - Vector{1.f},
-		                       range.first->unitWrapper->posInfo.maxs + Vector{1.f},
+		Assert(std::distance(intrvl.first, intrvl.second) == 1);
+		debugList.emplace_back(intrvl.first->unitWrapper->posInfo.mins - Vector{1.f},
+		                       intrvl.first->unitWrapper->posInfo.maxs + Vector{1.f},
 		                       DEBUG_COLOR_STATIC_MESH);
 	}
 }
 
 /**************************************** SPACESHIP ****************************************/
 
+/*
+* This operator has three purposes:
+* 1) Determine if two components may be fused (must evaluate to std::weak_ordering::equivalent)
+* 2) Sort lists of components so that consecutive elements are eligable for fused
+* 3) Order components in a way to reduce overhead (i.e. grouping the same color modulation together)
+*/
 std::weak_ordering MeshComponent::operator<=>(const MeshComponent& rhs) const
 {
 	using W = std::weak_ordering;
@@ -633,8 +706,6 @@ std::weak_ordering MeshComponent::operator<=>(const MeshComponent& rhs) const
 	}
 	else
 	{
-		if (iMeshWrapper.type != rhs.iMeshWrapper.type)
-			return iMeshWrapper.type <=> rhs.iMeshWrapper.type;
 		// between statics, if both are in the same unit they'll have the same material, callback, colormod, etc.
 		if (&unitWrapper == &rhs.unitWrapper)
 			return W::equivalent;

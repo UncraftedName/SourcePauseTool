@@ -8,7 +8,7 @@
 * The user then calls the various methods of the delegate which will edit the state of the internal builder.
 * 
 * At the end of the day, the mesh builder's purpose is to create IMesh* objects so that the renderer can call
-* IMesh->draw(). For static meshes, this is simple enough - the user can fill up the builder's buffers with data,
+* IMesh->Draw(). For static meshes, this is simple enough - the user can fill up the builder's buffers with data,
 * and when they're done we can call IMatRenderContext::CreateStaticMesh(...). The IMesh* is then yeeted onto the
 * heap and given to the renderer later. The life cycle for static meshes looks like this:
 * 
@@ -35,8 +35,8 @@
 * 
 * As such, the user is never responsible for the destruction of dynamic meshes. There are a few optimizations,
 * probably the most complicated of which being the fusing of dynamic meshes. When asking the MeshBuilderInternal
-* for an IMesh*, you provide not just 1 but a whole range of meshes, then the builder will automatically fuse
-* consecutive elements and give you one IMesh* object at a time until it's done iterating over that range.
+* for an IMesh*, you provide not just 1 but a whole interval of meshes, then the builder will automatically fuse
+* consecutive elements and give you one IMesh* object at a time until it's done iterating over that interval.
 */
 
 #pragma once
@@ -139,7 +139,6 @@ struct MeshVertData
 struct IMeshWrapper
 {
 	IMesh* iMesh;
-	MeshPrimitiveType type;
 	MaterialRef material;
 };
 
@@ -217,10 +216,11 @@ struct MeshComponent
 * always end up being the biggest.
 */
 
-// the ranges are: [first, second)
+// the intervals are: [first, second)
 using MeshComponentContainer = std::vector<MeshComponent>;
-using ComponentRange = std::pair<MeshComponentContainer::iterator, MeshComponentContainer::iterator>;
-using ConstComponentRange = std::pair<MeshComponentContainer::const_iterator, MeshComponentContainer::const_iterator>;
+using ComponentInterval = std::pair<MeshComponentContainer::iterator, MeshComponentContainer::iterator>;
+using ConstComponentInterval =
+    std::pair<MeshComponentContainer::const_iterator, MeshComponentContainer::const_iterator>;
 
 // TODO add functionality to convert to collides
 struct MeshBuilderInternal
@@ -241,23 +241,23 @@ struct MeshBuilderInternal
 	MeshPositionInfo _CalcPosInfoForCurrentMesh();
 
 	/*
-	* For mesh fusing, the renderer will give us a range of components from a list with BeginIMeshCreation().
+	* For mesh fusing, the renderer will give us an interval of components from a list with BeginIMeshCreation().
 	* Consecutive elements are fused so long as they don't exceed the max vert/index count. As we iterate we'll
-	* update curRange.first, and fusedRange will have the last range used to create an IMesh (for debug meshes).
+	* update curIntrvl.first, and fusedIntrvl is the last interval used to create an IMesh (for debug meshes).
 	*/
 
 	struct
 	{
-		ConstComponentRange curRange;
-		ConstComponentRange fusedRange;
+		ConstComponentInterval curIntrvl;
+		ConstComponentInterval fusedIntrvl;
 		bool dynamic;
 	} creationState;
 
-	void BeginIMeshCreation(ConstComponentRange range, bool dynamic);
-	IMeshWrapper _CreateIMeshFromRange(ConstComponentRange range,
-	                                   size_t totalVerts,
-	                                   size_t totalIndices,
-	                                   bool dynamic);
+	void BeginIMeshCreation(ConstComponentInterval intrvl, bool dynamic);
+	IMeshWrapper _CreateIMeshFromInterval(ConstComponentInterval intrvl,
+	                                      size_t totalVerts,
+	                                      size_t totalIndices,
+	                                      bool dynamic);
 	IMeshWrapper GetNextIMeshWrapper();
 
 	void FrameCleanup();

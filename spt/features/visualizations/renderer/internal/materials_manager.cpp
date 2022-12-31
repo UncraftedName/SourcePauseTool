@@ -90,16 +90,14 @@ void MeshBuilderMatMgr::Load()
 
 void MeshBuilderMatMgr::Unload()
 {
-	std::vector<IMaterial*> mats{matOpaque, matAlpha, matAlphaNoZ};
-	for (IMaterial* mat : mats)
+	std::vector<MaterialRef*> mats{&matOpaque, &matAlpha, &matAlphaNoZ};
+	for (MaterialRef* mat : mats)
 	{
-		if (!mat)
+		if ((IMaterial*)*mat)
 			continue;
-		mat->DecrementReferenceCount();
-		mat->DeleteIfUnreferenced();
+		*mat = nullptr;
+		(*mat)->DeleteIfUnreferenced();
 	}
-
-	matOpaque = matAlpha = matAlphaNoZ = nullptr;
 }
 
 #endif

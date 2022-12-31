@@ -112,29 +112,29 @@ MeshVertData& MeshBuilderInternal::GetComponentInCurrentMesh(MeshPrimitiveType t
 	return curMeshVertData.emplace_back(*vertIt, *idxIt, type, material);
 }
 
-IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange range,
-                                                        size_t totalVerts,
-                                                        size_t totalIndices,
-                                                        bool dynamic)
+IMeshWrapper MeshBuilderInternal::_CreateIMeshFromInterval(ConstComponentInterval intrvl,
+                                                           size_t totalVerts,
+                                                           size_t totalIndices,
+                                                           bool dynamic)
 {
 	if (totalVerts == 0 || totalIndices == 0)
 		return IMeshWrapper{};
 
-	Assert(range.first->vertData);
+	Assert(intrvl.first->vertData);
 	Assert(totalVerts <= totalIndices);
 	Assert(totalVerts <= MAX_MESH_VERTS);
 	Assert(totalIndices <= MAX_MESH_INDICES);
 
 #ifdef DEBUG
-	for (auto it = range.first + 1; it < range.second; it++)
+	for (auto it = intrvl.first + 1; it < intrvl.second; it++)
 	{
 		Assert(it->vertData);
-		Assert(range.first->vertData->type == it->vertData->type);
-		Assert(range.first->vertData->material == it->vertData->material);
+		Assert(intrvl.first->vertData->type == it->vertData->type);
+		Assert(intrvl.first->vertData->material == it->vertData->material);
 	}
 #endif
 
-	IMaterial* material = range.first->vertData->material;
+	MaterialRef material = intrvl.first->vertData->material;
 
 	if (!material)
 		return IMeshWrapper{};
@@ -165,7 +165,7 @@ IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange rang
 		return IMeshWrapper{};
 	}
 
-	switch (range.first->vertData->type)
+	switch (intrvl.first->vertData->type)
 	{
 	case MeshPrimitiveType::Lines:
 		iMesh->SetPrimitiveType(MATERIAL_LINES);
@@ -189,7 +189,7 @@ IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange rang
 	size_t idxIdx = 0; // ;)
 	size_t idxOffset = 0;
 
-	for (auto it = range.first; it < range.second; it++)
+	for (auto it = intrvl.first; it < intrvl.second; it++)
 	{
 		for (const VertexData& vert : it->vertData->verts)
 		{
@@ -210,12 +210,12 @@ IMeshWrapper MeshBuilderInternal::_CreateIMeshFromRange(ConstComponentRange rang
 
 	iMesh->UnlockMesh(totalVerts, totalIndices, desc);
 
-	return {iMesh, range.first->vertData->type, material};
+	return {iMesh, material};
 }
 
-void MeshBuilderInternal::BeginIMeshCreation(ConstComponentRange range, bool dynamic)
+void MeshBuilderInternal::BeginIMeshCreation(ConstComponentInterval intrvl, bool dynamic)
 {
-	creationState.curRange = range;
+	creationState.curIntrvl = intrvl;
 	creationState.dynamic = dynamic;
 }
 
@@ -225,17 +225,17 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 	size_t totalNumVerts, totalNumIndices;
 	for (;;)
 	{
-		if (cs.curRange.first == cs.curRange.second)
+		if (cs.curIntrvl.first == cs.curIntrvl.second)
 			return IMeshWrapper{}; // done with iteration
 
-		totalNumVerts = cs.curRange.first->vertData->verts.size();
-		totalNumIndices = cs.curRange.first->vertData->indices.size();
+		totalNumVerts = cs.curIntrvl.first->vertData->verts.size();
+		totalNumIndices = cs.curIntrvl.first->vertData->indices.size();
 
 		if (totalNumIndices > MAX_MESH_INDICES || totalNumVerts > MAX_MESH_VERTS)
 		{
 			AssertMsg(0, "too many verts/indices");
 			Warning("spt: mesh has too many verts or indices, this would cause a game error\n");
-			cs.curRange.first++; // skip this component
+			cs.curIntrvl.first++; // skip this component
 			continue;
 		}
 		else
@@ -243,11 +243,11 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 			break;
 		}
 	}
-	cs.fusedRange = ConstComponentRange{cs.curRange.first, cs.curRange.first + 1};
-	for (; cs.fusedRange.second < cs.curRange.second; cs.fusedRange.second++)
+	cs.fusedIntrvl = ConstComponentInterval{cs.curIntrvl.first, cs.curIntrvl.first + 1};
+	for (; cs.fusedIntrvl.second < cs.curIntrvl.second; cs.fusedIntrvl.second++)
 	{
-		size_t curNumVerts = cs.fusedRange.second->vertData->verts.size();
-		size_t curNumIndices = cs.fusedRange.second->vertData->indices.size();
+		size_t curNumVerts = cs.fusedIntrvl.second->vertData->verts.size();
+		size_t curNumIndices = cs.fusedIntrvl.second->vertData->indices.size();
 		Assert(curNumIndices >= curNumVerts);
 
 		if (totalNumIndices + curNumIndices > MAX_MESH_INDICES || totalNumVerts + curNumVerts > MAX_MESH_VERTS)
@@ -255,8 +255,8 @@ IMeshWrapper MeshBuilderInternal::GetNextIMeshWrapper()
 		totalNumVerts += curNumVerts;
 		totalNumIndices += curNumIndices;
 	}
-	cs.curRange.first = cs.fusedRange.second;
-	return _CreateIMeshFromRange(cs.fusedRange, totalNumVerts, totalNumIndices, cs.dynamic);
+	cs.curIntrvl.first = cs.fusedIntrvl.second;
+	return _CreateIMeshFromInterval(cs.fusedIntrvl, totalNumVerts, totalNumIndices, cs.dynamic);
 }
 
 void MeshBuilderInternal::FrameCleanup()
@@ -318,10 +318,11 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 		{
 			static std::vector<MeshComponent> tmp{1};
 			tmp[0] = {nullptr, &vd, IMeshWrapper{}};
-			mu->meshesArr[i] = builder._CreateIMeshFromRange(ConstComponentRange{tmp.begin(), tmp.end()},
-			                                                 vd.verts.size(),
-			                                                 vd.indices.size(),
-			                                                 false);
+			mu->meshesArr[i] =
+			    builder._CreateIMeshFromInterval(ConstComponentInterval{tmp.begin(), tmp.end()},
+			                                     vd.verts.size(),
+			                                     vd.indices.size(),
+			                                     false);
 		}
 	}
 	builder.curMeshVertData.pop();
