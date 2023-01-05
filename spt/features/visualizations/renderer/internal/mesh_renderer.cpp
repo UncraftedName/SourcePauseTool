@@ -52,7 +52,7 @@ CON_COMMAND_F(y_spt_destroy_all_static_meshes,
               FCVAR_DONTRECORD)
 {
 	StaticMesh::DestroyAll();
-	Msg("Done\n");
+	Msg("Done\n"); // TODO why doesn't this show anything???
 };
 
 #define DEBUG_COLOR_STATIC_MESH (color32{150, 20, 10, 255})

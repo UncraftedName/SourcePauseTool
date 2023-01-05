@@ -1194,6 +1194,7 @@
     <ClCompile Include="spt\features\visualizations\renderer\internal\mesh_construction.cpp" />
     <ClCompile Include="spt\features\visualizations\renderer\internal\mesh_renderer.cpp" />
     <ClCompile Include="spt\features\visualizations\renderer\internal\static_mesh.cpp" />
+    <ClCompile Include="spt\features\visualizations\renderer\internal\text_construction.cpp" />
     <ClCompile Include="spt\features\visualizations\sg-collide-vis.cpp" />
     <ClCompile Include="spt\features\visualizations\vag_trace.cpp" />
     <ClCompile Include="spt\features\visual_fixes.cpp" />
@@ -1400,6 +1401,7 @@
     <ClInclude Include="spt\features\visualizations\renderer\mesh_builder.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\mesh_renderer.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\mesh_defs.hpp" />
+    <ClInclude Include="spt\features\visualizations\renderer\ref_mgr.hpp" />
     <ClInclude Include="spt\ipc\ipc.hpp" />
     <ClInclude Include="spt\scripts2\condition2.hpp" />
     <ClInclude Include="spt\scripts2\framebulk_handler2.hpp" />
@@ -1446,6 +1448,7 @@
     <ClInclude Include="thirdparty\kmp-cpp.hpp" />
     <ClInclude Include="thirdparty\md5.hpp" />
     <ClInclude Include="thirdparty\Signal.h" />
+    <ClInclude Include="thirdparty\stb_rect_pack.h" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="SPTLib\Windows\minhook\build\VC16\libMinHook.vcxproj">

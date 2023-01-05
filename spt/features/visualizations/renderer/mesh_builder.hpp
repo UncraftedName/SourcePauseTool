@@ -5,7 +5,11 @@
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
+#include <dwrite_3.h>
+
 #include "mathlib\polyhedron.h"
+
+#include "ref_mgr.hpp"
 
 struct LineColor
 {
@@ -82,6 +86,29 @@ inline color32 color32RgbLerp(color32 a, color32 b, float f)
 	    RoundFloatToByte(a.a * (1 - f) + b.a * f),
 	};
 }
+
+struct FontFaceCacheKey
+{
+	std::wstring familyName;
+	DWRITE_FONT_WEIGHT weight = DWRITE_FONT_WEIGHT_REGULAR;
+	DWRITE_FONT_STRETCH stretch = DWRITE_FONT_STRETCH_NORMAL;
+	DWRITE_FONT_STYLE style = DWRITE_FONT_STYLE_NORMAL;
+
+	bool operator==(const FontFaceCacheKey& rhs) const
+	{
+		return familyName == rhs.familyName && weight == rhs.weight && stretch == rhs.stretch
+		       && style == rhs.style;
+	}
+
+	struct Hasher
+	{
+		size_t operator()(const FontFaceCacheKey& k) const
+		{
+			return std::hash<std::wstring>{}(k.familyName) ^ std::hash<int>{}(k.weight)
+			       ^ std::hash<int>{}(k.stretch) ^ std::hash<int>{}(k.style);
+		}
+	};
+};
 
 /*
 * The game uses a CMeshBuilder to create meshes, but we can't use it directly because parts of its implementation
@@ -183,6 +210,13 @@ public:
 	                ShapeColor c);
 
 	void AddCPolyhedron(const CPolyhedron* polyhedron, ShapeColor c);
+
+	IUnknownRef<IDWriteFontFace3*> FindFont(const FontFaceCacheKey& fontInfo,
+	                                        IDWriteFontCollection2* collection = nullptr);
+
+	// TODO wstrlen versions of the same thing
+	void AddText(const wchar_t* wstr, IDWriteFontFace3* fontFace, const Vector& pos, const QAngle& ang);
+	void AddText(const wchar_t* wstr, const std::wstring& fontName, const Vector& pos, const QAngle& ang);
 
 private:
 	MeshBuilderDelegate() = default;

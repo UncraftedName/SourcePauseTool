@@ -301,6 +301,9 @@
     <ClCompile Include="spt\features\visualizations\renderer\internal\static_mesh.cpp">
       <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClCompile>
+    <ClCompile Include="spt\features\visualizations\renderer\internal\text_construction.cpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -617,6 +620,12 @@
     </ClInclude>
     <ClInclude Include="spt\features\visualizations\renderer\internal\mesh_renderer_internal.hpp">
       <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\ref_mgr.hpp">
+      <Filter>spt\features\visualizations\renderer</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\stb_rect_pack.h">
+      <Filter>thirdparty</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

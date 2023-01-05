@@ -63,6 +63,7 @@
 #define VPROF_BUDGETGROUP_MESH_RENDERER _T("Mesh_Renderer")
 
 #include <stack>
+#include <Windows.h>
 
 // used to check if dynamic mesh tokens are valid, increases every frame
 inline int g_meshRenderFrameNum = 0;
@@ -73,5 +74,40 @@ using DynamicMeshToken = DynamicMesh;
 
 template<class T>
 using VectorStack = std::stack<T, std::vector<T>>;
+
+inline void MsgHResultError(HRESULT hr, const char* fmt, ...)
+{
+	va_list args;
+	va_start(args, fmt);
+	char fmtBuf[1024];
+	vsnprintf(fmtBuf, sizeof fmtBuf, fmt, args);
+	va_end(args);
+
+	if (FAILED(hr))
+	{
+		Warning("spt: %s: success\n", fmtBuf);
+	}
+	else
+	{
+		LPTSTR errorMsg = NULL;
+		FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM
+		                   | FORMAT_MESSAGE_IGNORE_INSERTS,
+		               NULL,
+		               hr,
+		               MAKELANGID(LANG_ENGLISH, SUBLANG_DEFAULT),
+		               (LPTSTR)&errorMsg,
+		               0,
+		               NULL);
+		if (errorMsg != NULL)
+		{
+			Warning("spt: %s: %s\n", fmtBuf, errorMsg);
+			LocalFree(errorMsg);
+		}
+		else
+		{
+			Warning("spt: %s: unknown error\n", fmtBuf);
+		}
+	}
+}
 
 #endif

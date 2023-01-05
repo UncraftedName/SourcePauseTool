@@ -4,6 +4,9 @@
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
+#include <clocale>
+#include <chrono>
+
 #include "spt\utils\math.hpp"
 #include "spt\feature.hpp"
 #include "spt\utils\signals.hpp"
@@ -502,8 +505,6 @@ TEST_CASE("Lorenz Attractor", Vector(200, -300, 0))
 				    verts[lastIdx %= maxVerts] = vNext;
 		    }
 
-			
-
 		    // draw line segments between each point
 		    Vector* prev = 0;
 		    for (size_t i = 0; i < verts.size(); i++)
@@ -742,6 +743,30 @@ TEST_CASE("Testing winding direction", Vector(1200, -300, 0))
 			    pos.y += ySpacing;
 			    mb.AddSweptBox(pos, pos + Vector{15, 15, 15}, mins, maxs, sbColor);
 		    }
+	    }));
+}
+
+TEST_CASE("Basic Text", Vector(1400, -300, 0))
+{
+	mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
+	    [this](MeshBuilderDelegate& mb)
+	    {
+		    using std::chrono::system_clock;
+		    wchar_t wstr[64];
+		    // save and set locale
+		    std::string prev_loc = std::setlocale(LC_TIME, nullptr);
+		    std::setlocale(LC_TIME, "en_US.UTF-8");
+
+		    time_t curTime = system_clock::to_time_t(system_clock::now());
+		    if (std::wcsftime(wstr,
+		                      sizeof wstr,
+		                      L"The current time is %a %b %d %Y %T",
+		                      std::localtime(&curTime)))
+		    {
+			    mb.AddText(wstr, L"Times New Roman", testPos, vec3_angle);
+		    }
+		    // return locale to previous
+		    std::setlocale(LC_TIME, prev_loc.c_str());
 	    }));
 }
 
