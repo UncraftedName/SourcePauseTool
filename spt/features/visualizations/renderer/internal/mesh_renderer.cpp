@@ -314,6 +314,7 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
+	g_meshMaterialMgr.UpdateTextures();
 
 	// push a new debug slice, the corresponding pop will be in DrawTranslucents
 	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionList);
@@ -329,6 +330,7 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
+	g_meshMaterialMgr.UpdateTextures();
 
 	static std::vector<MeshComponent> components;
 	CollectRenderableComponents(components, false);
@@ -566,8 +568,8 @@ void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, ConstComponentI
 /*
 * This operator has three purposes:
 * 1) Determine if two components may be fused (must evaluate to std::weak_ordering::equivalent)
-* 2) Sort lists of components so that consecutive elements are eligable for fused
-* 3) Order components in a way to reduce overhead (i.e. grouping the same color modulation together)
+* 2) Sort lists of components so that consecutive elements are eligable for fusion
+* 3) Order components in a way to reduce overhead (e.g. grouping the same color modulation together)
 */
 std::weak_ordering MeshComponent::operator<=>(const MeshComponent& rhs) const
 {

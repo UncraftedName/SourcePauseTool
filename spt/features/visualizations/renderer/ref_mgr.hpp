@@ -3,7 +3,7 @@
 /*
 * The SDK has a class like this for managing an IRefCounted, but materials and dwrite pointers aren't that :/.
 * The REF_MGR class needs to be default constructable and have const Release()/AddRef() methods that take in type
-* T as a param, note that I don't check for null here.
+* T as a param, note that I don't check for null here. TODO I probably should
 */
 template<class T, typename REF_MGR, REF_MGR refMgr = REF_MGR{}>
 struct AutoRefPtr
@@ -60,7 +60,6 @@ struct AutoRefPtr
 		Release();
 	}
 
-private:
 	T _ptr;
 };
 

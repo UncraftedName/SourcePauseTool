@@ -104,10 +104,16 @@ struct FontFaceCacheKey
 	{
 		size_t operator()(const FontFaceCacheKey& k) const
 		{
-			return std::hash<std::wstring>{}(k.familyName) ^ std::hash<int>{}(k.weight)
-			       ^ std::hash<int>{}(k.stretch) ^ std::hash<int>{}(k.style);
+			return std::hash<std::wstring>{}(k.familyName) ^ std::hash<decltype(k.weight)>{}(k.weight)
+			       ^ std::hash<decltype(k.stretch)>{}(k.stretch) ^ std::hash<decltype(k.style)>{}(k.style);
 		}
 	};
+};
+
+struct FontInfo
+{
+	IUnknownRef<IDWriteFont3*> font;
+	IUnknownRef<IDWriteFontFace3*> fontFace;
 };
 
 /*
@@ -211,11 +217,10 @@ public:
 
 	void AddCPolyhedron(const CPolyhedron* polyhedron, ShapeColor c);
 
-	IUnknownRef<IDWriteFontFace3*> FindFont(const FontFaceCacheKey& fontInfo,
-	                                        IDWriteFontCollection2* collection = nullptr);
+	FontInfo FindFont(const FontFaceCacheKey& fontInfo, IDWriteFontCollection2* collection = nullptr);
 
 	// TODO wstrlen versions of the same thing
-	void AddText(const wchar_t* wstr, IDWriteFontFace3* fontFace, const Vector& pos, const QAngle& ang);
+	void AddText(const wchar_t* wstr, FontInfo fontInfo, const Vector& pos, const QAngle& ang);
 	void AddText(const wchar_t* wstr, const std::wstring& fontName, const Vector& pos, const QAngle& ang);
 
 private:

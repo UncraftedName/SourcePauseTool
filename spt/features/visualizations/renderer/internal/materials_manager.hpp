@@ -5,8 +5,8 @@
 #ifdef SPT_MESH_RENDERING_ENABLED
 
 #include "..\mesh_builder.hpp"
+#include "materialsystem\itexture.h"
 
-#include <system_error>
 #include <d2d1.h>
 #include <wincodec.h>
 
@@ -29,7 +29,24 @@ struct MaterialRefMgr
 	}
 };
 
+struct TextureRefMgr
+{
+	inline void AddRef(ITexture* tex) const
+	{
+		if (tex)
+			tex->IncrementReferenceCount();
+	}
+
+	inline void Release(ITexture*& tex) const
+	{
+		if (tex)
+			tex->DecrementReferenceCount(); // TODO delete if unreferenced
+		tex = nullptr;
+	}
+};
+
 using MaterialRef = AutoRefPtr<IMaterial*, MaterialRefMgr>;
+using TextureRef = AutoRefPtr<ITexture*, TextureRefMgr>;
 
 #define SPT_TEXTURE_GROUP "spt textures"
 
@@ -45,28 +62,65 @@ struct PackedRect
 struct IRectPacker
 {
 	virtual void Init() = 0;
-	virtual bool TryFit(PackedRect& rect) = 0; // width/height in; x/y/isSideways out
-	virtual void TryPack(PackedRect* rects, size_t numRects) = 0;
-	virtual void Clear() = 0;
-	virtual ~IRectPacker() = 0;
+	virtual void TryPack(PackedRect* rects, size_t numRects) = 0; // width/height in; x/y/isSideways out
+	virtual ~IRectPacker(){};
 };
 
-// the material manager keeps track of how many of these are initialized
+struct GlyphAtlas;
+
+class GlyphTextureRegenerator : public ITextureRegenerator
+{
+	IUnknownRef<IWICBitmap*> pWicBitMap;
+
+public:
+	GlyphTextureRegenerator(const GlyphAtlas* atlas);
+	virtual void RegenerateTextureBits(ITexture* pTexture, IVTFTexture* pVTFTexture, Rect_t* pRect) override;
+	virtual void Release() override;
+};
+
+// passed to the material manager and atlases
+struct GlyphRunInfo
+{
+	FontInfo fontInfo;
+	DWRITE_FONT_WEIGHT weight;
+	DWRITE_FONT_STRETCH stretch;
+	DWRITE_FONT_STYLE style;
+	FLOAT fontEmSize;
+	const UINT16* glyphIndices;
+	const FLOAT* glyphAdvances;
+	const DWRITE_GLYPH_OFFSET* glyphOffsets;
+	const DWRITE_GLYPH_METRICS* glyphMetrics;
+	size_t numGlyphs;
+	BOOL isSideways;
+	UINT32 bidiLevel; // odd: RTL, even: LTR
+};
+
 struct GlyphAtlas
 {
-	Rect_t nextUpdateRect{0, 0, GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE};
+	Rect_t nextUpdateRect;
 	MaterialRef material;
-	ITexture* texture; // TODO this should be auto-ref counted
+	TextureRef texture;
+	GlyphTextureRegenerator* textureRegenerator = nullptr;
 
-	IWICBitmap* pWicBitMap;
+	IUnknownRef<IWICBitmap*> pWicBitMap;
 	ID2D1BitmapRenderTarget* pRenderTarget;
 	ID2D1SolidColorBrush* pBrush;
-	IRectPacker* rectPacker;
+
+	IRectPacker* rectPacker = nullptr;
+
+	bool initialized = false;
 
 	GlyphAtlas() = default;
 	GlyphAtlas(const GlyphAtlas&) = delete;
-	bool Init();
+	void Init();
 	void Destroy();
+
+	void DrawGlyphs(const GlyphRunInfo& glyphRunInfo,
+	                const size_t* arrayIndices,
+	                const PackedRect* rects,
+	                size_t numArrayIndices);
+	void UpdateTexture();
+	void GrowUpdateRect(const PackedRect& packedRect);
 
 	~GlyphAtlas()
 	{
@@ -114,16 +168,9 @@ struct GlyphKey
 
 	bool operator==(const GlyphKey& rhs) const
 	{
-		if (glyphIndex != rhs.glyphIndex || fontEmSize != rhs.fontEmSize || weight != rhs.weight
-		    || stretch != rhs.stretch || style != rhs.style)
-		{
-			return false;
-		}
-		if (!font && !rhs.font)
-			return true; // both null
-		if (!font != !rhs.font)
-			return false; // one null
-		return font->Equals(rhs.font);
+		Assert(font && rhs.font);
+		return glyphIndex == rhs.glyphIndex && fontEmSize == rhs.fontEmSize && weight == rhs.weight
+		       && stretch == rhs.stretch && style == rhs.style && font->Equals(rhs.font);
 	}
 
 	struct Hasher
@@ -141,7 +188,7 @@ struct GlyphKey
 
 struct GlyphLocation
 {
-	size_t atlasIndex;
+	GlyphAtlas* atlas;
 	PackedRect rect;
 };
 
@@ -153,13 +200,16 @@ struct MeshBuilderMatMgr
 	ID2D1Factory* pD2DFactory = nullptr;
 	IWICImagingFactory* pWicFactory = nullptr;
 	IDWriteTextAnalyzer* pTextAnalyzer = nullptr;
-	bool dwriteInitSuccess = false;
+	bool initialized = false;
 
 	std::array<GlyphAtlas, MAX_GLYPH_ATLASES> glyphAtlases{};
-	size_t curUsedGlyphAtlases;
-	
-	std::unordered_map<FontFaceCacheKey, IUnknownRef<IDWriteFontFace3*>, FontFaceCacheKey::Hasher> fontFaceCache;
+	size_t curUsedGlyphAtlases = 0;
+	int recreateAtlasCount = 0;
+
+	std::unordered_map<FontFaceCacheKey, FontInfo, FontFaceCacheKey::Hasher> fontFaceCache;
 	std::unordered_map<GlyphKey, GlyphLocation, GlyphKey::Hasher> glyphCache;
+
+	bool texturesNeedUpdate = false;
 
 	/*
 	* Finds associated IMaterials for the given glyphs, packing them into the atlases if they're not cached.
@@ -169,11 +219,9 @@ struct MeshBuilderMatMgr
 	* [out] outUvCoords:  an array of rectangles for each glyph in the associated texture of its material
 	* [in]  numGlyphs:    the size of these arrays
 	*/
-	void GetGlyphMaterials(const GlyphKey* glyphs,
-	                       const DWRITE_GLYPH_METRICS* glyphMetrics,
-	                       MaterialRef* outMaterials,
-	                       PackedRect* outUvCoords,
-	                       size_t numGlyphs);
+	void GetGlyphMaterials(const GlyphRunInfo& glyphRunInfo, MaterialRef* outMaterials, PackedRect* outUvCoords);
+
+	void UpdateTextures();
 
 	void Load();
 	void Unload();

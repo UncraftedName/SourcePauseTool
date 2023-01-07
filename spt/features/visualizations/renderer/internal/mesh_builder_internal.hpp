@@ -13,9 +13,11 @@ struct VertexData
 {
 	Vector pos;
 	color32 col;
+	float u, v;
 
 	VertexData(){};
 	VertexData(const Vector& pos, color32 color) : pos(pos), col(color) {}
+	VertexData(const Vector& pos, color32 color, float u, float v) : pos(pos), col(color), u(u), v(v) {}
 };
 
 enum class MeshPrimitiveType
@@ -177,5 +179,11 @@ struct MeshBuilderInternal
 };
 
 inline MeshBuilderInternal g_meshBuilderInternal;
+
+#define GET_VDATA_FACES_CUSTOM_MATERIAL(material) \
+	g_meshBuilderInternal.GetComponentInCurrentMesh(MeshPrimitiveType::Triangles, material)
+
+#define GET_VDATA_LINES_CUSTOM_MATERIAL(material) \
+	g_meshBuilderInternal.GetComponentInCurrentMesh(MeshPrimitiveType::Lines, material)
 
 #endif

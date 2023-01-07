@@ -7,13 +7,14 @@
 
 #include <locale>
 #include <codecvt>
-#include "..\mesh_builder.hpp"
 
-IUnknownRef<IDWriteFontFace3*> MeshBuilderDelegate::FindFont(const FontFaceCacheKey& fontInfo,
-                                                             IDWriteFontCollection2* collection)
+#include "..\mesh_builder.hpp"
+#include "spt\utils\math.hpp"
+
+FontInfo MeshBuilderDelegate::FindFont(const FontFaceCacheKey& fontInfo, IDWriteFontCollection2* collection)
 {
-	if (!g_meshMaterialMgr.dwriteInitSuccess)
-		return nullptr;
+	if (!g_meshMaterialMgr.initialized)
+		return FontInfo{};
 
 	auto it = g_meshMaterialMgr.fontFaceCache.find(fontInfo);
 	if (it != g_meshMaterialMgr.fontFaceCache.end())
@@ -30,7 +31,7 @@ IUnknownRef<IDWriteFontFace3*> MeshBuilderDelegate::FindFont(const FontFaceCache
 		if (FAILED(hr))
 		{
 			MsgHResultError(hr, "GetSystemFontCollection() error");
-			return nullptr;
+			return FontInfo{};
 		}
 	}
 	UINT32 index;
@@ -39,52 +40,47 @@ IUnknownRef<IDWriteFontFace3*> MeshBuilderDelegate::FindFont(const FontFaceCache
 	if (FAILED(hr))
 	{
 		MsgHResultError(hr, "FindFamilyName() error");
-		return nullptr;
+		return FontInfo{};
 	}
 	if (!exists)
 	{
 		// TODO move to string utils
 		std::string str =
 		    std::wstring_convert<std::codecvt_utf8<wchar_t>, wchar_t>{}.to_bytes(fontInfo.familyName);
-		Msg("spt: could not find font family %s\n", str.data());
-		return nullptr;
+		Msg("spt: could not find fontPtr family %s\n", str.data());
+		return FontInfo{};
 	}
-	IDWriteFontFamily1* fontFamily;
-	hr = collection->GetFontFamily(index, &fontFamily);
+	IUnknownRef<IDWriteFontFamily1*> pFontFamily;
+	hr = collection->GetFontFamily(index, &pFontFamily._ptr);
 	if (FAILED(hr))
 	{
 		MsgHResultError(hr, "GetFontFamily() error");
-		return nullptr;
+		return FontInfo{};
 	}
-	IDWriteFont3* font = nullptr;
-	hr = fontFamily->GetFirstMatchingFont(fontInfo.weight, fontInfo.stretch, fontInfo.style, (IDWriteFont**)&font);
+	IUnknownRef<IDWriteFont3*> pFont;
+	hr = pFontFamily->GetFirstMatchingFont(fontInfo.weight,
+	                                       fontInfo.stretch,
+	                                       fontInfo.style,
+	                                       (IDWriteFont**)&pFont._ptr);
 	if (FAILED(hr))
 	{
 		MsgHResultError(hr, "GetFirstMatchingFont() error");
-		return nullptr;
+		return FontInfo{};
 	}
-	IDWriteFontFace3* fontFace;
-	hr = font->CreateFontFace(&fontFace);
+	IUnknownRef<IDWriteFontFace3*> pFontFace;
+	hr = pFont->CreateFontFace(&pFontFace._ptr);
 	if (FAILED(hr))
 	{
 		MsgHResultError(hr, "CreateFontFace() error");
-		return nullptr;
+		return FontInfo{};
 	}
-	// don't create a ref to the same ptr, use its copy ctor instead
-	IUnknownRef<IDWriteFontFace3*> ret = fontFace;
-	g_meshMaterialMgr.fontFaceCache[fontInfo] = ret;
-	return ret;
+	return g_meshMaterialMgr.fontFaceCache[fontInfo] = FontInfo{std::move(pFont), std::move(pFontFace)};
 }
 
-// TODO needs font size, text scale, wstrlen, color/ztest
-void MeshBuilderDelegate::AddText(const wchar_t* wstr,
-                                  IDWriteFontFace3* pFontFace,
-                                  const Vector& pos,
-                                  const QAngle& ang)
+// TODO needs fontPtr size, text scale, wstrlen, color/ztest
+void MeshBuilderDelegate::AddText(const wchar_t* wstr, FontInfo fontInfo, const Vector& pos, const QAngle& ang)
 {
-	auto& mgr = g_meshMaterialMgr;
-
-	if (!wstr || !mgr.dwriteInitSuccess || !pFontFace)
+	if (!wstr || !g_meshMaterialMgr.initialized || !fontInfo.font || !fontInfo.fontFace)
 		return;
 
 	int wstrLen = wcslen(wstr);
@@ -92,9 +88,12 @@ void MeshBuilderDelegate::AddText(const wchar_t* wstr,
 	if (wstrLen == 0)
 		return;
 
+	WindingDir wd = WD_CW;             // TODO
+	color32 color{255, 255, 255, 255}; // TODO
+
 	HRESULT hr = S_OK;
 
-	UINT32 guessGlyphCount = wstrLen; // windows recommends '3 * wstrLen / 2 + 16' but we'll probably use english
+	UINT32 guessGlyphCount = 3 * wstrLen / 2 + 16;
 	UINT32 glyphCount = 0;
 
 	DWRITE_SCRIPT_ANALYSIS scriptAnalysis{}; // TODO
@@ -121,23 +120,23 @@ void MeshBuilderDelegate::AddText(const wchar_t* wstr,
 		vGlyphIndices.resize(guessGlyphCount);
 		vGlyphProps.resize(guessGlyphCount);
 
-		hr = mgr.pTextAnalyzer->GetGlyphs(wstr,
-		                                  wstrLen,
-		                                  pFontFace,
-		                                  isSideways,
-		                                  isRightToLeft,
-		                                  &scriptAnalysis,
-		                                  localName,
-		                                  pNumberSubstitution,
-		                                  pFeatures,
-		                                  pFeatureRangeLengths,
-		                                  numFeatureRanges,
-		                                  guessGlyphCount,
-		                                  vClusterMap.data(),
-		                                  vTextProps.data(),
-		                                  vGlyphIndices.data(),
-		                                  vGlyphProps.data(),
-		                                  &glyphCount);
+		hr = g_meshMaterialMgr.pTextAnalyzer->GetGlyphs(wstr,
+		                                                wstrLen,
+		                                                fontInfo.fontFace,
+		                                                isSideways,
+		                                                isRightToLeft,
+		                                                &scriptAnalysis,
+		                                                localName,
+		                                                pNumberSubstitution,
+		                                                pFeatures,
+		                                                pFeatureRangeLengths,
+		                                                numFeatureRanges,
+		                                                guessGlyphCount,
+		                                                vClusterMap.data(),
+		                                                vTextProps.data(),
+		                                                vGlyphIndices.data(),
+		                                                vGlyphProps.data(),
+		                                                &glyphCount);
 
 		if (SUCCEEDED(hr))
 		{
@@ -165,26 +164,26 @@ void MeshBuilderDelegate::AddText(const wchar_t* wstr,
 	vGlyphAdvances.resize(glyphCount);
 	vGlyphOffsets.resize(glyphCount);
 
-	FLOAT fontEmSize = 96;
+	FLOAT fontEmSize = 30;
 
-	hr = mgr.pTextAnalyzer->GetGlyphPlacements(wstr,
-	                                           vClusterMap.data(),
-	                                           vTextProps.data(),
-	                                           wstrLen,
-	                                           vGlyphIndices.data(),
-	                                           vGlyphProps.data(),
-	                                           glyphCount,
-	                                           pFontFace,
-	                                           fontEmSize,
-	                                           isSideways,
-	                                           isRightToLeft,
-	                                           &scriptAnalysis,
-	                                           localName,
-	                                           pFeatures,
-	                                           pFeatureRangeLengths,
-	                                           numFeatureRanges,
-	                                           vGlyphAdvances.data(),
-	                                           vGlyphOffsets.data());
+	hr = g_meshMaterialMgr.pTextAnalyzer->GetGlyphPlacements(wstr,
+	                                                         vClusterMap.data(),
+	                                                         vTextProps.data(),
+	                                                         wstrLen,
+	                                                         vGlyphIndices.data(),
+	                                                         vGlyphProps.data(),
+	                                                         glyphCount,
+	                                                         fontInfo.fontFace,
+	                                                         fontEmSize,
+	                                                         isSideways,
+	                                                         isRightToLeft,
+	                                                         &scriptAnalysis,
+	                                                         localName,
+	                                                         pFeatures,
+	                                                         pFeatureRangeLengths,
+	                                                         numFeatureRanges,
+	                                                         vGlyphAdvances.data(),
+	                                                         vGlyphOffsets.data());
 
 	if (FAILED(hr))
 	{
@@ -195,23 +194,101 @@ void MeshBuilderDelegate::AddText(const wchar_t* wstr,
 	static std::vector<DWRITE_GLYPH_METRICS> vGlyphMetrics;
 	vGlyphMetrics.resize(glyphCount);
 
-	hr = pFontFace->GetDesignGlyphMetrics(vGlyphIndices.data(), glyphCount, vGlyphMetrics.data(), isSideways);
+	hr = fontInfo.fontFace->GetDesignGlyphMetrics(vGlyphIndices.data(),
+	                                              glyphCount,
+	                                              vGlyphMetrics.data(),
+	                                              isSideways);
 	if (FAILED(hr))
 	{
 		MsgHResultError(hr, "GetDesignGlyphMetrics() error");
 		return;
 	}
 
+	GlyphRunInfo runInfo{
+	    .fontInfo = fontInfo,
+	    .weight = DWRITE_FONT_WEIGHT_NORMAL, // TODO
+	    .stretch = DWRITE_FONT_STRETCH_NORMAL,
+	    .style = DWRITE_FONT_STYLE_NORMAL,
+	    .fontEmSize = fontEmSize,
+	    .glyphIndices = vGlyphIndices.data(),
+	    .glyphAdvances = vGlyphAdvances.data(),
+	    .glyphOffsets = vGlyphOffsets.data(),
+	    .glyphMetrics = vGlyphMetrics.data(),
+	    .numGlyphs = glyphCount,
+	    .isSideways = isSideways,
+	    .bidiLevel = 0,
+	};
+
 	static std::vector<MaterialRef> vGlyphMaterials;
 	static std::vector<PackedRect> vGlyphUvCoords;
 	vGlyphMaterials.resize(glyphCount);
 	vGlyphUvCoords.resize(glyphCount);
 
-	vGlyphMaterials.clear(); // clear to decrement ref count
+	// TODO the manager should really tell us which glyphs aren't cached maybe
+	g_meshMaterialMgr.GetGlyphMaterials(runInfo, vGlyphMaterials.data(), vGlyphUvCoords.data());
+
+	matrix3x4_t matTextToWorld, scaleMat, angMat;
+	AngleMatrix(ang, vec3_origin, angMat);
+	SetScaleMatrix(1.f / fontEmSize, scaleMat);
+	MatrixSetColumn(pos, 3, scaleMat);
+	MatrixMultiply(scaleMat, angMat, matTextToWorld);
+
+	const float invFontEmSize = 1.f / fontEmSize;
+	float originX = 0;
+	float originY = 0;
 
 	for (UINT32 i = 0; i < glyphCount; i++)
 	{
+		if (vGlyphMaterials[i])
+		{
+			auto& vdf = GET_VDATA_FACES_CUSTOM_MATERIAL(vGlyphMaterials[i]);
+			// this is probably not correct for vertical text TODO not correct right now
+			auto& metric = vGlyphMetrics[i];
+			// clang-format off
+			std::array<Vector, 4> quad{
+			    Vector{(originX + metric.leftSideBearing) * invFontEmSize,                        (originY + metric.bottomSideBearing) * invFontEmSize, 0},
+			    Vector{(originX + metric.leftSideBearing) * invFontEmSize,                        (originY + metric.topSideBearing), 0},
+			    Vector{(originX + metric.advanceWidth + metric.rightSideBearing) * invFontEmSize, (originY + metric.topSideBearing), 0},
+			    Vector{(originX + metric.advanceWidth + metric.rightSideBearing) * invFontEmSize, (originY + metric.bottomSideBearing) * invFontEmSize, 0},
+			};
+			// clang-format on
+			for (int k = 0; k < 4; k++)
+				utils::VectorTransform(matTextToWorld, quad[k]);
+
+			Assert(!vGlyphUvCoords[i].isSideways); // not handled yet
+			Rect_t texRect = vGlyphUvCoords[i].rect;
+
+			// TODO must I flip vertically?
+			vdf.verts.emplace_back(quad[0], color, texRect.x, texRect.y);
+			vdf.verts.emplace_back(quad[1], color, texRect.x, texRect.y + texRect.height);
+			vdf.verts.emplace_back(quad[2], color, texRect.x + texRect.width, texRect.y + texRect.height);
+			vdf.verts.emplace_back(quad[3], color, texRect.x + texRect.width, texRect.y);
+
+			_AddFacePolygonIndices(vdf, vdf.verts.size() - 4, 4, wd);
+		}
+		// TODO check glyph offset instead of advance?
+		if (isSideways)
+			originX += vGlyphAdvances[i] * (isRightToLeft ? -1 : 1);
+		else
+			originY += vGlyphAdvances[i]; // is this valid for vertical text? who knows...
 	}
+
+	vGlyphMaterials.clear(); // clear to decrement ref count
+
+	// TODO remove me
+	std::array<Vector, 4> quad{
+	    Vector{pos.x + 50, pos.y - 200, pos.z},
+	    Vector{pos.x + 50, pos.y - 300, pos.z},
+	    Vector{pos.x - 50, pos.y - 300, pos.z},
+	    Vector{pos.x - 50, pos.y - 200, pos.z},
+	};
+	auto& vdf = GET_VDATA_FACES_CUSTOM_MATERIAL(g_meshMaterialMgr.glyphAtlases[0].material);
+	vdf.verts.emplace_back(quad[0], color32{255, 255, 255, 255}, 0, 0);
+	vdf.verts.emplace_back(quad[1], color32{255, 255, 255, 255}, 0, 1);
+	vdf.verts.emplace_back(quad[2], color32{255, 255, 255, 255}, 1, 1);
+	vdf.verts.emplace_back(quad[3], color32{255, 255, 255, 255}, 1, 0);
+	_AddFacePolygonIndices(vdf, vdf.verts.size() - 4, 4, wd);
+	AddLineStrip(quad.data(), 4, true, {{255, 255, 255, 255}});
 }
 
 void MeshBuilderDelegate::AddText(const wchar_t* wstr,
