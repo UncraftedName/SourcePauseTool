@@ -191,13 +191,17 @@ void MeshBuilderDelegate::AddText(const wchar_t* wstr, FontInfo fontInfo, const 
 		return;
 	}
 
+	// fontInfo.fontFace->GetMetrics()
+
 	static std::vector<DWRITE_GLYPH_METRICS> vGlyphMetrics;
 	vGlyphMetrics.resize(glyphCount);
 
+	// TODO checkout design glyph advances?
 	hr = fontInfo.fontFace->GetDesignGlyphMetrics(vGlyphIndices.data(),
 	                                              glyphCount,
 	                                              vGlyphMetrics.data(),
 	                                              isSideways);
+
 	if (FAILED(hr))
 	{
 		MsgHResultError(hr, "GetDesignGlyphMetrics() error");
@@ -218,6 +222,7 @@ void MeshBuilderDelegate::AddText(const wchar_t* wstr, FontInfo fontInfo, const 
 	    .isSideways = isSideways,
 	    .bidiLevel = 0,
 	};
+	fontInfo.fontFace->GetMetrics(&runInfo.fontMetrics);
 
 	static std::vector<MaterialRef> vGlyphMaterials;
 	static std::vector<PackedRect> vGlyphUvCoords;

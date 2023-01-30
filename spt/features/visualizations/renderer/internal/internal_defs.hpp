@@ -38,6 +38,7 @@
 * for an IMesh*, you provide not just 1 but a whole interval of meshes, then the builder will automatically fuse
 * consecutive elements and give you one IMesh* object at a time until it's done iterating over that interval.
 */
+// TODO move this^ shit
 
 #pragma once
 

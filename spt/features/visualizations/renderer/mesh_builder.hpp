@@ -110,6 +110,7 @@ struct FontFaceCacheKey
 	};
 };
 
+// TODO yeah we can probably remove this
 struct FontInfo
 {
 	IUnknownRef<IDWriteFont3*> font;
@@ -269,6 +270,7 @@ class CPhysCollide;
 class IPhysicsObject;
 class CBaseEntity;
 
+// TODO move me
 // collide stuff - returned mesh is an array of tris, consider caching and/or using static meshes
 class CreateCollideFeature
 {

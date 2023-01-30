@@ -79,8 +79,8 @@ void GlyphTextureRegenerator::RegenerateTextureBits(ITexture*, IVTFTexture* pVTF
 	for (int i = 0; i < sizeof buf; i++)
 	{
 		textureBuf[i * 4 + 0] = 255;
-		textureBuf[i * 4 + 1] = 255;
-		textureBuf[i * 4 + 2] = 255;
+		textureBuf[i * 4 + 1] = 0;
+		textureBuf[i * 4 + 2] = 0;
 		textureBuf[i * 4 + 3] = buf[i];
 	}
 }
@@ -276,17 +276,18 @@ void MeshBuilderMatMgr::GetGlyphMaterials(const GlyphRunInfo& glyphRunInfo,
 				}
 			}
 
-			glyphAtlases[atlasIdx].DrawGlyphs(glyphRunInfo,
+			// TODO
+			/*glyphAtlases[atlasIdx].DrawGlyphs(glyphRunInfo,
 			                                  indicesForAtlas.data(),
 			                                  glyphRects.data(),
-			                                  indicesForAtlas.size());
+			                                  indicesForAtlas.size());*/
 
 			if (unprocessedIndices.size() == nextUnprocessedIndices.size())
 			{
 				if (freshAtlas)
 				{
 					Warning("spt: couldn't add glyphs to new atlas, is your font size too big?\n");
-					Assert(0);
+					// Assert(0); TODO eee
 					return;
 				}
 				checkCache = false; // the unprocessed glyphs are the same, no need to recheck the cache
@@ -327,21 +328,17 @@ void GlyphAtlas::Init()
 		return;
 	}
 
-	KeyValues* kv = new KeyValues("unlitgeneric");
-	kv->SetInt("$vertexcolor", 1);
-	kv->SetInt("$vertexalpha", 1);
+	char materialName[64];
+	char textureName[64];
 
-	char name[64];
-	snprintf(name,
-	         sizeof name,
-	         "_spt_UnlitTranslucentText_%i_%i_%d",
+	snprintf(textureName,
+	         sizeof textureName,
+	         "_spt_GlyphAtlas_%i_%i_%d",
 	         g_meshMaterialMgr.recreateAtlasCount,
 	         g_meshMaterialMgr.curUsedGlyphAtlases,
 	         (int)time(nullptr));
 
-	material = interfaces::materialSystem->CreateMaterial(name, kv);
-
-	texture = interfaces::materialSystem->CreateProceduralTexture(name,
+	texture = interfaces::materialSystem->CreateProceduralTexture(textureName,
 	                                                              SPT_TEXTURE_GROUP,
 	                                                              GLYPH_ATLAS_SIZE,
 	                                                              GLYPH_ATLAS_SIZE,
@@ -349,6 +346,20 @@ void GlyphAtlas::Init()
 	                                                              TEXTUREFLAGS_CLAMPS | TEXTUREFLAGS_CLAMPT
 	                                                                  | TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD
 	                                                                  | TEXTUREFLAGS_SINGLECOPY);
+
+	snprintf(materialName,
+	         sizeof materialName,
+	         "_spt_UnlitTranslucentText_%i_%i_%d",
+	         g_meshMaterialMgr.recreateAtlasCount,
+	         g_meshMaterialMgr.curUsedGlyphAtlases,
+	         (int)time(nullptr));
+
+	KeyValues* kv = new KeyValues("unlitgeneric");
+	kv->SetInt("$vertexcolor", 1);
+	kv->SetInt("$vertexalpha", 1);
+	kv->SetString("$basetexture", textureName);
+
+	material = interfaces::materialSystem->CreateMaterial(materialName, kv);
 
 	nextUpdateRect = Rect_t{0, 0, 0, 0};
 
@@ -405,6 +416,14 @@ void GlyphAtlas::Init()
 		return;
 	}
 
+	// TODO this doesn't show :////
+	/*pRenderTarget->BeginDraw();
+	pRenderTarget->Clear({255, 255, 255, 0});
+	pRenderTarget->DrawEllipse(D2D1_ELLIPSE{D2D1_POINT_2F{200, 300}, 70, 50}, pBrush, 5);
+	pRenderTarget->EndDraw();
+	nextUpdateRect = Rect_t{0, 0, GLYPH_ATLAS_SIZE, GLYPH_ATLAS_SIZE};
+	g_meshMaterialMgr.texturesNeedUpdate = true;*/
+
 	rectPacker = new StbRectPacker{};
 	rectPacker->Init();
 }
@@ -456,7 +475,7 @@ void GlyphAtlas::DrawGlyphs(const GlyphRunInfo& glyphRunInfo,
 		glyphRun.glyphIndices = glyphRunInfo.glyphIndices + curIdx;
 		glyphRun.glyphAdvances = glyphRunInfo.glyphAdvances + curIdx;
 		glyphRun.glyphOffsets = glyphRunInfo.glyphOffsets + curIdx;
-		
+
 		// it's important that the glyphs are snapped to the nearest integer pixel in the atlas
 		pRenderTarget->DrawGlyphRun(D2D1_POINT_2F(rect.x, rect.y), &glyphRun, pBrush);
 
@@ -483,6 +502,8 @@ void GlyphAtlas::GrowUpdateRect(const PackedRect& packedRect)
 	Assert(!packedRect.isSideways); // not handled yet
 	Assert(packedRect.rect.x >= 0 && packedRect.rect.y >= 0 && packedRect.rect.width >= 0
 	       && packedRect.rect.height >= 0);
+	if (packedRect.rect.width == 0 || packedRect.rect.height == 0)
+		return;
 
 	if (nextUpdateRect.height == 0 || nextUpdateRect.width == 0)
 	{
@@ -497,6 +518,7 @@ void GlyphAtlas::GrowUpdateRect(const PackedRect& packedRect)
 		nextUpdateRect.width = xMax - nextUpdateRect.x;
 		nextUpdateRect.height = yMax - nextUpdateRect.y;
 	}
+	g_meshMaterialMgr.texturesNeedUpdate = true;
 }
 
 #endif

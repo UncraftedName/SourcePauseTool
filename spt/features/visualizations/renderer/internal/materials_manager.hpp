@@ -82,6 +82,7 @@ public:
 struct GlyphRunInfo
 {
 	FontInfo fontInfo;
+	DWRITE_FONT_METRICS fontMetrics;
 	DWRITE_FONT_WEIGHT weight;
 	DWRITE_FONT_STRETCH stretch;
 	DWRITE_FONT_STYLE style;

@@ -291,6 +291,7 @@ void MeshRendererInternal::OnRenderViewPre_Signal(void* thisptr, CViewSetup* cam
 	MeshRendererDelegate renderDelgate{};
 	spt_meshRenderer.signal(renderDelgate);
 	g_inMeshRenderSignal = false;
+	g_meshMaterialMgr.UpdateTextures(); // user (maybe) updated our local buffers; flush to the ITexture objects
 }
 
 void MeshRendererInternal::SetupViewInfo(CRendering3dView* rendering3dView)
@@ -314,7 +315,6 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
-	g_meshMaterialMgr.UpdateTextures();
 
 	// push a new debug slice, the corresponding pop will be in DrawTranslucents
 	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionList);
@@ -330,7 +330,6 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 {
 	VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
-	g_meshMaterialMgr.UpdateTextures();
 
 	static std::vector<MeshComponent> components;
 	CollectRenderableComponents(components, false);

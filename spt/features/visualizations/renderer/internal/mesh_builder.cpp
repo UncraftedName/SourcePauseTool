@@ -35,6 +35,7 @@ MeshVertData& MeshVertData::operator=(MeshVertData&& other)
 		indices = std::move(other.indices);
 		type = other.type;
 		material = other.material;
+		other.material = nullptr;
 	}
 	return *this;
 }
