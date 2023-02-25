@@ -9,6 +9,7 @@
 #include "spt\utils\game_detection.hpp"
 #include "spt\utils\signals.hpp"
 #include "spt\features\ent_props.hpp"
+#include "spt\utils\math.hpp"
 
 using interfaces::engine_server;
 
@@ -36,6 +37,8 @@ ConVar y_spt_draw_portal_env_remote("y_spt_draw_portal_env_remote",
                                     "0",
                                     FCVAR_CHEAT | FCVAR_DONTRECORD,
                                     "Draw geometry from remote portal");
+
+ConVar y_spt_draw_portal_env_quadrant("y_spt_draw_portal_env_quadrant", "0", FCVAR_CHEAT | FCVAR_DONTRECORD);
 
 // clang-format off
 #if 1 // 1 - black outline, 0 - default outline
@@ -147,6 +150,7 @@ public:
 		InitConcommandBase(y_spt_draw_portal_env_type);
 		InitConcommandBase(y_spt_draw_portal_env_ents);
 		InitConcommandBase(y_spt_draw_portal_env_remote);
+		InitConcommandBase(y_spt_draw_portal_env_quadrant);
 
 		y_spt_draw_portal_env_type.InstallChangeCallback(
 		    [](IConVar* var, const char*, float)
@@ -401,6 +405,79 @@ public:
 			};
 			drawEnts(*(CUtlVector<CBaseEntity*>*)(sim + 8684), MC_OWNED_ENTS);
 			drawEnts(*(CUtlVector<CBaseEntity*>*)(sim + 8664), MC_SHADOW_CLONES);
+		}
+
+		float playerViewOffset = y_spt_draw_portal_env_quadrant.GetFloat();
+		if (playerViewOffset != 0)
+		{
+			matrix3x4_t worldToLocal;
+			AngleMatrix(curInfo.ang, curInfo.pos, worldToLocal);
+			for (float xOff = -100; xOff <= 10; xOff += 110.0f / 10)
+			{
+				mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
+				    [xOff, playerViewOffset, &worldToLocal](MeshBuilderDelegate& mb)
+				    {
+					    Vector ptPortalCenter, vPortalForward, vPortalRight, vPortalUp;
+					    MatrixGetColumn(worldToLocal, 0, vPortalForward);
+					    MatrixGetColumn(worldToLocal, 1, vPortalRight);
+					    vPortalRight *= -1;
+					    MatrixGetColumn(worldToLocal, 2, vPortalUp);
+					    MatrixGetColumn(worldToLocal, 3, ptPortalCenter);
+
+					    for (float zOff = -1200; zOff <= 100; zOff += 1300.0f / 25)
+					    {
+						    for (float yOff = -100; yOff <= 1200; yOff += 1300.0f / 25)
+						    {
+							    Vector eyeOrigin{xOff, yOff, zOff};
+							    utils::VectorTransform(worldToLocal, eyeOrigin);
+							    Vector ptPlayerOrigin =
+							        eyeOrigin - Vector{0, 0, playerViewOffset};
+
+							    float fPortalPlaneDist = vPortalForward.Dot(ptPortalCenter);
+							    float fEyeDist =
+							        vPortalForward.Dot(eyeOrigin) - fPortalPlaneDist;
+							    bool bTransformEye = false;
+							    if (fEyeDist < 0.0f && vPortalForward.z < -0.01f)
+							    {
+								    float fOriginDist =
+								        vPortalForward.Dot(ptPlayerOrigin)
+								        - fPortalPlaneDist;
+
+								    if (fOriginDist > 0.0f)
+								    {
+									    float fInvTotalDist =
+									        1.0f
+									        / (fOriginDist
+									           - fEyeDist); //fEyeDist is negative
+									    Vector ptPlaneIntersection =
+									        (eyeOrigin * fOriginDist
+									         * fInvTotalDist)
+									        - (ptPlayerOrigin * fEyeDist
+									           * fInvTotalDist);
+
+									    Vector vIntersectionTest =
+									        ptPlaneIntersection - ptPortalCenter;
+#define PORTAL_HALF_WIDTH 32.0f
+#define PORTAL_HALF_HEIGHT 54.0f
+									    if ((vIntersectionTest.Dot(vPortalRight)
+									         <= PORTAL_HALF_WIDTH)
+									        && (vIntersectionTest.Dot(vPortalUp)
+									            <= PORTAL_HALF_HEIGHT))
+									    {
+										    bTransformEye = true;
+									    }
+								    }
+							    }
+							    mb.AddSphere(eyeOrigin,
+							                 2,
+							                 0,
+							                 MeshColor::Face(
+							                     bTransformEye ? color32{0, 255, 0, 255}
+							                                   : color32{255, 0, 0, 255}));
+						    }
+					    }
+				    }));
+			}
 		}
 	}
 
