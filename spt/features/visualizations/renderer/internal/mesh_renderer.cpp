@@ -511,15 +511,15 @@ void MeshRendererInternal::DrawAll(ConstCompIntrvl fullIntrvl, bool addDebugMesh
 			                             [=](auto& mc) { return (*intrvl.first <=> mc) != 0; });
 
 			// feed the interval that we just found to the builder
-			g_meshBuilderInternal.BeginIMeshCreation(intrvl, true);
+			g_meshBuilderInternal.fuser.BeginIMeshCreation(intrvl, true);
 			IMeshWrapper mw;
-			while (mw = g_meshBuilderInternal.GetNextIMeshWrapper(), mw.iMesh)
+			while (mw = g_meshBuilderInternal.fuser.GetNextIMeshWrapper(), mw.iMesh)
 			{
 				intrvl.first->unitWrapper->Render(mw);
 				if (addDebugMeshes)
 				{
 					AddDebugBox(debugMeshInfo.descriptionSlices.top(),
-					            g_meshBuilderInternal.creationState.fusedIntrvl,
+					            g_meshBuilderInternal.fuser.lastFusedIntrvl,
 					            opaques);
 				}
 			}
