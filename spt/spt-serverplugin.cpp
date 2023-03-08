@@ -67,6 +67,7 @@ namespace interfaces
 	IEngineTrace* engineTraceServer = nullptr;
 	IServerPluginHelpers* pluginHelpers = nullptr;
 	IPhysicsCollision* physicsCollision = nullptr;
+	void* gameConsole = nullptr;
 } // namespace interfaces
 
 ConVar* _viewmodel_fov = nullptr;

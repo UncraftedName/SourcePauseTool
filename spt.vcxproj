@@ -1181,6 +1181,7 @@ copy "$(TargetPath)" "$(IntDir)..\builds\$(TargetFileName)"</Command>
     <ClCompile Include="spt\features\boog.cpp" />
     <ClCompile Include="spt\features\camera.cpp" />
     <ClCompile Include="spt\features\collision_group.cpp" />
+    <ClCompile Include="spt\features\console.cpp" />
     <ClCompile Include="spt\features\cvar.cpp" />
     <ClCompile Include="spt\features\demo.cpp" />
     <ClCompile Include="spt\features\dmomm.cpp" />

@@ -328,6 +328,9 @@
     <ClCompile Include="spt\features\visualizations\renderer\internal\static_mesh.cpp">
       <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClCompile>
+    <ClCompile Include="spt\features\console.cpp">
+      <Filter>spt\features</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
