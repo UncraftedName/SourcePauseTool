@@ -57,27 +57,84 @@ namespace utils
 
 #ifdef SPT_PORTAL_UTILS
 
+#define FLOAT_SPEC "%g"
+
+	template<size_t R, size_t C>
+	static void PrintMatrix(const float (&arr)[R][C])
+	{
+		int fmtLens[R][C]{};
+		int maxLens[C]{};
+		for (int i = 0; i < C; i++)
+		{
+			for (int j = 0; j < R; j++)
+			{
+				fmtLens[j][i] = snprintf(nullptr, 0, FLOAT_SPEC, arr[j][i]);
+				if (fmtLens[j][i] > maxLens[i])
+					maxLens[i] = fmtLens[j][i];
+			}
+		}
+		for (int j = 0; j < R; j++)
+		{
+			for (int i = 0; i < C; i++)
+			{
+				Msg("%*s" FLOAT_SPEC "%s",
+				    maxLens[i] - fmtLens[j][i],
+				    "",
+				    arr[j][i],
+				    i == C - 1 ? (j == R - 1 ? "" : "\n") : ", ");
+			}
+		}
+	}
+
 	void PrintAllPortals()
 	{
-		int maxIndex = interfaces::entList->GetHighestEntityIndex();
+		auto PrintVec = [](Vector* v)
+		{ Msg("<" FLOAT_SPEC ", " FLOAT_SPEC ", " FLOAT_SPEC ">", v->x, v->y, v->z); };
 
-		for (int i = 0; i <= maxIndex; ++i)
+		for (int i = 0; i < MAX_EDICTS; i++)
 		{
-			auto ent = GetClientEntity(i);
-			if (!invalidPortal(ent))
-			{
-				auto& pos = ent->GetAbsOrigin();
-				auto& angles = ent->GetAbsAngles();
-				Msg("%d : %s, position (%.3f, %.3f, %.3f), angles (%.3f, %.3f, %.3f)\n",
-				    i,
-				    ent->GetClientClass()->m_pNetworkName,
-				    pos.x,
-				    pos.y,
-				    pos.z,
-				    angles.x,
-				    angles.y,
-				    angles.z);
-			}
+			edict_t* ed = interfaces::engine_server->PEntityOfEntIndex(i);
+			if (!ed || strcmp(ed->GetClassName(), "prop_portal"))
+				continue;
+			uintptr_t ent = reinterpret_cast<uintptr_t>(ed->GetIServerEntity()->GetBaseEntity());
+			// abs pos/ang
+			Vector* pos = (Vector*)(ent + 0x244);
+			QAngle* ang = (QAngle*)(ent + 0x2c0);
+			// rel pos/ang
+			/*Vector* pos = (Vector*)(ent + 0x2cc);
+			QAngle* ang = (QAngle*)(ent + 0x2d8);*/
+			Vector* f = (Vector*)(ent + 1360);
+			Vector* u = (Vector*)(ent + 1372);
+			Vector* r = (Vector*)(ent + 1364);
+			VPlane* plane = (VPlane*)(ent + 1396);
+			matrix3x4_t* mat = (matrix3x4_t*)(ent + 0x1f4);
+			VMatrix* thisToLinked = (VMatrix*)(ent + 0x430);
+
+			EHANDLE* linked = (EHANDLE*)(ent + 0x42c);
+			bool* activated = (bool*)(ent + 0x470);
+			bool* portal2 = (bool*)(ent + 0x471);
+
+			Msg("\n\n----------------------------------------\n\n[%d] %s %s portal:",
+			    i,
+			    linked->IsValid() ? "open" : (*activated ? "closed" : "invisible"),
+			    *portal2 ? "orange" : "blue");
+			Msg("\npos: ");
+			PrintVec(pos);
+			Msg(", ang: ");
+			PrintVec((Vector*)ang);
+			Msg("\nf: ");
+			PrintVec(f);
+			Msg("\nr: ");
+			PrintVec(r);
+			Msg("\nu: ");
+			PrintVec(u);
+			Msg("\nplane: (n=");
+			PrintVec(&plane->m_Normal);
+			Msg(") d=" FLOAT_SPEC, plane->m_Dist);
+			Msg("\nmat:\n");
+			PrintMatrix(mat->m_flMatVal);
+			Msg("\n\nmat to linked:\n");
+			PrintMatrix(thisToLinked->m);
 		}
 	}
 

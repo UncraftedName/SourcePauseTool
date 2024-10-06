@@ -125,6 +125,10 @@ __declspec(naked) void VAG::HOOKED_EndOfTeleportTouchingEntity()
 */
 void __fastcall VAG::HOOKED_MiddleOfTeleportTouchingEntity_Func(void* portalPtr, void* tpStackPointer)
 {
+	/*unsigned int cur;
+	errno_t err = _controlfp_s(&cur, 0, 0);
+	Msg("fp control word: 0x%x, err: %d\n", cur, err);*/
+
 	if (!spt_vag.ORIG_EndOfTeleportTouchingEntity || !y_spt_prevent_vag_crash.GetBool())
 		return;
 	if (spt_vag.recursiveTeleportCount++ > 2)
