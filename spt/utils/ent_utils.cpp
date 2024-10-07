@@ -6,6 +6,7 @@
 #include <regex>
 #include <sstream>
 #include <vector>
+#include <charconv>
 
 #include "spt\utils\portal_utils.hpp"
 #include "..\sptlib-wrapper.hpp"
@@ -57,18 +58,38 @@ namespace utils
 
 #ifdef SPT_PORTAL_UTILS
 
-#define FLOAT_SPEC "%g"
+#define F_TO_STR_BUF_SIZE 24
+
+	static void PrintVec(const Vector& v)
+	{
+		char buf[(F_TO_STR_BUF_SIZE + 2) * 3];
+		auto cur = buf;
+		auto end = buf + sizeof buf;
+
+		cur++[0] = '<';
+		cur = std::to_chars(cur, end, v.x).ptr;
+		cur++[0] = ',';
+		cur++[0] = ' ';
+		cur = std::to_chars(cur, end, v.y).ptr;
+		cur++[0] = ',';
+		cur++[0] = ' ';
+		cur = std::to_chars(cur, end, v.z).ptr;
+		cur++[0] = '>';
+
+		Msg("%.*s", cur - buf, buf);
+	}
 
 	template<size_t R, size_t C>
 	static void PrintMatrix(const float (&arr)[R][C])
 	{
+		char buf[F_TO_STR_BUF_SIZE];
 		int fmtLens[R][C]{};
 		int maxLens[C]{};
 		for (int i = 0; i < C; i++)
 		{
 			for (int j = 0; j < R; j++)
 			{
-				fmtLens[j][i] = snprintf(nullptr, 0, FLOAT_SPEC, arr[j][i]);
+				fmtLens[j][i] = std::to_chars(buf, buf + sizeof buf, arr[j][i]).ptr - buf;
 				if (fmtLens[j][i] > maxLens[i])
 					maxLens[i] = fmtLens[j][i];
 			}
@@ -77,10 +98,12 @@ namespace utils
 		{
 			for (int i = 0; i < C; i++)
 			{
-				Msg("%*s" FLOAT_SPEC "%s",
+				auto end = std::to_chars(buf, buf + sizeof buf, arr[j][i]).ptr;
+				Msg("%*s%.*s%s",
 				    maxLens[i] - fmtLens[j][i],
 				    "",
-				    arr[j][i],
+				    end - buf,
+				    buf,
 				    i == C - 1 ? (j == R - 1 ? "" : "\n") : ", ");
 			}
 		}
@@ -88,9 +111,6 @@ namespace utils
 
 	void PrintAllPortals()
 	{
-		auto PrintVec = [](Vector* v)
-		{ Msg("<" FLOAT_SPEC ", " FLOAT_SPEC ", " FLOAT_SPEC ">", v->x, v->y, v->z); };
-
 		for (int i = 0; i < MAX_EDICTS; i++)
 		{
 			edict_t* ed = interfaces::engine_server->PEntityOfEntIndex(i);
@@ -105,7 +125,7 @@ namespace utils
 			QAngle* ang = (QAngle*)(ent + 0x2d8);*/
 			Vector* f = (Vector*)(ent + 1360);
 			Vector* u = (Vector*)(ent + 1372);
-			Vector* r = (Vector*)(ent + 1364);
+			Vector* r = (Vector*)(ent + 1384);
 			VPlane* plane = (VPlane*)(ent + 1396);
 			matrix3x4_t* mat = (matrix3x4_t*)(ent + 0x1f4);
 			VMatrix* thisToLinked = (VMatrix*)(ent + 0x430);
@@ -119,18 +139,22 @@ namespace utils
 			    linked->IsValid() ? "open" : (*activated ? "closed" : "invisible"),
 			    *portal2 ? "orange" : "blue");
 			Msg("\npos: ");
-			PrintVec(pos);
+			PrintVec(*pos);
 			Msg(", ang: ");
-			PrintVec((Vector*)ang);
+			PrintVec(*(Vector*)ang);
 			Msg("\nf: ");
-			PrintVec(f);
+			PrintVec(*f);
 			Msg("\nr: ");
-			PrintVec(r);
+			PrintVec(*r);
 			Msg("\nu: ");
-			PrintVec(u);
-			Msg("\nplane: (n=");
-			PrintVec(&plane->m_Normal);
-			Msg(") d=" FLOAT_SPEC, plane->m_Dist);
+			PrintVec(*u);
+
+			char buf[F_TO_STR_BUF_SIZE];
+			auto end = std::to_chars(buf, buf + sizeof buf, plane->m_Dist).ptr;
+			Msg("\nplane: (n=(");
+			PrintVec(plane->m_Normal);
+			Msg("), d=%.*s", end - buf, buf);
+
 			Msg("\nmat:\n");
 			PrintMatrix(mat->m_flMatVal);
 			Msg("\n\nmat to linked:\n");
