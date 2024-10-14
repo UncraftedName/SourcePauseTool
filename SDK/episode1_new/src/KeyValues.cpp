@@ -1746,7 +1746,6 @@ bool KeyValues::LoadFromBuffer( char const *resourceName, CUtlBuffer &buf, IBase
 	CUtlVector< KeyValues * > includedKeys;
 	CUtlVector< KeyValues * > baseKeys;
 	bool wasQuoted;
-	bool wasConditional;
 	g_KeyValuesErrorStack.SetFilename( resourceName );	
 	do 
 	{
