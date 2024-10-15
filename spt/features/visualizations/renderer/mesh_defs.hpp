@@ -2,7 +2,7 @@
 
 #include "spt\features\overlay.hpp"
 
-#if !defined(OE) && defined(SPT_OVERLAY_ENABLED)
+#if defined(SPT_OVERLAY_ENABLED) || defined(OE)
 
 #define SPT_MESH_RENDERING_ENABLED
 

@@ -81,6 +81,18 @@ inline T AlignValue( T val, unsigned alignment )
 #define MAX( a, b ) ( ( ( a ) > ( b ) ) ? ( a ) : ( b ) )
 #endif
 
+#if !defined(_X360)
+FORCEINLINE float fpmin(float a, float b)
+{
+	return (a < b) ? a : b;
+}
+
+FORCEINLINE float fpmax(float a, float b)
+{
+	return (a > b) ? a : b;
+}
+#endif
+
 #ifdef __cplusplus
 	template< class T >
 	inline T clamp( T const &val, T const &minVal, T const &maxVal )

@@ -117,6 +117,37 @@ struct matrix3x4_t
 		m_flMatVal[2][0] = m20;	m_flMatVal[2][1] = m21; m_flMatVal[2][2] = m22; m_flMatVal[2][3] = m23;
 	}
 
+	//-----------------------------------------------------------------------------
+	// Creates a matrix where the X axis = forward
+	// the Y axis = left, and the Z axis = up
+	//-----------------------------------------------------------------------------
+	void Init( const Vector& xAxis, const Vector& yAxis, const Vector& zAxis, const Vector &vecOrigin )
+	{
+		m_flMatVal[0][0] = xAxis.x; m_flMatVal[0][1] = yAxis.x; m_flMatVal[0][2] = zAxis.x; m_flMatVal[0][3] = vecOrigin.x;
+		m_flMatVal[1][0] = xAxis.y; m_flMatVal[1][1] = yAxis.y; m_flMatVal[1][2] = zAxis.y; m_flMatVal[1][3] = vecOrigin.y;
+		m_flMatVal[2][0] = xAxis.z; m_flMatVal[2][1] = yAxis.z; m_flMatVal[2][2] = zAxis.z; m_flMatVal[2][3] = vecOrigin.z;
+	}
+
+	//-----------------------------------------------------------------------------
+	// Creates a matrix where the X axis = forward
+	// the Y axis = left, and the Z axis = up
+	//-----------------------------------------------------------------------------
+	matrix3x4_t( const Vector& xAxis, const Vector& yAxis, const Vector& zAxis, const Vector &vecOrigin )
+	{
+		Init( xAxis, yAxis, zAxis, vecOrigin );
+	}
+
+	inline void Invalidate( void )
+	{
+		for (int i = 0; i < 3; i++)
+		{
+			for (int j = 0; j < 4; j++)
+			{
+				m_flMatVal[i][j] = VEC_T_NAN;
+			}
+		}
+	}
+
 	float *operator[]( int i )				{ Assert(( i >= 0 ) && ( i < 3 )); return m_flMatVal[i]; }
 	const float *operator[]( int i ) const	{ Assert(( i >= 0 ) && ( i < 3 )); return m_flMatVal[i]; }
 	float *Base()							{ return &m_flMatVal[0][0]; }
@@ -345,7 +376,7 @@ extern float (*pfFastCos)(float x);
 #define FastSinCos(x,s,c)   (*pfFastSinCos)(x,s,c)
 #define FastCos(x)			(*pfFastCos)(x)
 
-FORCEINLINE_MATH vec_t InvRSquared(float const* v)
+/*FORCEINLINE_MATH vec_t InvRSquared(float const* v)
 {
 	return (*pfInvRSquared)(v);
 }
@@ -353,7 +384,7 @@ FORCEINLINE_MATH vec_t InvRSquared(float const* v)
 FORCEINLINE_MATH vec_t InvRSquared( const Vector& v )
 {
 	return InvRSquared(&v.x);
-}
+}*/
 
 
 #ifdef PFN_VECTORMA
@@ -365,6 +396,21 @@ template<class T>
 FORCEINLINE_TEMPLATE T Square( T const &a )
 {
 	return a * a;
+}
+
+// return the smallest power of two >= x.
+// returns 0 if x == 0 or x > 0x80000000 (ie numbers that would be negative if x was signed)
+// NOTE: the old code took an int, and if you pass in an int of 0x80000000 casted to a uint,
+//       you'll get 0x80000000, which is correct for uints, instead of 0, which was correct for ints
+FORCEINLINE uint SmallestPowerOfTwoGreaterOrEqual( uint x )
+{
+	x -= 1;
+	x |= x >> 1;
+	x |= x >> 2;
+	x |= x >> 4;
+	x |= x >> 8;
+	x |= x >> 16;
+	return x + 1;
 }
 
 
@@ -436,6 +482,12 @@ void MatrixSetColumn( const Vector &in, int column, matrix3x4_t &out );
 //void DecomposeRotation( const matrix3x4_t &mat, float *out );
 void ConcatRotations (const matrix3x4_t &in1, const matrix3x4_t &in2, matrix3x4_t &out);
 void ConcatTransforms (const matrix3x4_t &in1, const matrix3x4_t &in2, matrix3x4_t &out);
+
+// For identical interface w/ VMatrix
+inline void MatrixMultiply(const matrix3x4_t& in1, const matrix3x4_t& in2, matrix3x4_t& out)
+{
+	ConcatTransforms(in1, in2, out);
+}
 
 void QuaternionSlerp( const Quaternion &p, const Quaternion &q, float t, Quaternion &qt );
 void QuaternionSlerpNoAlign( const Quaternion &p, const Quaternion &q, float t, Quaternion &qt );
@@ -673,7 +725,18 @@ void VectorAngles( const Vector &forward, QAngle &angles );
 void VectorAngles( const Vector &forward, const Vector &pseudoup, QAngle &angles );
 void VectorMatrix( const Vector &forward, matrix3x4_t &mat );
 void VectorVectors( const Vector &forward, Vector &right, Vector &up );
+void SetScaleMatrix(float x, float y, float z, matrix3x4_t& dst);
 void SetIdentityMatrix( matrix3x4_t &mat );
+
+inline void SetScaleMatrix(float flScale, matrix3x4_t& dst)
+{
+	SetScaleMatrix(flScale, flScale, flScale, dst);
+}
+
+inline void SetScaleMatrix(const Vector& scale, matrix3x4_t& dst)
+{
+	SetScaleMatrix(scale.x, scale.y, scale.z, dst);
+}
 
 inline void PositionMatrix( const Vector &position, matrix3x4_t &mat )
 {

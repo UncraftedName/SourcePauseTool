@@ -139,4 +139,22 @@ struct MeshRendererInternal
 
 inline MeshRendererInternal g_meshRendererInternal;
 
+#ifdef OE
+
+// OE doesn't have ref counting for the material context
+class CMatRenderContextPtr
+{
+	IMaterialSystem* sys;
+
+public:
+	CMatRenderContextPtr(IMaterialSystem* sys) : sys{sys} {}
+
+	IMaterialSystem* operator->()
+	{
+		return sys;
+	}
+};
+
+#endif
+
 #endif

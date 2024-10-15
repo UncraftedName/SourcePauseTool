@@ -64,6 +64,11 @@ enum VertexFormatFlags_t
 	USER_DATA_SIZE_MASK = ( 0x7 << USER_DATA_SIZE_BIT ),
 	NUM_TEX_COORD_MASK = ( 0x7 << NUM_TEX_COORD_BIT ),
 	TEX_COORD_SIZE_MASK = ( 0x7 << TEX_COORD_SIZE_BIT ),
+
+	VERTEX_FORMAT_FIELD_MASK = 0x0FF,
+
+	// If everything is off, it's an unknown vertex format
+	VERTEX_FORMAT_UNKNOWN = 0,
 };
 
 

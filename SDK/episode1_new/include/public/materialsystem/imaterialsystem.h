@@ -1131,7 +1131,7 @@ public:
 	virtual void EndPIXEvent() = 0;
 	virtual void SetPIXMarker( unsigned long color, const char *szName ) = 0;
 };
-  
+
 extern IMaterialSystem *materials;
 extern IMaterialSystem *g_pMaterialSystem;
 

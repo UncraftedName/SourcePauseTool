@@ -1,7 +1,5 @@
 #pragma once
 
-#ifndef OE
-
 #include <vector>
 
 /*
@@ -154,5 +152,3 @@ struct VectorSlice
 		pop();
 	}
 };
-
-#endif

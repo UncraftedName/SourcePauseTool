@@ -1,8 +1,9 @@
 #include "stdafx.hpp"
 
 #include "renderer\mesh_renderer.hpp"
+#include "spt\utils\portal_utils.hpp"
 
-#ifdef SPT_MESH_RENDERING_ENABLED
+#if defined(SPT_MESH_RENDERING_ENABLED) && defined(SPT_PORTAL_UTILS)
 
 #include "spt\utils\game_detection.hpp"
 #include "spt\utils\signals.hpp"

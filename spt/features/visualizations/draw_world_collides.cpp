@@ -58,7 +58,11 @@ protected:
 		InitConcommandBase(spt_draw_world_collides_mask);
 
 		spt_draw_world_collides.InstallChangeCallback(
+#ifdef OE
+		    [](ConVar* var, const char* pOldValue)
+#else
 		    [](IConVar* var, const char* pOldValue, auto)
+#endif
 		    {
 			    // changing between 1 & 2 will change the mesh material
 			    if (strcmp(((ConVar*)var)->GetString(), pOldValue))
@@ -143,10 +147,15 @@ private:
 		static utils::CachedField<QAngle, "CBasePlayer", "pl.v_angle", true, true> vangle;
 		QAngle eyeAng = tas_pause.GetBool() ? utils::GetPlayerEyeAngles() : *vangle.GetPtrPlayer();
 
+#ifdef SPT_PORTAL_UTILS
 		// this transform may be slightly off since it uses client-side ents
 		auto env = GetEnvironmentPortal();
 		if (env)
 			transformThroughPortal(env, eyePos, eyeAng, eyePos, eyeAng);
+#else
+		int env = 0;
+		(void)env;
+#endif
 		Vector dir;
 		AngleVectors(eyeAng, &dir);
 
@@ -188,9 +197,11 @@ private:
 			    if (v1.Exists() && v2.Exists())
 			    {
 				    Vector clientEyes = *v1.GetPtrPlayer() + *v2.GetPtrPlayer();
+#ifdef SPT_PORTAL_UTILS
 				    QAngle qa;
 				    if (env)
 					    transformThroughPortal(env, clientEyes, qa, clientEyes, qa);
+#endif
 				    Vector diff = clientEyes - infoIn.cvs.origin;
 				    if (fabsf(diff.x) < 0.01 && fabsf(diff.y) < 0.01 && fabsf(diff.z) < 32)
 					    infoOut.skipRender = true;

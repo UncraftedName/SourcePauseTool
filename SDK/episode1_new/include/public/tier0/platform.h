@@ -258,15 +258,18 @@ typedef void * HINSTANCE;
 
 // decls for aligning data
 #ifdef _WIN32
-	#define ALIGN16 __declspec(align(16))
-	#define ALIGN32 __declspec(align(32))
+#define DECL_ALIGN(x) __declspec(align(x))
+
 #elif _LINUX
-	#define ALIGN16 __attribute__((aligned(16)))
-	#define ALIGN32 __attribute__((aligned(32)))
+#define DECL_ALIGN(x) __attribute__((aligned(x)))
 #else
-	#define ALIGN16 /* */
-	#define ALIGN32 /* */
+#define DECL_ALIGN(x) /* */
 #endif
+
+#define ALIGN8 DECL_ALIGN(8)
+#define ALIGN16 DECL_ALIGN(16)
+#define ALIGN32 DECL_ALIGN(32)
+#define ALIGN128 DECL_ALIGN(128)
 
 #ifdef _WIN32
 	#define SELECTANY __declspec(selectany)

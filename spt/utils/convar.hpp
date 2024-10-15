@@ -171,6 +171,11 @@ struct ArgsWrapper
 	{
 		return interfaces::engine->Cmd_Argv(arg);
 	};
+
+	const char* operator[](int arg) const
+	{
+		return Arg(arg);
+	}
 };
 
 #define _CON_COMMAND_WRAPPER(name) \

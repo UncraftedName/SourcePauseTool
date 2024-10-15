@@ -131,11 +131,19 @@ IMeshWrapper MeshBuilderInternal::Fuser::CreateIMeshFromInterval(ConstCompIntrvl
 
 	IMesh* iMesh;
 	if (dynamic)
+	{
 		iMesh = context->GetDynamicMesh(true, nullptr, nullptr, material);
+	}
 	else
+	{
+#ifdef OE
+		iMesh = context->CreateStaticMesh(material, TEXTURE_GROUP_STATIC_VERTEX_BUFFER_WORLD, material);
+#else
 		iMesh = context->CreateStaticMesh(material->GetVertexFormat() & ~VERTEX_FORMAT_COMPRESSED,
 		                                  TEXTURE_GROUP_STATIC_VERTEX_BUFFER_WORLD,
 		                                  material);
+#endif
+	}
 
 	if (!iMesh)
 	{
@@ -179,8 +187,13 @@ IMeshWrapper MeshBuilderInternal::Fuser::CreateIMeshFromInterval(ConstCompIntrvl
 			pColor[3] = vert.col.a;
 			vertIdx++;
 		}
+#ifdef OE
+		int firstVert = desc.m_FirstVertex;
+#else
+		int firstVert = desc.m_nFirstVertex;
+#endif
 		for (VertIndex vIdx : it->vertData->indices)
-			desc.m_pIndices[idxIdx++] = vIdx + desc.m_nFirstVertex + idxOffset;
+			desc.m_pIndices[idxIdx++] = vIdx + firstVert + idxOffset;
 		idxOffset = vertIdx;
 	}
 	AssertEquals(vertIdx, totalVerts);

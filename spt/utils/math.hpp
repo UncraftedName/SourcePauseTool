@@ -5,6 +5,7 @@
 #include "mathlib\mathlib.h"
 #else
 #include "vector.h"
+#include "mathlib.h"
 #endif
 
 namespace utils
@@ -20,7 +21,5 @@ namespace utils
 	float RandomFloat(float min, float max);
 	void NormalizeQAngle(QAngle& angle);
 	void GetMiddlePoint(const QAngle& angle1, const QAngle& angle2, QAngle& out);
-#ifndef OE
 	void VectorTransform(const matrix3x4_t& mat, Vector& v); // applies mat directly to v
-#endif
 }; // namespace utils
