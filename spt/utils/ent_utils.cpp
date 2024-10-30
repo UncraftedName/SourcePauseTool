@@ -6,7 +6,6 @@
 #include <regex>
 #include <sstream>
 #include <vector>
-#include <charconv>
 
 #include "spt\utils\portal_utils.hpp"
 #include "..\sptlib-wrapper.hpp"
@@ -58,38 +57,23 @@ namespace utils
 
 #ifdef SPT_PORTAL_UTILS
 
-#define F_TO_STR_BUF_SIZE 24
+#define F_FMT "%.9g"
 
 	static void PrintVec(const Vector& v)
 	{
-		char buf[(F_TO_STR_BUF_SIZE + 2) * 3];
-		auto cur = buf;
-		auto end = buf + sizeof buf;
-
-		cur++[0] = '<';
-		cur = std::to_chars(cur, end, v.x).ptr;
-		cur++[0] = ',';
-		cur++[0] = ' ';
-		cur = std::to_chars(cur, end, v.y).ptr;
-		cur++[0] = ',';
-		cur++[0] = ' ';
-		cur = std::to_chars(cur, end, v.z).ptr;
-		cur++[0] = '>';
-
-		Msg("%.*s", cur - buf, buf);
+		Msg(F_FMT " " F_FMT " " F_FMT, v.x, v.y, v.z);
 	}
 
 	template<size_t R, size_t C>
 	static void PrintMatrix(const float (&arr)[R][C])
 	{
-		char buf[F_TO_STR_BUF_SIZE];
 		int fmtLens[R][C]{};
 		int maxLens[C]{};
 		for (int i = 0; i < C; i++)
 		{
 			for (int j = 0; j < R; j++)
 			{
-				fmtLens[j][i] = std::to_chars(buf, buf + sizeof buf, arr[j][i]).ptr - buf;
+				fmtLens[j][i] = snprintf(nullptr, 0, F_FMT, arr[j][i]);
 				if (fmtLens[j][i] > maxLens[i])
 					maxLens[i] = fmtLens[j][i];
 			}
@@ -98,12 +82,10 @@ namespace utils
 		{
 			for (int i = 0; i < C; i++)
 			{
-				auto end = std::to_chars(buf, buf + sizeof buf, arr[j][i]).ptr;
-				Msg("%*s%.*s%s",
+				Msg("%*s" F_FMT "%s",
 				    maxLens[i] - fmtLens[j][i],
 				    "",
-				    end - buf,
-				    buf,
+				    arr[j][i],
 				    i == C - 1 ? (j == R - 1 ? "" : "\n") : ", ");
 			}
 		}
@@ -149,11 +131,9 @@ namespace utils
 			Msg("\nu: ");
 			PrintVec(*u);
 
-			char buf[F_TO_STR_BUF_SIZE];
-			auto end = std::to_chars(buf, buf + sizeof buf, plane->m_Dist).ptr;
-			Msg("\nplane: (n=(");
+			Msg("\nplane: n=(");
 			PrintVec(plane->m_Normal);
-			Msg("), d=%.*s", end - buf, buf);
+			Msg("), d=" F_FMT, plane->m_Dist);
 
 			Msg("\nmat:\n");
 			PrintMatrix(mat->m_flMatVal);
