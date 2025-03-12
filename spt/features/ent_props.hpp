@@ -2,6 +2,7 @@
 
 #include "..\feature.hpp"
 #include "datamap_wrapper.hpp"
+#include "spt\utils\ent_list.hpp"
 
 enum class PropMode
 {
@@ -67,7 +68,6 @@ public:
 	PropMode ResolveMode(PropMode mode);
 	void PrintDatamaps();
 	void WalkDatamap(std::string key);
-	void* GetPlayer(bool server);
 
 protected:
 	bool tablesProcessed = false;
@@ -136,32 +136,34 @@ namespace utils
 
 	/*
 	* A small wrapper of spt_entprops.GetFieldOffset() that caches the offset.
-	* Always asserts that the field exists. Optionally, calls Error() if it does not.
+	* Optionally, calls Assert() & Error() if the field does not exist.
 	* additionalOffset can be used when the exact field you're looking for does not exist;
 	* you can instead reference a nearby field and add an offset from that in bytes.
 	*/
-	template<typename T, _tstring map, _tstring field, bool server, bool error, int additionalOffset = 0>
+	template<typename T, _tstring map, _tstring field, bool server, bool error = false, int additionalOffset = 0>
 	struct CachedField
 	{
 		int _off = INVALID_DATAMAP_OFFSET;
 
 		int Get()
 		{
-			if (_off != INVALID_DATAMAP_OFFSET)
+			if (_off != INVALID_DATAMAP_OFFSET) [[likely]]
 				return _off + additionalOffset;
 			_off = spt_entprops.GetFieldOffset(map.val, field.val, server);
 			if (_off == INVALID_DATAMAP_OFFSET)
 			{
-				char errStr[256];
-				snprintf(errStr,
-				         sizeof(errStr),
-				         "spt: %s::%s (%s) does not exist",
-				         map.val,
-				         field.val,
-				         (server) ? "server" : "client");
-				AssertMsg1(0, "%s", errStr);
 				if (error)
+				{
+					char errStr[256];
+					snprintf(errStr,
+					         sizeof(errStr),
+					         "spt: %s::%s (%s) does not exist",
+					         map.val,
+					         field.val,
+					         server ? "server" : "client");
+					AssertMsg1(0, "%s", errStr);
 					Error("%s", errStr);
+				}
 				return INVALID_DATAMAP_OFFSET;
 			}
 			else
@@ -177,17 +179,49 @@ namespace utils
 
 		T* GetPtr(const void* ent)
 		{
-			Assert(ent);
-			if (!ent)
-				return nullptr;
-			if (!Exists())
+			if (!ent || !Exists()) [[unlikely]]
 				return nullptr;
 			return reinterpret_cast<T*>(reinterpret_cast<uint32_t>(ent) + _off + additionalOffset);
 		}
 
 		T* GetPtrPlayer()
 		{
-			return GetPtr(spt_entprops.GetPlayer(server));
+			if constexpr (server)
+				return GetPtr(utils::spt_serverEntList.GetPlayer());
+			return GetPtr(utils::spt_clientEntList.GetPlayer());
+		}
+	};
+
+	/*
+	* Usage:
+	* static CachedField1<...> f1;
+	* static CachedField1<...> f2;
+	* static CachedField1<...> f3;
+	* 
+	* static CachedFields fs{f1, f2, f3};
+	* if (!fs.HasAll()) return; // or whatever
+	* auto [p1, p2, p3] = fs.GetAllPtrs(ent);
+	*/
+	template<typename... Fields>
+	struct CachedFields
+	{
+		std::tuple<Fields&...> _fields;
+
+		CachedFields(Fields&... fields) : _fields{fields...} {}
+
+		bool HasAll()
+		{
+			return (std::get<Fields&>(_fields).Exists() && ...);
+		}
+
+		auto GetAllPtrs(const void* ent)
+		{
+			return std::make_tuple(std::get<Fields&>(_fields).GetPtr(ent)...);
+		}
+
+		auto GetAllPtrsPlayer()
+		{
+			return std::make_tuple(std::get<Fields&>(_fields).GetPtrPlayer()...);
 		}
 	};
 } // namespace utils

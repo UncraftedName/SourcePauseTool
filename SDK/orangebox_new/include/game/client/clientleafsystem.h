@@ -84,7 +84,7 @@ struct SetupRenderInfo_t
 	bool m_bDrawDetailObjects : 1;
 	bool m_bDrawTranslucentObjects : 1;
 
-	SetupRenderInfo_t::SetupRenderInfo_t()
+	SetupRenderInfo_t()
 	{
 		m_bDrawDetailObjects = true;
 		m_bDrawTranslucentObjects = true;

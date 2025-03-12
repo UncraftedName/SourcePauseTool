@@ -845,7 +845,8 @@ void InputHud::DrawInputHud()
 			// Movement
 			Vector movement = inputMovement;
 			int movementSpeed = movement.Length();
-			float maxSpeed = spt_propertyGetter.GetProperty<float>(0, "m_flMaxspeed");
+			static utils::CachedField<bool, "C_BaseHLPlayer", "m_fIsSprinting", false, true> fSprinting;
+			float maxSpeed = fSprinting.GetPtrPlayer() ? *fSprinting.GetPtrPlayer() : 0.f;
 			movement /= movementSpeed > maxSpeed ? movementSpeed : maxSpeed;
 
 			// Draw

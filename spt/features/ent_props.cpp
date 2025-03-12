@@ -12,6 +12,13 @@
 #include "SPTLib\patterns.hpp"
 #include "visualizations/imgui/imgui_interface.hpp"
 #include "thirdparty/imgui/imgui_internal.h"
+#include "spt/utils/ent_list.hpp"
+
+#undef CLIENT_DLL
+#define SERVER_DLL
+#include "util.h"
+#include "predictioncopy.h"
+#include "ServerNetworkProperty.h"
 
 #include <string>
 #include <unordered_map>
@@ -105,25 +112,6 @@ int EntProps::GetPlayerOffset(const std::string& key, bool server)
 		return playermap->GetClientOffset(key);
 }
 
-void* EntProps::GetPlayer(bool server)
-{
-	if (server)
-	{
-		if (!interfaces::engine_server)
-			return nullptr;
-
-		auto edict = interfaces::engine_server->PEntityOfEntIndex(1);
-		if (!edict || (uint32_t)edict == 0xFFFFFFFF)
-			return nullptr;
-
-		return edict->GetUnknown();
-	}
-	else
-	{
-		return interfaces::entList->GetClientEntity(1);
-	}
-}
-
 int EntProps::GetFieldOffset(const std::string& mapKey, const std::string& key, bool server)
 {
 	auto map = GetDatamapWrapper(mapKey);
@@ -195,8 +183,8 @@ static bool DoesMapLookValid(datamap_t* map, uint8_t* moduleStart, std::size_t l
 
 PropMode EntProps::ResolveMode(PropMode mode)
 {
-	auto svplayer = GetPlayer(true);
-	auto clplayer = GetPlayer(false);
+	auto svplayer = utils::spt_serverEntList.GetPlayer();
+	auto clplayer = utils::spt_clientEntList.GetPlayer();
 
 	switch (mode)
 	{
@@ -402,9 +390,51 @@ CON_COMMAND(y_spt_canjb, "Tests if player can jumpbug on a given height, with th
 		Msg("No, missed by %.6f in %d ticks.\n", can.landingHeight - height, can.ticks);
 }
 
-CON_COMMAND(y_spt_print_ents, "Prints all client entity indices and their corresponding classes.")
+CON_COMMAND(y_spt_print_ents, "Prints all entity indices and their corresponding classes.")
 {
-	utils::PrintAllClientEntities();
+	auto& serverEnts = utils::spt_serverEntList.GetEntList();
+	auto& clientEnts = utils::spt_clientEntList.GetEntList();
+
+	if (serverEnts.empty() && clientEnts.empty())
+	{
+		Msg("no entities\n");
+		return;
+	}
+
+	auto serverIt = serverEnts.cbegin();
+	auto clientIt = clientEnts.cbegin();
+
+	for (;;)
+	{
+		bool hasServerEnt = serverIt < serverEnts.cend();
+		bool hasClientEnt = clientIt < clientEnts.cend();
+		if (!hasServerEnt && !hasClientEnt)
+			break;
+
+		int serverIdx = hasServerEnt ? (**serverIt).GetRefEHandle().GetEntryIndex() : INT_MAX;
+		int clientIdx = hasClientEnt ? (**clientIt).GetRefEHandle().GetEntryIndex() : INT_MAX;
+		const char* serverName = hasServerEnt ? utils::spt_serverEntList.EntClassName(*serverIt) : "<null>";
+		serverName = serverName ? serverName : "<null>";
+		const char* clientName = hasClientEnt ? utils::spt_clientEntList.EntClassName(*clientIt) : "<null>";
+		clientName = clientName ? clientName : "<null>";
+
+		if (serverIdx == clientIdx)
+		{
+			Msg("[%4d]; SERVER : %s, CLIENT : %s\n", serverIdx, serverName, clientName);
+			++serverIt;
+			++clientIt;
+		}
+		else if (serverIdx < clientIdx)
+		{
+			Msg("%4d; SERVER : %s\n", serverIdx, serverName);
+			++serverIt;
+		}
+		else
+		{
+			Msg("%4d; CLIENT : %s\n", clientIdx, clientName);
+			++clientIt;
+		}
+	}
 }
 
 CON_COMMAND(y_spt_print_ent_props, "Prints all props for a given entity index.")
@@ -415,7 +445,7 @@ CON_COMMAND(y_spt_print_ent_props, "Prints all props for a given entity index.")
 	}
 	else
 	{
-		utils::PrintAllProps(std::stoi(args.Arg(1)));
+		utils::PrintAllProps(atoi(args.Arg(1)));
 	}
 }
 
@@ -443,10 +473,7 @@ void EntProps::LoadFeature()
 		bool hudEnabled = AddHudCallback(
 		    "portal_bubble",
 		    [this](std::string)
-		    {
-			    int in_bubble = GetEnvironmentPortal() != NULL;
-			    spt_hud_feat.DrawTopHudElement(L"portal bubble: %d", in_bubble);
-		    },
+		    { spt_hud_feat.DrawTopHudElement(L"portal bubble: %d", !!utils::GetEnvironmentPortal()); },
 		    y_spt_hud_portal_bubble);
 
 		if (hudEnabled)
@@ -556,7 +583,7 @@ void EntProps::ImGuiEntInfoCvarCallback(ConVar& var)
 			SptImGui::BeginBordered();
 
 			long long entIndex = atoll(oldVal + i);
-			IClientEntity* ent = utils::GetClientEntity(entIndex);
+			IClientEntity* ent = utils::spt_clientEntList.GetEnt(entIndex);
 			nRegexesForEnt = 0;
 
 			if (SptImGui::InputTextInteger("entity index,", "", entIndex, 10))
@@ -584,7 +611,7 @@ void EntProps::ImGuiEntInfoCvarCallback(ConVar& var)
 				* Jump ahead to the next entity. Note that we still entered the ID & indent scope
 				* for this entity - that will be popped in the next loop. This jump means that the
 				* newVal will not get any data (including the index) associated with this entity.
-				* There does cause one broken frame because the button for the ent deletion must
+				* This does cause one broken frame because the button for the ent deletion must
 				* exist but I don't draw the regexes for that entity. This is fixable but I cbf.
 				*/
 				while (nextSepIdx < len && oldVal[nextSepIdx] != ENT_SEPARATOR)
@@ -655,18 +682,18 @@ void EntProps::ImGuiEntInfoCvarCallback(ConVar& var)
 
 void** _InternalPlayerField::GetServerPtr() const
 {
-	auto serverplayer = reinterpret_cast<uintptr_t>(spt_entprops.GetPlayer(true));
+	auto serverplayer = utils::spt_serverEntList.GetPlayer();
 	if (serverplayer && serverOffset != utils::INVALID_DATAMAP_OFFSET)
-		return reinterpret_cast<void**>(serverplayer + serverOffset);
+		return reinterpret_cast<void**>(reinterpret_cast<uint32_t>(serverplayer) + serverOffset);
 	else
 		return nullptr;
 }
 
 void** _InternalPlayerField::GetClientPtr() const
 {
-	auto clientPlayer = reinterpret_cast<uintptr_t>(spt_entprops.GetPlayer(false));
+	auto clientPlayer = utils::spt_clientEntList.GetPlayer();
 	if (clientPlayer && clientOffset != utils::INVALID_DATAMAP_OFFSET)
-		return reinterpret_cast<void**>(clientPlayer + clientOffset);
+		return reinterpret_cast<void**>(reinterpret_cast<uint32_t>(clientPlayer) + clientOffset);
 	else
 		return nullptr;
 }

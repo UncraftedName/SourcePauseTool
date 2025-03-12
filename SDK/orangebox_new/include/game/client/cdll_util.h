@@ -136,7 +136,8 @@ private:
 // creates an entity by name, and ensure it's correctness
 // does not spawn the entity
 // use the CREATE_ENTITY() macro which wraps this, instead of using it directly
-template< class T >
+// uncrafted - commented out
+/*template<class T>
 T *_CreateEntity( T *newClass, const char *className )
 {
 	T *newEnt = dynamic_cast<T*>( CreateEntityByName(className) );
@@ -147,7 +148,7 @@ T *_CreateEntity( T *newClass, const char *className )
 	}
 
 	return newEnt;
-}
+}*/
 
 #define CREATE_ENTITY( newClass, className ) _CreateEntity( (newClass*)NULL, className )
 #define CREATE_UNSAVED_ENTITY( newClass, className ) _CreateEntityTemplate( (newClass*)NULL, className )

@@ -30,12 +30,17 @@ ConVar _y_spt_overlay_type("_y_spt_overlay_type",
                            "  1 = angle glitch simulation\n"
                            "  2 = rear view mirror\n"
                            "  3 = havok view mirror\n"
-                           "  4 = no camera transform (even when behind SG portal)\n");
+                           "  4 = no camera transform (even when behind SG portal)\n",
+                           true,
+                           0,
+                           true,
+                           4);
 ConVar _y_spt_overlay_portal(
     "_y_spt_overlay_portal",
-    "auto",
+    "env",
     FCVAR_CHEAT,
-    "Chooses the portal for the overlay camera. Valid options are blue/orange/portal index. For the SG camera this is the portal you save glitch on, for angle glitch simulation this is the portal you enter.\n");
+    "Chooses the portal for the overlay camera. For the SG camera this is the portal you save glitch on, for angle glitch simulation this is the portal you enter.\n" SPT_PORTAL_SELECT_DESCRIPTION_AUTO
+        SPT_PORTAL_SELECT_DESCRIPTION);
 ConVar _y_spt_overlay_width("_y_spt_overlay_width",
                             "480",
                             FCVAR_CHEAT,
@@ -81,6 +86,11 @@ namespace patterns
 	         "55 8B EC 81 EC DC 02 00 00 A1 ?? ?? ?? ?? 33 C5 89 45 FC 53 8B 5D 08 56 8B F1");
 	PATTERNS(CViewRender__RenderView_4044, "4044", "81 EC 98 00 00 00 53 55 56 57 6A 00 6A 00");
 } // namespace patterns
+
+const utils::PortalInfo* Overlay::GetOverlayPortal()
+{
+	return getPortal(_y_spt_overlay_portal.GetString(), false, false);
+}
 
 void Overlay::InitHooks()
 {
@@ -283,11 +293,11 @@ void Overlay::ModifyView(CViewSetup* renderView)
 #ifdef SPT_PORTAL_UTILS
 		case 0: // saveglitch offset
 			if (utils::DoesGameLookLikePortal())
-				calculateSGPosition(renderView->origin, renderView->angles);
+				calculateSGPosition(GetOverlayPortal(), renderView->origin, renderView->angles);
 			break;
 		case 1: // angle glitch tp pos
 			if (utils::DoesGameLookLikePortal())
-				calculateAGPosition(renderView->origin, renderView->angles);
+				calculateAGPosition(GetOverlayPortal(), renderView->origin, renderView->angles);
 			break;
 #endif
 		case 2: // rear view cam
@@ -302,6 +312,7 @@ void Overlay::ModifyView(CViewSetup* renderView)
 			renderView->angles = utils::GetPlayerEyeAngles();
 			break;
 		default:
+			Assert(0);
 			break;
 		}
 		// normalize yaw

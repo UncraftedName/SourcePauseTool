@@ -815,8 +815,9 @@ protected:
 	int		GetIndexForThinkContext( const char *pszContext );
 	CUtlVector< thinkfunc_t >	m_aThinkFunctions;
 
+	// uncrafted - THIS IS HORRIBLE TO HAVE IN THE SDK AHHHHHHH
 #ifdef _DEBUG
-	int							m_iCurrentThinkContext;
+	// int							m_iCurrentThinkContext;
 #endif
 
 	void RemoveExpiredConcepts( void );

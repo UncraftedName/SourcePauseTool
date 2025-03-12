@@ -9,6 +9,7 @@
 #include "iserverunknown.h"
 #include "trace.h"
 
+// TODO remove me
 #define INDEX_MASK (MAX_EDICTS - 1)
 
 namespace utils
@@ -24,20 +25,11 @@ namespace utils
 	};
 
 	void GetAllProps(RecvTable* table, void* ptr, std::vector<propValue>& props);
-	IClientEntity* GetClientEntity(int index);
-	void PrintAllClientEntities();
-	IClientEntity* GetPlayer();
-	const char* GetModelName(IClientEntity* ent);
 	void PrintAllProps(int index);
-	Vector GetPortalPosition(IClientEntity* ent);
-	QAngle GetPortalAngles(IClientEntity* ent);
 	Vector GetPlayerEyePosition();
 	QAngle GetPlayerEyeAngles();
-	IClientEntity* FindLinkedPortal(IClientEntity* ent);
 	int FillInfoArray(std::string argString, wchar* arr, int maxEntries, int bufferSize, char sep, char entSep);
 	void SimulateFrames(int frames);
-	int GetIndex(void* ent);
-	IServerUnknown* GetServerPlayer();
 	struct JBData
 	{
 		bool canJB;
@@ -46,7 +38,6 @@ namespace utils
 	};
 
 	JBData CanJB(float height);
-	bool playerEntityAvailable();
 	bool GetPunchAngleInformation(QAngle& punchAngle, QAngle& punchAngleVel);
 #if !defined(OE)
 	void CheckPiwSave();

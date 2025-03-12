@@ -855,16 +855,17 @@ void HopsHud::OnInput(uintptr_t pCmd)
 
 void HopsHud::CalculateAbhVel()
 {
+	static utils::CachedField<bool, "C_BaseHLPlayer", "m_fIsSprinting", false, true> fSprinting;
+
 	auto vel = spt_playerio.GetPlayerVelocity().Length2D();
 	auto ducked = spt_playerio.m_fFlags.GetValue() & FL_DUCKING;
-	auto sprinting = spt_propertyGetter.GetProperty<bool>(0, "m_fIsSprinting");
 	auto vars = spt_playerio.GetMovementVars();
 
 	float modifier;
 
 	if (ducked)
 		modifier = 0.1;
-	else if (sprinting)
+	else if (fSprinting.GetPtrPlayer() && *fSprinting.GetPtrPlayer())
 		modifier = 0.5;
 	else
 		modifier = 1;
