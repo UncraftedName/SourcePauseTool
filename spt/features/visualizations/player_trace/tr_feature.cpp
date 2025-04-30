@@ -7,6 +7,7 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
+#include "tr_imgui_cache.hpp"
 #include "tr_import_export.hpp"
 
 #include "signals.hpp"
@@ -45,6 +46,7 @@ private:
 	void OnFinishRestoreSignal(void*);
 	void OnMeshRenderSignal(MeshRendererDelegate& mr);
 	void OnHudCallback();
+	void ImGuiCallback();
 };
 
 static PlayerTraceFeature spt_player_trace_feat;
@@ -227,6 +229,8 @@ void PlayerTraceFeature::LoadFeature()
 		    if (!((ConVar*)var)->GetBool())
 			    spt_player_trace_feat.tr.StopRendering();
 	    });
+
+	SptImGuiGroup::PlayerTrace.RegisterUserCallback([this]() { ImGuiCallback(); });
 }
 
 void PlayerTraceFeature::UnloadFeature()
@@ -317,6 +321,11 @@ void PlayerTraceFeature::OnHudCallback()
 	}
 
 	spt_hud_feat.DrawTopHudElement(L"Trace memory usage: %.*f%s", i > 0 ? 2 : 0, displayUsage, suffixes[i]);
+}
+
+void PlayerTraceFeature::ImGuiCallback()
+{
+	tr.GetImGuiCache().PlotTrace();
 }
 
 bool SptGetActiveTracePos(Vector& pos, QAngle& ang, float& fov)

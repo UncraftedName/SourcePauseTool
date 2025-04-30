@@ -189,6 +189,9 @@ namespace SptImGuiGroup
 	inline Section Draw_Misc_Seams{"Seamshots", &Draw_Misc};
 	inline Section Draw_Misc_LeafVis{"Leaf vis", &Draw_Misc};
 
+	// player trace
+	inline Tab PlayerTrace{"Player trace", &Root};
+
 	// quality of life and/or purely visual stuff
 	inline Tab QoL{"QoL", &Root};
 	inline Section QoL_Demo{"Demo utils", &QoL};

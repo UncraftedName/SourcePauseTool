@@ -2,6 +2,7 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
+#include "tr_imgui_cache.hpp"
 
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/map_utils.hpp"
@@ -24,6 +25,8 @@ void TrPlayerTrace::Clear()
 {
 	recordingCache.reset();
 	renderingCache.reset();
+	imguiCache.reset();
+
 	std::apply([](auto&... vecs) { ((vecs.clear(), vecs.shrink_to_fit()), ...); }, _storage);
 	numRecordedTicks = 0;
 
@@ -123,6 +126,19 @@ TrRecordingCache& TrPlayerTrace::GetRecordingCache()
 	return *recordingCache;
 }
 
+TrImGuiCache& TrPlayerTrace::GetImGuiCache()
+{
+	if (!imguiCache)
+		imguiCache = std::make_unique<TrImGuiCache>(*this);
+	imguiCache->tr = this; // std::move hack
+	return *imguiCache;
+}
+
+void TrPlayerTrace::StopRenderingImGui()
+{
+	imguiCache.reset();
+}
+
 void TrPlayerTrace::CollectServerState(bool hostTickSimulating)
 {
 	int newServerTick = interfaces::engine_tool->ServerTick();
@@ -196,13 +212,15 @@ void TrPlayerTrace::CollectPlayerData()
 		IPhysicsObject* playerPhysObj = spt_collideToMesh.GetPhysObj(serverPlayer);
 		if (playerPhysObj)
 		{
-			Vector vPos;
+			Vector vPos, vVel;
 			QAngle vAng;
 			playerPhysObj->GetPosition(&vPos, &vAng);
 			data.transVPhysIdx = rc.GetCachedIdx(TrTransform_v1{
 			    rc.GetCachedIdx(vPos),
 			    rc.GetCachedIdx(vAng),
 			});
+			playerPhysObj->GetVelocity(&vVel, nullptr);
+			data.vVelIdx = rc.GetCachedIdx(vVel);
 
 			// contact points
 

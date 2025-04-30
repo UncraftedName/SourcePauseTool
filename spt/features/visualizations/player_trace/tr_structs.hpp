@@ -353,10 +353,12 @@ namespace player_trace
 		char _pad[3];
 	};
 
+	// TODO TODO TODO AHGHHHHHHHHH update to v2 (scream at me if you see this comment)
 	struct TrPlayerData_v1
 	{
 		uint32_t tick;
 		TrIdx<Vector> qPosIdx, qVelIdx;
+		TrIdx<Vector> vVelIdx;
 		TrIdx<TrTransform_v1> transEyesIdx, transSgEyesIdx, transVPhysIdx;
 		TrSpan<TrIdx<TrPlayerContactPoint_v1>> contactPtsSp;
 
@@ -392,6 +394,7 @@ namespace player_trace
 
 	class TrRecordingCache;
 	class TrRenderingCache;
+	class TrImGuiCache;
 
 	/*
 	* Behold all the data in the player trace. Everything that is stored inside the struct is all
@@ -448,6 +451,7 @@ namespace player_trace
 
 		std::unique_ptr<TrRecordingCache> recordingCache;
 		std::unique_ptr<TrRenderingCache> renderingCache;
+		std::unique_ptr<TrImGuiCache> imguiCache;
 
 	public:
 		uint32_t numRecordedTicks = 0;
@@ -488,9 +492,10 @@ namespace player_trace
 			return renderingCache.get();
 		}
 
-		void StopRendering();
-
 		TrRenderingCache& GetRenderingCache();
+		void StopRendering();
+		TrImGuiCache& GetImGuiCache();
+		void StopRenderingImGui();
 
 		size_t GetMemoryUsage() const
 		{

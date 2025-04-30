@@ -94,7 +94,7 @@ namespace player_trace
 	TR_REGISTER_LUMP(TrMap_v1, "map", 1);
 	TR_REGISTER_LUMP(TrMapTransition_v1, "map_transition", 1);
 	TR_REGISTER_LUMP(TrLandmark_v1, "landmark", 1);
-	TR_REGISTER_LUMP(TrPlayerData_v1, "player_data", 1);
+	TR_REGISTER_LUMP(TrPlayerData_v1, "player_data", 2);
 	TR_REGISTER_LUMP(TrPlayerContactPoint_v1, "contact_point", 1);
 	TR_REGISTER_LUMP(TrIdx<TrPlayerContactPoint_v1>, "contact_point_idx", 0);
 
