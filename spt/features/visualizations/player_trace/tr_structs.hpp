@@ -532,6 +532,7 @@ namespace player_trace
 
 	class TrRecordingCache;
 	class TrRenderingCache;
+	class TrImGuiCache;
 
 	/*
 	* Behold all the data in the player trace. Everything that is stored inside the struct is all
@@ -588,6 +589,7 @@ namespace player_trace
 
 		std::unique_ptr<TrRecordingCache> recordingCache;
 		std::unique_ptr<TrRenderingCache> renderingCache;
+		std::unique_ptr<TrImGuiCache> imguiCache;
 
 	public:
 		tr_tick numRecordedTicks = 0;
@@ -628,9 +630,15 @@ namespace player_trace
 			return renderingCache.get();
 		}
 
-		void StopRendering();
+		bool HasImGuiCache() const
+		{
+			return imguiCache.get();
+		}
 
 		TrRenderingCache& GetRenderingCache();
+		void StopRendering();
+		TrImGuiCache& GetImGuiCache();
+		void StopRenderingImGui();
 
 		size_t GetMemoryUsage() const
 		{

@@ -445,6 +445,9 @@
     <ClCompile Include="spt\features\visualizations\player_trace\import_export\tr_binary_compress.cpp">
       <Filter>spt\features\visualizations\player_trace\import_export</Filter>
     </ClCompile>
+    <ClCompile Include="spt\features\visualizations\player_trace\tr_imgui_cache.cpp">
+      <Filter>spt\features\visualizations\player_trace</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -950,6 +953,9 @@
     </ClInclude>
     <ClInclude Include="thirdparty\implot\implot_internal.h">
       <Filter>thirdparty\implot</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\visualizations\player_trace\tr_imgui_cache.hpp">
+      <Filter>spt\features\visualizations\player_trace</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

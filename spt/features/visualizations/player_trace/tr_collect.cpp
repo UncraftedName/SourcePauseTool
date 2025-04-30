@@ -2,6 +2,7 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
+#include "tr_imgui_cache.hpp"
 
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/map_utils.hpp"
@@ -24,6 +25,8 @@ void TrPlayerTrace::Clear()
 {
 	recordingCache.reset();
 	renderingCache.reset();
+	imguiCache.reset();
+
 	std::apply([](auto&... vecs) { ((vecs.clear(), vecs.shrink_to_fit()), ...); }, _storage);
 	numRecordedTicks = 0;
 
@@ -120,6 +123,19 @@ TrRecordingCache& TrPlayerTrace::GetRecordingCache()
 {
 	recordingCache->tr = this; // std::move hack
 	return *recordingCache;
+}
+
+TrImGuiCache& TrPlayerTrace::GetImGuiCache()
+{
+	if (!imguiCache)
+		imguiCache = std::make_unique<TrImGuiCache>(*this);
+	imguiCache->tr = this; // std::move hack
+	return *imguiCache;
+}
+
+void TrPlayerTrace::StopRenderingImGui()
+{
+	imguiCache.reset();
 }
 
 void TrPlayerTrace::CollectServerState(bool hostTickSimulating)

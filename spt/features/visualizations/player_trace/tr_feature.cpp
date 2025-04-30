@@ -7,6 +7,7 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
+#include "tr_imgui_cache.hpp"
 #include "import_export/tr_binary_compress.hpp"
 
 #include "signals.hpp"
@@ -42,10 +43,15 @@ private:
 	// TODO log FCPS & teleports reasons
 	TrSegmentReason deferredSegmentReason = TR_SR_NONE;
 
+	void ClampActiveTick();
 	void OnTickSignal(bool simulating);
 	void OnFinishRestoreSignal(void*);
 	void OnMeshRenderSignal(MeshRendererDelegate& mr);
 	void OnHudCallback();
+	static void ImGuiTabCallback();
+	static void ImGuiWindowCallback();
+	inline static bool imGuiActive = false;
+	inline static int imGuiWindowCallbackCalledNFramesWithoutTabCallback = 0;
 };
 
 static PlayerTraceFeature spt_player_trace_feat;
@@ -236,12 +242,16 @@ void PlayerTraceFeature::LoadFeature()
 		    if (!((ConVar*)var)->GetBool())
 			    spt_player_trace_feat.tr.StopRendering();
 	    });
+
+	SptImGuiGroup::PlayerTrace.RegisterUserCallback(ImGuiTabCallback);
+	SptImGui::RegisterWindowCallback(ImGuiWindowCallback);
 }
 
 void PlayerTraceFeature::UnloadFeature()
 {
 	StopRecording();
 	tr.Clear();
+	imGuiWindowCallbackCalledNFramesWithoutTabCallback = 0;
 }
 
 TrPlayerTrace* PlayerTraceFeature::StartRecording()
@@ -264,16 +274,24 @@ TrPlayerTrace* PlayerTraceFeature::StopRecording()
 
 void PlayerTraceFeature::ChangeDisplayTick(int diff)
 {
-	if (!spt_draw_trace.GetBool())
+	if (!spt_draw_trace.GetBool() && !imGuiActive)
 		return;
 	activeDrawTick = (tr_tick)clamp((int64_t)activeDrawTick + diff, 0, std::numeric_limits<tr_tick>::max());
 }
 
 void PlayerTraceFeature::SetDisplayTick(tr_tick val)
 {
-	if (!spt_draw_trace.GetBool())
+	if (!spt_draw_trace.GetBool() && !imGuiActive)
 		return;
 	activeDrawTick = val;
+}
+
+void PlayerTraceFeature::ClampActiveTick()
+{
+	if (tr.numRecordedTicks == 0)
+		activeDrawTick = 0;
+	else
+		activeDrawTick = clamp(activeDrawTick, 0, tr.numRecordedTicks - 1);
 }
 
 void PlayerTraceFeature::OnTickSignal(bool simulating)
@@ -296,15 +314,14 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 {
 	if (!spt_draw_trace.GetBool())
 		return;
-	activeDrawTick = clamp(activeDrawTick, 0, tr.numRecordedTicks - 1);
+	ClampActiveTick();
 	tr.GetRenderingCache().RenderAll(mr, activeDrawTick);
 }
 
 void PlayerTraceFeature::OnHudCallback()
 {
-	bool drawing = spt_draw_trace.GetBool();
-
-	if (drawing)
+	ClampActiveTick();
+	if (spt_draw_trace.GetBool())
 	{
 		spt_hud_feat.DrawTopHudElement(L"Trace draw tick: %u/%u",
 		                               activeDrawTick,
@@ -326,6 +343,28 @@ void PlayerTraceFeature::OnHudCallback()
 	}
 
 	spt_hud_feat.DrawTopHudElement(L"Trace memory usage: %.*f%s", i > 0 ? 2 : 0, displayUsage, suffixes[i]);
+}
+
+void PlayerTraceFeature::ImGuiTabCallback()
+{
+	imGuiWindowCallbackCalledNFramesWithoutTabCallback = 0;
+	imGuiActive = true;
+	spt_player_trace_feat.ClampActiveTick();
+	spt_player_trace_feat.tr.GetImGuiCache().ImGuiTabCallback(spt_player_trace_feat.activeDrawTick);
+}
+
+void PlayerTraceFeature::ImGuiWindowCallback()
+{
+	// recreate the ImGui cache if we load a new trace
+	if (!imGuiActive && !spt_player_trace_feat.tr.HasImGuiCache())
+		return;
+	spt_player_trace_feat.ClampActiveTick();
+	imGuiActive = spt_player_trace_feat.tr.GetImGuiCache().ImGuiWindowCallback(spt_player_trace_feat.activeDrawTick)
+	              || imGuiWindowCallbackCalledNFramesWithoutTabCallback < 3;
+	if (imGuiActive)
+		++imGuiWindowCallbackCalledNFramesWithoutTabCallback;
+	else
+		spt_player_trace_feat.tr.StopRenderingImGui();
 }
 
 bool player_trace::GetActiveTracePos(Vector& pos, QAngle& ang, float& fov)
