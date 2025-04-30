@@ -222,7 +222,7 @@
     </PreBuildEvent>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\orangebox_new\include\common;SDK\orangebox_new\include\public;SDK\orangebox_new\include\public\tier0;SDK\orangebox_new\include\public\tier1;SDK\orangebox_new\include\game\server;SDK\orangebox_new\include\game\client;SDK\orangebox_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\orangebox_new\include\common;SDK\orangebox_new\include\public;SDK\orangebox_new\include\public\tier0;SDK\orangebox_new\include\public\tier1;SDK\orangebox_new\include\game\server;SDK\orangebox_new\include\game\client;SDK\orangebox_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>SSDK2007;WIN32;_WIN32;_DEBUG;DEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -296,7 +296,7 @@ del "$(OutDir)spt-version.obj"</Command>
     </PreBuildEvent>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\sdk2013_new\include\common;SDK\sdk2013_new\include\public;SDK\sdk2013_new\include\public\tier0;SDK\sdk2013_new\include\public\tier1;SDK\sdk2013_new\include\game\server;SDK\sdk2013_new\include\game\client;SDK\sdk2013_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\sdk2013_new\include\common;SDK\sdk2013_new\include\public;SDK\sdk2013_new\include\public\tier0;SDK\sdk2013_new\include\public\tier1;SDK\sdk2013_new\include\game\server;SDK\sdk2013_new\include\game\client;SDK\sdk2013_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>SSDK2013;WIN32;_WIN32;_DEBUG;DEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -372,7 +372,7 @@ del "$(OutDir)spt-version.obj"</Command>
     </PreBuildEvent>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\bms_new\include\common;SDK\bms_new\include\public;SDK\bms_new\include\public\tier0;SDK\bms_new\include\public\tier1;SDK\bms_new\include\game\server;SDK\bms_new\include\game\client;SDK\bms_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\bms_new\include\common;SDK\bms_new\include\public;SDK\bms_new\include\public\tier0;SDK\bms_new\include\public\tier1;SDK\bms_new\include\game\server;SDK\bms_new\include\game\client;SDK\bms_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>BMS;WIN32;_WIN32;_DEBUG;DEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;SPT_HUD_TEXTONLY;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -448,7 +448,7 @@ del "$(OutDir)spt-version.obj"</Command>
     </PreBuildEvent>
     <ClCompile>
       <Optimization>Disabled</Optimization>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\episode1_new\include\common;SDK\episode1_new\include\public;SDK\episode1_new\include\public\tier0;SDK\episode1_new\include\public\tier1;SDK\episode1_new\include\game_shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\episode1_new\include\common;SDK\episode1_new\include\public;SDK\episode1_new\include\public\tier0;SDK\episode1_new\include\public\tier1;SDK\episode1_new\include\game_shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>OE;WIN32;_WIN32;_DEBUG;DEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -526,7 +526,7 @@ del "$(OutDir)spt-version.obj"</Command>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\orangebox_new\include\common;SDK\orangebox_new\include\public;SDK\orangebox_new\include\public\tier0;SDK\orangebox_new\include\public\tier1;SDK\orangebox_new\include\game\server;SDK\orangebox_new\include\game\client;SDK\orangebox_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\orangebox_new\include\common;SDK\orangebox_new\include\public;SDK\orangebox_new\include\public\tier0;SDK\orangebox_new\include\public\tier1;SDK\orangebox_new\include\game\server;SDK\orangebox_new\include\game\client;SDK\orangebox_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>SSDK2007;WIN32;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -608,7 +608,7 @@ del "$(OutDir)spt-version.obj"</Command>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\sdk2013_new\include\common;SDK\sdk2013_new\include\public;SDK\sdk2013_new\include\public\tier0;SDK\sdk2013_new\include\public\tier1;SDK\sdk2013_new\include\game\server;SDK\sdk2013_new\include\game\client;SDK\sdk2013_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\sdk2013_new\include\common;SDK\sdk2013_new\include\public;SDK\sdk2013_new\include\public\tier0;SDK\sdk2013_new\include\public\tier1;SDK\sdk2013_new\include\game\server;SDK\sdk2013_new\include\game\client;SDK\sdk2013_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>SSDK2013;WIN32;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -692,7 +692,7 @@ del "$(OutDir)spt-version.obj"</Command>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\bms_new\include\common;SDK\bms_new\include\public;SDK\bms_new\include\public\tier0;SDK\bms_new\include\public\tier1;SDK\bms_new\include\game\server;SDK\bms_new\include\game\client;SDK\bms_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\bms_new\include\common;SDK\bms_new\include\public;SDK\bms_new\include\public\tier0;SDK\bms_new\include\public\tier1;SDK\bms_new\include\game\server;SDK\bms_new\include\game\client;SDK\bms_new\include\game\shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>BMS;WIN32;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;SPT_HUD_TEXTONLY;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -855,7 +855,7 @@ del "$(OutDir)spt-version.obj"</Command>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
-      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;.;SDK\episode1_new\include\common;SDK\episode1_new\include\public;SDK\episode1_new\include\public\tier0;SDK\episode1_new\include\public\tier1;SDK\episode1_new\include\game_shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>spt\utils;thirdparty\curl\include;thirdparty\imgui;.;SDK\episode1_new\include\common;SDK\episode1_new\include\public;SDK\episode1_new\include\public\tier0;SDK\episode1_new\include\public\tier1;SDK\episode1_new\include\game_shared;SPTLib\Windows\minhook\include;SPTLib\Windows\Minhook\include</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>OE;WIN32;_WIN32;NDEBUG;_WINDOWS;_USRDLL;_CRT_SECURE_NO_DEPRECATE;_CRT_NONSTDC_NO_DEPRECATE;sptONLY;_MBCS;%(PreprocessorDefinitions);TARGET_NAME="$(TargetName).dll"</PreprocessorDefinitions>
       <StringPooling>true</StringPooling>
       <ExceptionHandling>Sync</ExceptionHandling>
@@ -1400,6 +1400,9 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClCompile Include="thirdparty\imgui\imgui_impl_win32.cpp" />
     <ClCompile Include="thirdparty\imgui\imgui_tables.cpp" />
     <ClCompile Include="thirdparty\imgui\imgui_widgets.cpp" />
+    <ClCompile Include="thirdparty\implot\implot.cpp" />
+    <ClCompile Include="thirdparty\implot\implot_demo.cpp" />
+    <ClCompile Include="thirdparty\implot\implot_items.cpp" />
     <ClCompile Include="thirdparty\md5.cpp" />
     <ClCompile Include="thirdparty\x86.c" />
   </ItemGroup>
@@ -1549,6 +1552,8 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClInclude Include="thirdparty\imgui\imstb_rectpack.h" />
     <ClInclude Include="thirdparty\imgui\imstb_textedit.h" />
     <ClInclude Include="thirdparty\imgui\imstb_truetype.h" />
+    <ClInclude Include="thirdparty\implot\implot.h" />
+    <ClInclude Include="thirdparty\implot\implot_internal.h" />
     <ClInclude Include="thirdparty\json.hpp" />
     <ClInclude Include="thirdparty\kmp-cpp.hpp" />
     <ClInclude Include="thirdparty\md5.hpp" />
