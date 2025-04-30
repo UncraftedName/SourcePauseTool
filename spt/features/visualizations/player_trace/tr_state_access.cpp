@@ -2,6 +2,7 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
+#include "tr_plot_cache.hpp"
 
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
@@ -28,6 +29,19 @@ TrRecordingCache& TrPlayerTrace::GetRecordingCache()
 	return *recordingCache;
 }
 
+TrEntityCache& TrPlayerTrace::GetEntityCache() const
+{
+	if (!entityCache)
+		entityCache = std::make_unique<TrEntityCache>(*this);
+	entityCache->tr = this; // std::move hack
+	return *entityCache;
+}
+
+void TrPlayerTrace::KillEntityCache()
+{
+	entityCache.reset();
+}
+
 TrRenderingCache& TrPlayerTrace::GetRenderingCache() const
 {
 	if (!renderingCache)
@@ -39,6 +53,19 @@ TrRenderingCache& TrPlayerTrace::GetRenderingCache() const
 void TrPlayerTrace::KillRenderingCache()
 {
 	renderingCache.reset();
+}
+
+TrPlotCache& TrPlayerTrace::GetPlotCache() const
+{
+	if (!plotCache)
+		plotCache = std::make_unique<TrPlotCache>(*this);
+	plotCache->tr = this; // std::move hack
+	return *plotCache;
+}
+
+void TrPlayerTrace::KillPlotCache()
+{
+	plotCache.reset();
 }
 
 int TrPlayerTrace::GetServerTickAtTick(tr_tick atTick) const

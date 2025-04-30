@@ -7,6 +7,8 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
+#include "tr_plot_cache.hpp"
+#include "tr_imgui.hpp"
 #include "import_export/tr_binary_compress.hpp"
 
 #include "signals.hpp"
@@ -42,6 +44,7 @@ private:
 	// TODO log FCPS & teleports reasons
 	TrSegmentReason deferredSegmentReason = TR_SR_NONE;
 
+	void ClampActiveTick();
 	void OnTickSignal(bool simulating);
 	void OnFinishRestoreSignal(void*);
 	void OnMeshRenderSignal(MeshRendererDelegate& mr);
@@ -256,6 +259,12 @@ void PlayerTraceFeature::LoadFeature()
 		    if (!((ConVar*)var)->GetBool())
 			    spt_player_trace_feat.tr.KillRenderingCache();
 	    });
+
+	using namespace SptImGuiGroup;
+	PlayerTrace_Plots.RegisterUserCallback([this]() { tr_imgui::PlotTabCallback(tr, activeDrawTick); });
+	PlayerTrace_Entities.RegisterUserCallback([this]() { tr_imgui::EntityTabCallback(tr, activeDrawTick); });
+	PlayerTrace_Config.RegisterUserCallback([this]() { tr_imgui::TraceConfigTabCallback(); });
+	SptImGui::RegisterWindowCallback([this]() { tr_imgui::WindowCallback(tr, activeDrawTick); });
 }
 
 void PlayerTraceFeature::UnloadFeature()
@@ -296,6 +305,14 @@ void PlayerTraceFeature::SetDisplayTick(tr_tick val)
 	activeDrawTick = val;
 }
 
+void PlayerTraceFeature::ClampActiveTick()
+{
+	if (tr.numRecordedTicks == 0)
+		activeDrawTick = 0;
+	else
+		activeDrawTick = clamp(activeDrawTick, 0, tr.numRecordedTicks - 1);
+}
+
 void PlayerTraceFeature::OnTickSignal(bool simulating)
 {
 	if (tr.IsRecording())
@@ -316,15 +333,14 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 {
 	if (!spt_draw_trace.GetBool())
 		return;
-	activeDrawTick = clamp(activeDrawTick, 0, tr.numRecordedTicks - 1);
+	ClampActiveTick();
 	tr.GetRenderingCache().RenderAll(mr, activeDrawTick);
 }
 
 void PlayerTraceFeature::OnHudCallback()
 {
-	bool drawing = spt_draw_trace.GetBool();
-
-	if (drawing)
+	ClampActiveTick();
+	if (spt_draw_trace.GetBool())
 	{
 		spt_hud_feat.DrawTopHudElement(L"Trace draw tick: %u/%u",
 		                               activeDrawTick,

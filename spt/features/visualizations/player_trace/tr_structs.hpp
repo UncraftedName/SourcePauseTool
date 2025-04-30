@@ -19,11 +19,11 @@
 *
 * To make the trace recording (relatively) small in memory, objects are only stored when there is
 * a change in state, for example:
-* 
+*
 * - player data is only stored when it's different from the previous state
 * - entities are delta'd to the previous state, and again only recorded when there's an actual delta
 * - portals are only recorded if any portals changed
-* 
+*
 * This means that if you want to get the state on any particular 'tick', you have to do a binary
 * search into one of the vectors that has a 'tick' field. The 'tick' field is monotonically
 * increasing and records the number of times data has been collected in TickSignal.
@@ -32,7 +32,7 @@
 namespace player_trace
 {
 
-// for caching purposes I'm using memcmp so there better not be any implicit padding
+	// for caching purposes I'm using memcmp so there better not be any implicit padding
 #pragma warning(push)
 #pragma warning(error : 4820)
 
@@ -113,18 +113,18 @@ namespace player_trace
 		idx_type _val;
 
 		// clang-format off
-		TrIdx() : _val{std::numeric_limits<idx_type>::max()} {}
-		TrIdx(idx_type v) : _val{v} {}
+		TrIdx() : _val{ std::numeric_limits<idx_type>::max() } {}
+		TrIdx(idx_type v) : _val{ v } {}
 		void Invalidate() { *this = {}; }
 		operator idx_type() const { return _val; }
-		TrIdx operator+(idx_type b) const { return TrIdx{_val + b}; }
-		TrIdx operator+(int b)      const { return TrIdx{_val + b}; }
-		TrIdx operator-(idx_type b) const { return TrIdx{_val - b}; }
-		TrIdx operator-(int b)      const { return TrIdx{_val - b}; }
+		TrIdx operator+(idx_type b) const { return TrIdx{ _val + b }; }
+		TrIdx operator+(int b)      const { return TrIdx{ _val + b }; }
+		TrIdx operator-(idx_type b) const { return TrIdx{ _val - b }; }
+		TrIdx operator-(int b)      const { return TrIdx{ _val - b }; }
 		TrIdx& operator+=(idx_type b) { _val += b; return *this; }
-		TrIdx& operator+=(int b)      { _val += b; return *this; }
+		TrIdx& operator+=(int b) { _val += b; return *this; }
 		TrIdx& operator-=(idx_type b) { _val -= b; return *this; }
-		TrIdx& operator-=(int b)      { _val -= b; return *this; }
+		TrIdx& operator-=(int b) { _val -= b; return *this; }
 		auto operator<=>(const TrIdx&) const = default;
 		friend auto operator<=>(TrIdx a, size_t b) { return a._val <=> b; }
 		TrIdx& operator++() { ++_val; return *this; }
@@ -238,6 +238,12 @@ namespace player_trace
 	struct TrAbsBox_v1
 	{
 		TrIdx<Vector> minsIdx, maxsIdx;
+
+		void GetMinsMaxs(Vector& mins, Vector& maxs) const
+		{
+			mins = minsIdx.IsValid() ? **minsIdx : Vector{NAN};
+			maxs = maxsIdx.IsValid() ? **maxsIdx : Vector{NAN};
+		}
 	};
 	TR_DEFINE_LUMP(TrAbsBox_v1, "aabb", 1);
 
@@ -247,6 +253,12 @@ namespace player_trace
 	{
 		TrIdx<Vector> posIdx;
 		TrIdx<QAngle> angIdx;
+
+		void GetPosAng(Vector& pos, QAngle& ang) const
+		{
+			pos = posIdx.IsValid() ? **posIdx : Vector{NAN};
+			ang = angIdx.IsValid() ? **angIdx : QAngle{NAN, NAN, NAN};
+		}
 	};
 	TR_DEFINE_LUMP(TrTransform_v1, "transform", 1);
 	TR_DEFINE_LUMP(TrIdx<TrTransform_v1>, "transform_idx", 1);
@@ -302,7 +314,7 @@ namespace player_trace
 		* have the same name (which is NULL), and it seems like they can sometimes get destroyed
 		* and reallocated in the same place in memory, so we have to add some extra data (the
 		* source entity) to ensure uniqueness.
-		* 
+		*
 		* Furthermore, portalsimulator_collisionentity's are tied to a single portal (so the handle
 		* and IServerEntity* stay the same) and their collision prop claims they have a OBB of size
 		* 0 and are always at the origin. To ensure uniqueness for them, we have to tie them to a
@@ -398,13 +410,13 @@ namespace player_trace
 	* entity state are stored. This is basically the same technique that's used to send entity
 	* info from server to client in e.g. demos, and in cases with lots of entities can result in
 	* 1/3 of the memory usage for entity transforms compared to using snapshots alone.
-	* 
+	*
 	* Entity deltas consist of:
-	* 
+	*
 	* - new entities or entities that just entered the entity record radius
 	* - entities that dissapeared or left the record radius
 	* - entities whos positions changed
-	* 
+	*
 	* For full snapshots, it's sufficient to record all entities as 'new'.
 	*/
 
@@ -535,6 +547,8 @@ namespace player_trace
 
 	class TrRecordingCache;
 	class TrRenderingCache;
+	class TrEntityCache;
+	class TrPlotCache;
 
 	/*
 	* Behold all the data in the player trace. Everything that is stored inside the struct is all
@@ -620,6 +634,10 @@ namespace player_trace
 
 		std::unique_ptr<TrRecordingCache> recordingCache;
 		mutable std::unique_ptr<TrRenderingCache> renderingCache;
+		mutable std::unique_ptr<TrEntityCache> entityCache;
+		mutable std::unique_ptr<TrPlotCache> plotCache;
+
+		TrRecordingCache& GetRecordingCache();
 
 		void CollectServerState(bool hostTickSimulating);
 		void CollectPlayerData();
@@ -654,9 +672,12 @@ namespace player_trace
 		}
 
 		TrRenderingCache& GetRenderingCache() const;
-		TrRecordingCache& GetRecordingCache();
+		TrPlotCache& GetPlotCache() const;
+		TrEntityCache& GetEntityCache() const;
 
 		void KillRenderingCache();
+		void KillPlotCache();
+		void KillEntityCache();
 
 		size_t GetMemoryUsage() const
 		{
@@ -681,17 +702,17 @@ namespace player_trace
 		* If a trace was just recorded, the version of each type will be the most up-to-date one,
 		* i.e. TR_LUMP_VERSION(T). If a trace was imported, this is used to get the version that
 		* was *first* recorded for that type. Example use case:
-		* 
+		*
 		* 1) trace is recorded and exported
 		* 2) trace is imported in newer spt version which has new fields (e.g. player shadow vel)
 		* 3) during the import process, a compat handler initializes the player shadow vel to NAN
 		* 4) we can use GetFirstExportVersion<TrPlayerData> to check if the vel was one of the
 		*    things that was recorded when the trace was *first* written
-		* 
+		*
 		* If the lump for type T did not exist in the file OR if StartRecording hasn't been called
 		* yet, GetFirstExportVersion<T> will return TR_INVALID_STRUCT_VERSION. Since
 		* TR_INVALID_STRUCT_VERSION is just 0, we can then do:
-		* 
+		*
 		* if (GetFirstExportVersion<TrPlayerData>() < 2)
 		*     Msg("Trace does not have player shadow vel");
 		*/
@@ -714,7 +735,7 @@ namespace player_trace
 		* Specifically, given a tick, finds either:
 		* - the *first* element with the matching 'tick' field
 		* - the *last* element with a smaller 'tick' field if no exact match exists
-		* 
+		*
 		* The result is clamped to be an element inside the vector. So long as the vector
 		* is not empty, a non-end index is always returned.
 		*/
