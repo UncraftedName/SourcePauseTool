@@ -1,6 +1,7 @@
 #pragma once
 
 #include "thirdparty/imgui/imgui.h"
+#include "thirdparty/implot/implot.h"
 #include "spt/cvars.hpp"
 #include "spt/utils/ent_list.hpp"
 #include "spt/utils/portal_utils.hpp"

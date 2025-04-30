@@ -67,7 +67,8 @@ class SptImGuiFeature : public FeatureWrapper<SptImGuiFeature>
 public:
 	inline static bool showMainWindow = false;
 	inline static bool showAboutWindow = false;
-	inline static bool showExampleWindow = false;
+	inline static bool showDemoWindow = false;
+	inline static bool showImplotDemoWindow = false;
 	inline static bool forceMainWindowFocus = false;
 	inline static bool drawNonRegisteredCallbacks = false;
 	inline static bool doWindowCallbacks = false;
@@ -95,7 +96,8 @@ private:
 	enum class LoadState
 	{
 		None,
-		CreatedContext,
+		CreatedImGuiContext,
+		CreatedImPlotContext,
 		InitWin32,
 		InitDx9,
 		OverrideWndProc,
@@ -259,6 +261,11 @@ private:
 			ImGui::TextDisabled("%s", "Copyright (c) 2014-2024 Omar Cornut");
 
 			ImGui::Separator();
+			ImGui::TextUnformatted("Implot v" IMPLOT_VERSION);
+			ImGui::TextLinkOpenURL("Github##implot", "https://github.com/epezent/implot");
+			ImGui::TextDisabled("%s", "Copyright (c) 2020 Evan Pezent");
+
+			ImGui::Separator();
 			ImGui::TextUnformatted("MinHook");
 			ImGui::TextLinkOpenURL("Github##minhook", "https://github.com/TsudaKageyu/minhook");
 			ImGui::TextDisabled("%s", "Copyright (C) 2009-2017 Tsuda Kageyu.");
@@ -313,8 +320,10 @@ private:
 
 	static void ExampleWindowCallback()
 	{
-		if (showExampleWindow)
-			ImGui::ShowDemoWindow(&showExampleWindow);
+		if (showDemoWindow)
+			ImGui::ShowDemoWindow(&showDemoWindow);
+		if (showImplotDemoWindow)
+			ImPlot::ShowDemoWindow(&showImplotDemoWindow);
 	}
 
 	static void DevSectionCallback()
@@ -335,7 +344,8 @@ private:
 		                     "be used to quickly track down non-working features.\n"
 		                     "I only made the colors work with the default theme.");
 		ImGui::EndDisabled();
-		ImGui::Checkbox("Show ImGui example window", &showExampleWindow);
+		ImGui::Checkbox("Show ImGui example window", &showDemoWindow);
+		ImGui::Checkbox("Show ImPlot example window", &showImplotDemoWindow);
 	}
 
 	static void SettingsTabCallback()
@@ -686,6 +696,7 @@ protected:
 		ImGui::SetAllocatorFunctions(alloc_func, free_func, NULL);
 		if (!ImGui::CreateContext())
 			return;
+		loadState = LoadState::CreatedImGuiContext;
 
 		ImGuiIO& io = ImGui::GetIO();
 		// gamepad inputs untested
@@ -701,7 +712,9 @@ protected:
 		// io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable;
 		io.ConfigDebugIniSettings = true;
 
-		loadState = LoadState::CreatedContext;
+		if (!ImPlot::CreateContext())
+			return;
+		loadState = LoadState::CreatedImPlotContext;
 		if (!ImGui_ImplWin32_Init(gameWnd))
 			return;
 		loadState = LoadState::InitWin32;
@@ -755,7 +768,9 @@ protected:
 			ImGui_ImplDX9_Shutdown();
 		case LoadState::InitWin32:
 			ImGui_ImplWin32_Shutdown();
-		case LoadState::CreatedContext:
+		case LoadState::CreatedImPlotContext:
+			ImPlot::DestroyContext();
+		case LoadState::CreatedImGuiContext:
 			ImGui::DestroyContext();
 		case LoadState::None:
 		default:
