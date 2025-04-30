@@ -424,6 +424,15 @@
     <ClCompile Include="spt\features\set_sg.cpp">
       <Filter>spt\features</Filter>
     </ClCompile>
+    <ClCompile Include="thirdparty\implot\implot.cpp">
+      <Filter>thirdparty\implot</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\implot\implot_demo.cpp">
+      <Filter>thirdparty\implot</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\implot\implot_items.cpp">
+      <Filter>thirdparty\implot</Filter>
+    </ClCompile>
     <ClCompile Include="spt\features\visualizations\player_trace\import_export\tr_binary_write.cpp">
       <Filter>spt\features\visualizations\player_trace\import_export</Filter>
     </ClCompile>
@@ -951,6 +960,12 @@
 	<ClInclude Include="spt\features\portalled_pause.hpp">
       <Filter>spt\features</Filter>
     </ClInclude>
+    <ClInclude Include="thirdparty\implot\implot.h">
+      <Filter>thirdparty\implot</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\implot\implot_internal.h">
+      <Filter>thirdparty\implot</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">
@@ -1042,6 +1057,9 @@
     </Filter>
     <Filter Include="spt\utils\custom_interfaces">
       <UniqueIdentifier>{81ebb0c3-4b40-4039-8426-d1b355782bba}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="thirdparty\implot">
+      <UniqueIdentifier>{c1fcf649-335d-4878-9936-d2721dfc3930}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
