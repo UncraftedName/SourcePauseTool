@@ -3,12 +3,13 @@
 #include <set>
 
 #include "..\feature.hpp"
-#include "thirdparty/imgui/imgui.h"
 #include "interfaces.hpp"
 #include "spt/spt-serverplugin.hpp"
 #include "spt/utils/spt_vprof.hpp"
+#include "spt/utils/signals.hpp"
 #include "spt/features/hud.hpp"
 
+#include "thirdparty/imgui/imgui.h"
 #include "thirdparty/imgui/imgui_internal.h"
 #include "thirdparty/imgui/imgui_impl_dx9.h"
 #include "thirdparty/imgui/imgui_impl_win32.h"
@@ -68,7 +69,6 @@ public:
 	inline static bool showImplotDemoWindow = false;
 	inline static bool forceMainWindowFocus = false;
 	inline static bool drawNonRegisteredCallbacks = false;
-	inline static bool inImGuiUpdateSection = false;
 	inline static bool doWindowCallbacks = false;
 	inline static std::vector<SptImGuiWindowCallback> windowCallbacks;
 	inline static std::set<ImGuiHudCvar> hudCvars;
@@ -77,12 +77,12 @@ private:
 	inline static HWND gameWnd = nullptr;
 	inline static WNDPROC origWndProc = nullptr;
 	inline static IDirect3DDevice9* dx9Device = nullptr;
-	inline static bool recreateDeviceObjects = false;
+	inline static std::atomic<bool> recreateDeviceObjects = false;
 
-	inline static int fontSize;
-	inline static bool reloadFontSize = false;
+	inline static std::atomic<int> fontSize;
+	inline static std::atomic<bool> reloadFontSize = false;
 	inline static std::pair<std::string, std::function<void()>> imguiStyle;
-	inline static bool reloadImguiStyle = false;
+	inline static std::atomic<bool> reloadImguiStyle = false;
 
 	inline static const int defaultFontSize = 18;
 	inline static const int minFontSize = 8;
@@ -101,7 +101,18 @@ private:
 		OverrideWndProc,
 
 		Loaded = OverrideWndProc,
-	} inline static loadState = LoadState::None;
+	};
+
+	enum class FrameState
+	{
+		PreFrameSignal,
+		InFrameSignal,
+		PostFrameSignal,
+	};
+
+	inline static std::atomic<LoadState> loadState = LoadState::None;
+	inline static std::atomic<FrameState> frameState = FrameState::PreFrameSignal;
+	inline static std::unique_ptr<std::recursive_mutex> imguiMutex = nullptr;
 
 	static bool GameUiFocused()
 	{
@@ -111,6 +122,8 @@ private:
 
 	static LRESULT CALLBACK CustomWndProc(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam)
 	{
+		std::scoped_lock lk{*imguiMutex};
+
 		bool forwardToGame = true;
 		bool forwardToImGui = GameUiFocused();
 		if (!forwardToImGui)
@@ -342,13 +355,15 @@ private:
 
 	static void SettingsTabCallback()
 	{
+		int tmpFontSize = fontSize;
 		if (ImGui::SliderInt("Font size (pixels)",
-		                     &fontSize,
+		                     &tmpFontSize,
 		                     minFontSize,
 		                     maxFontSize,
 		                     "%d",
 		                     ImGuiSliderFlags_AlwaysClamp))
 		{
+			fontSize = tmpFontSize;
 			reloadFontSize = true;
 			ImGui::MarkIniSettingsDirty();
 		}
@@ -397,8 +412,10 @@ private:
 
 		handler.ReadLineFn = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, void* entry, const char* line)
 		{
-			if (sscanf(line, "FontSize=%d", &fontSize))
+			int tmpFontSize;
+			if (sscanf(line, "FontSize=%d", &tmpFontSize))
 			{
+				fontSize = tmpFontSize;
 				reloadFontSize = true;
 				return;
 			}
@@ -430,7 +447,7 @@ private:
 		handler.WriteAllFn = [](ImGuiContext* ctx, ImGuiSettingsHandler* handler, ImGuiTextBuffer* out_buf)
 		{
 			out_buf->appendf("[SPT][Main Window Settings]\n", handler->TypeName);
-			out_buf->appendf("FontSize=%d\n", fontSize);
+			out_buf->appendf("FontSize=%d\n", fontSize.load());
 			out_buf->appendf("Style=%s", imguiStyle.first.c_str());
 			out_buf->append("\n");
 		};
@@ -486,7 +503,8 @@ private:
 
 	static void ReloadFontSize()
 	{
-		fontSize = clamp(fontSize, minFontSize, maxFontSize);
+		int tmpFontSize = fontSize;
+		fontSize = clamp(tmpFontSize, minFontSize, maxFontSize);
 		auto& io = ImGui::GetIO();
 		io.Fonts->Clear();
 		ImFontConfig fontCfg{};
@@ -517,10 +535,49 @@ private:
 		reloadImguiStyle = true;
 	}
 
+	static void OnFrameSignal()
+	{
+		std::scoped_lock lk{*imguiMutex};
+		if (frameState != FrameState::PreFrameSignal)
+			return;
+
+		frameState = FrameState::InFrameSignal;
+		SPT_VPROF_BUDGET(__FUNCTION__, _T("SPT_ImGui"));
+
+		if (!GameUiFocused())
+		{
+			/*
+			* In our WndProc, we currently don't forward events to ImGui if there's no game UI
+			* focused. This means ImGui doesn't get any key up/down events if we're playing the
+			* game, so keys can get stuck (according to ImGui). Forwarding only key up events
+			* doesn't work perfectly since ImGui explicitly calls ::GetKeyState() sometimes.
+			* Clearing the key state explicitly seems to do the trick.
+			*/
+			ImGui_ImplWin32_WndProcHandler(gameWnd, WM_MOUSELEAVE, 0, 0);
+			ImGui::GetIO().ClearInputKeys();
+			ImGui::GetIO().ClearInputMouse();
+		}
+
+		ImGui_ImplDX9_NewFrame();
+		ImGui_ImplWin32_NewFrame();
+#ifdef DEBUG
+		ImGui::GetIO().ConfigDebugIsDebuggerPresent = IsDebuggerPresent();
+#endif
+		ImGui::NewFrame();
+
+		if (doWindowCallbacks)
+			for (auto& cb : windowCallbacks)
+				cb();
+
+		ImGui::EndFrame();
+
+		frameState = FrameState::PostFrameSignal;
+	}
+
 protected:
 	virtual bool ShouldLoadFeature()
 	{
-		return interfaces::shaderDevice && interfaces::vgui_input;
+		return interfaces::shaderDevice && interfaces::vgui_input && TickSignal.Works;
 	}
 
 	bool PtrInModule(void* ptr, size_t nBytes, void* modBase, size_t modSize) const
@@ -599,6 +656,8 @@ protected:
 			return;
 		gameWnd = params.hFocusWindow;
 
+		imguiMutex = std::make_unique<std::recursive_mutex>();
+
 		AddVFTableHook(
 		    VFTableHook{
 		        *(void***)deviceWrapper,
@@ -669,6 +728,7 @@ protected:
 		if (spt_hud_feat.LoadingSuccessful())
 			SptImGuiGroup::Hud_TextHud.RegisterUserCallback(TextHudTabCallback);
 #endif
+		FrameSignal.Connect(OnFrameSignal);
 	};
 
 	virtual void UnloadFeature()
@@ -698,6 +758,8 @@ protected:
 			hudCvars.clear();
 			loadState = LoadState::None;
 			SptImGuiGroup::Root.ClearCallbacksRecursive();
+			imguiMutex.reset();
+			frameState = FrameState::PreFrameSignal;
 			break;
 		}
 #pragma warning(pop)
@@ -712,26 +774,11 @@ public:
 
 IMPL_HOOK_THISCALL(SptImGuiFeature, void, CShaderDeviceDx8__Present, void*)
 {
-	std::scoped_lock lk{CSourcePauseTool::unloadMutex};
-	if (Loaded())
+	std::scoped_lock lk{CSourcePauseTool::unloadMutex, *imguiMutex};
+
+	if (Loaded() && frameState == FrameState::PostFrameSignal)
 	{
 		SPT_VPROF_BUDGET(__FUNCTION__, _T("SPT_ImGui"));
-		auto& io = ImGui::GetIO();
-		inImGuiUpdateSection = true;
-
-		if (!GameUiFocused())
-		{
-			/*
-			* In our WndProc, we currently don't forward events to ImGui if there's no game UI
-			* focused. This means ImGui doesn't get any key up/down events if we're playing the
-			* game, so keys can get stuck (according to ImGui). Forwarding only key up events
-			* doesn't work perfectly since ImGui explicitly calls ::GetKeyState() sometimes.
-			* Clearing the key state explicitly seems to do the trick.
-			*/
-			ImGui_ImplWin32_WndProcHandler(gameWnd, WM_MOUSELEAVE, 0, 0);
-			ImGui::GetIO().ClearInputKeys();
-			ImGui::GetIO().ClearInputMouse();
-		}
 
 		if (reloadFontSize)
 			ReloadFontSize();
@@ -768,35 +815,23 @@ IMPL_HOOK_THISCALL(SptImGuiFeature, void, CShaderDeviceDx8__Present, void*)
 			recreateDeviceObjects = false;
 			[[fallthrough]];
 		case D3D_OK:
-			ImGui_ImplDX9_NewFrame();
-			ImGui_ImplWin32_NewFrame();
-#ifdef DEBUG
-			io.ConfigDebugIsDebuggerPresent = IsDebuggerPresent();
-#endif
-			ImGui::NewFrame();
-
-			if (doWindowCallbacks)
-				for (auto& cb : windowCallbacks)
-					cb();
-
-			ImGui::EndFrame();
 			if (doWindowCallbacks)
 			{
 				ImGui::Render();
 				ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
-				if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
+				if (ImGui::GetIO().ConfigFlags & ImGuiConfigFlags_ViewportsEnable)
 				{
 					ImGui::UpdatePlatformWindows();
 					ImGui::RenderPlatformWindowsDefault();
 				}
 			}
+			frameState = FrameState::PreFrameSignal; // ready to draw next frame
 			break;
 		case D3DERR_DRIVERINTERNALERROR:
 		default:
 			AssertMsg1(0, "Bad result from IDirect3DDevice9::TestCooperativeLevel(): %ld", hr);
 			break;
 		}
-		inImGuiUpdateSection = false;
 	}
 	ORIG_CShaderDeviceDx8__Present(thisptr);
 }
@@ -804,7 +839,7 @@ IMPL_HOOK_THISCALL(SptImGuiFeature, void, CShaderDeviceDx8__Present, void*)
 IMPL_HOOK_STDCALL(SptImGuiFeature, HCURSOR, SetCursor, HCURSOR hCursor)
 {
 	// imgui wants to capture mouse -> let imgui set cursor, otherwise let the game do it
-	if (!inImGuiUpdateSection ^ ImGui::GetIO().WantCaptureMouse)
+	if ((frameState != FrameState::InFrameSignal) ^ ImGui::GetIO().WantCaptureMouse)
 		return ORIG_SetCursor(hCursor);
 	return NULL;
 }
