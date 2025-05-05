@@ -6,6 +6,7 @@
 #include <compare>
 
 #include "tr_config.hpp"
+#include "spt/features/ent_props.hpp"
 #include "spt/utils/interfaces.hpp"
 
 #ifdef SPT_PLAYER_TRACE_ENABLED
@@ -61,6 +62,44 @@ namespace player_trace
 		}
 	};
 
+	/*
+	* Every vector in the trace will be written to a "lump" when serialized. We define two values
+	* to help with backwards compatibility during deserialization: the name & version. Backwards
+	* compatiblity is handled in tr_import_compat.cpp. All structs here should have an associated
+	* TR_DEFINE_LUMP and have a _v1, _v2, _v3, etc. suffix. A type alias without the version
+	* suffix is used to refer to the most up-to-date version of the struct. Older versions may be
+	* used during deserialization. Structs that are not defined here but are used as vectors in the
+	* trace storage must also have an associated TR_DEFINE_LUMP.
+	* 
+	* The lump version doesn't necessarily have to match the struct_vXXX version. New struct
+	* versions indicate a change in the actual fields, but new lump versions can be used for
+	* example to specify that a certain field is handled slightly differently.
+	*/
+
+	using tr_struct_version = uint32_t;
+	constexpr size_t TR_MAX_LUMP_NAME_LEN = 32;
+
+	template<utils::_tstring NAME, tr_struct_version VERSION>
+	struct _TrLumpNameShouldBeUniquePerVersion;
+
+	template<typename T>
+	struct TrLumpInfo;
+
+#define TR_DEFINE_LUMP(type, lump_serialize_name, lump_version) \
+	template<> \
+	struct _TrLumpNameShouldBeUniquePerVersion<lump_serialize_name, lump_version> \
+	{ \
+	}; \
+	template<> \
+	struct TrLumpInfo<type> \
+	{ \
+		static constexpr const char name[TR_MAX_LUMP_NAME_LEN] = lump_serialize_name; \
+		static constexpr tr_struct_version version = lump_version; \
+	};
+
+#define TR_LUMP_NAME(type) (TrLumpInfo<type>::name)
+#define TR_LUMP_VERSION(type) (TrLumpInfo<type>::version)
+
 	// an index into one of the trace's vectors, dereference within a TrReadContextScope
 	template<typename T>
 	struct TrIdx
@@ -100,7 +139,12 @@ namespace player_trace
 		}
 	};
 
+	TR_DEFINE_LUMP(QAngle, "angle", 0);
+	TR_DEFINE_LUMP(Vector, "point", 1);
+	TR_DEFINE_LUMP(TrIdx<Vector>, "point_idx", 0);
+
 	using TrStr = TrIdx<char>;
+	TR_DEFINE_LUMP(TrStr::idx_to, "string", 0);
 } // namespace player_trace
 
 namespace std
@@ -124,7 +168,7 @@ namespace player_trace
 		TrIdx<T> start;
 		uint32_t n;
 
-		TrSpan() : start{}, n{std::numeric_limits<uint32_t>::max()} {}
+		TrSpan() : start{}, n{0} {}
 		TrSpan(TrIdx<T> idx, uint32_t n) : start{idx}, n{n} {}
 
 		bool IsValid() const
@@ -149,6 +193,7 @@ namespace player_trace
 		TrStr nameIdx;
 		TrIdx<Vector> posIdx;
 	};
+	TR_DEFINE_LUMP(TrLandmark_v1, "landmark", 1);
 
 	using TrLandmark = TrLandmark_v1;
 
@@ -158,6 +203,7 @@ namespace player_trace
 		TrIdx<Vector> landmarkDeltaToFirstMapIdx;
 		TrSpan<TrLandmark> landmarkSp;
 	};
+	TR_DEFINE_LUMP(TrMap_v1, "map", 1);
 
 	using TrMap = TrMap_v1;
 
@@ -166,6 +212,7 @@ namespace player_trace
 		tr_tick tick;
 		TrIdx<TrMap_v1> fromMapIdx, toMapIdx;
 	};
+	TR_DEFINE_LUMP(TrMapTransition_v1, "map_transition", 1);
 
 	using TrMapTransition = TrMapTransition_v1;
 
@@ -174,6 +221,7 @@ namespace player_trace
 		tr_tick tick;
 		TrSegmentReason reason;
 	};
+	TR_DEFINE_LUMP(TrSegmentStart_v1, "segment", 1);
 
 	using TrSegmentStart = TrSegmentStart_v1;
 
@@ -181,6 +229,7 @@ namespace player_trace
 	{
 		TrIdx<Vector> minsIdx, maxsIdx;
 	};
+	TR_DEFINE_LUMP(TrAbsBox_v1, "aabb", 1);
 
 	using TrAbsBox = TrAbsBox_v1;
 
@@ -189,6 +238,8 @@ namespace player_trace
 		TrIdx<Vector> posIdx;
 		TrIdx<QAngle> angIdx;
 	};
+	TR_DEFINE_LUMP(TrTransform_v1, "transform", 1);
+	TR_DEFINE_LUMP(TrIdx<TrTransform_v1>, "transform_idx", 0);
 
 	using TrTransform = TrTransform_v1;
 
@@ -205,6 +256,8 @@ namespace player_trace
 		bool isOrange, isOpen, isActivated;
 		char pad = {};
 	};
+	TR_DEFINE_LUMP(TrPortal_v1, "portal", 1);
+	TR_DEFINE_LUMP(TrIdx<TrPortal_v1>, "portal_idx", 0);
 
 	using TrPortal = TrPortal_v1;
 
@@ -217,6 +270,7 @@ namespace player_trace
 		tr_tick tick;
 		TrSpan<TrIdx<TrPortal_v1>> portalsSp;
 	};
+	TR_DEFINE_LUMP(TrPortalSnapshot_v1, "portal_snap", 1);
 
 	using TrPortalSnapshot = TrPortalSnapshot_v1;
 
@@ -266,6 +320,7 @@ namespace player_trace
 		TrStr nameIdx;
 		uint32_t flags; // TrPhysicsObjectFlags
 	};
+	TR_DEFINE_LUMP(TrPhysicsObjectInfo_v1, "physics_object_info", 1);
 
 	using TrPhysicsObjectInfo = TrPhysicsObjectInfo_v1;
 
@@ -274,6 +329,7 @@ namespace player_trace
 		float ballRadius; // positive ball radius means this is a ball, otherwise it's a polygonal mesh
 		TrSpan<TrIdx<Vector>> vertIdxSp; // triangle indices of polygonal mesh, possibly invalid
 	};
+	TR_DEFINE_LUMP(TrPhysMesh_v1, "physics_mesh", 1);
 
 	using TrPhysMesh = TrPhysMesh_v1;
 
@@ -288,6 +344,8 @@ namespace player_trace
 		TrIdx<TrPhysicsObjectInfo_v1> infoIdx;
 		TrIdx<TrPhysMesh_v1> meshIdx;
 	};
+	TR_DEFINE_LUMP(TrPhysicsObject_v1, "physics_object", 1);
+	TR_DEFINE_LUMP(TrIdx<TrPhysicsObject_v1>, "physics_object_idx", 0);
 
 	using TrPhysicsObject = TrPhysicsObject_v1;
 
@@ -308,6 +366,7 @@ namespace player_trace
 		uint32_t m_CollisionGroup : 6; // Collision_Group_t
 		uint32_t _pad : 11;
 	};
+	TR_DEFINE_LUMP(TrEnt_v1, "ent", 0);
 
 	using TrEnt = TrEnt_v1;
 
@@ -318,6 +377,7 @@ namespace player_trace
 		TrIdx<TrTransform_v1> obbTransIdx;
 		TrSpan<TrIdx<TrTransform_v1>> physTransSp;
 	};
+	TR_DEFINE_LUMP(TrEntTransform_v1, "ent_transform", 1);
 
 	using TrEntTransform = TrEntTransform_v1;
 
@@ -343,6 +403,7 @@ namespace player_trace
 		TrIdx<TrEnt_v1> entIdx;
 		TrIdx<TrEntTransform_v1> transIdx;
 	};
+	TR_DEFINE_LUMP(TrEntCreateDelta_v1, "ent_create_delta", 1);
 
 	using TrEntCreateDelta = TrEntCreateDelta_v1;
 
@@ -351,6 +412,7 @@ namespace player_trace
 		TrIdx<TrEnt_v1> entIdx;
 		TrIdx<TrEntTransform_v1> fromTransIdx, toTransIdx;
 	};
+	TR_DEFINE_LUMP(TrEntTransformDelta_v1, "ent_trans_delta", 1);
 
 	using TrEntTransformDelta = TrEntTransformDelta_v1;
 
@@ -359,6 +421,7 @@ namespace player_trace
 		TrIdx<TrEnt_v1> entIdx;
 		TrIdx<TrEntTransform_v1> oldTransIdx;
 	};
+	TR_DEFINE_LUMP(TrEntDeleteDelta_v1, "ent_delete_delta", 1);
 
 	using TrEntDeleteDelta = TrEntDeleteDelta_v1;
 
@@ -369,6 +432,7 @@ namespace player_trace
 		TrSpan<TrEntTransformDelta_v1> deltaSp;
 		TrSpan<TrEntDeleteDelta_v1> deleteSp;
 	};
+	TR_DEFINE_LUMP(TrEntSnapshotDelta_v1, "ent_snap_delta", 1);
 
 	using TrEntSnapshotDelta = TrEntSnapshotDelta_v1;
 
@@ -379,6 +443,7 @@ namespace player_trace
 		// the corresponding delta is included here for slightly faster ent iteration (possibly invalid)
 		TrIdx<TrEntSnapshotDelta_v1> snapDeltaIdx;
 	};
+	TR_DEFINE_LUMP(TrEntSnapshot_v1, "ent_snap", 1);
 
 	using TrEntSnapshot = TrEntSnapshot_v1;
 
@@ -390,6 +455,8 @@ namespace player_trace
 		bool playerIsObj0;
 		char _pad[3];
 	};
+	TR_DEFINE_LUMP(TrPlayerContactPoint_v1, "contact_point", 1);
+	TR_DEFINE_LUMP(TrIdx<TrPlayerContactPoint_v1>, "contact_point_idx", 0);
 
 	using TrPlayerContactPoint = TrPlayerContactPoint_v1;
 
@@ -407,8 +474,32 @@ namespace player_trace
 		uint32_t m_CollisionGroup : 6; // Collision_Group_t
 		uint32_t m_MoveType : 6;       // MoveType_t
 	};
+	TR_DEFINE_LUMP(TrPlayerData_v1, "player_data", 1);
 
-	using TrPlayerData = TrPlayerData_v1;
+	/*
+	* - has vphys vel
+	* - in v1, some indices were set to vec3_invalid; here you'll see either an invalid index or Vector{NAN, NAN, NAN}
+	*/
+	struct TrPlayerData_v2
+	{
+		tr_tick tick;
+		TrIdx<Vector> qPosIdx, qVelIdx;
+		// will probably be used for shadow vel PRE CPlayerController::do_simulation_controller
+		TrIdx<Vector> _unused;
+		TrIdx<Vector> vVelIdx;
+		TrIdx<TrTransform_v1> transEyesIdx, transSgEyesIdx, transVPhysIdx;
+		TrSpan<TrIdx<TrPlayerContactPoint_v1>> contactPtsSp;
+
+		int m_fFlags;
+		uint32_t fov : 8;
+		uint32_t m_iHealth : 8;
+		uint32_t m_lifeState : 4;
+		uint32_t m_CollisionGroup : 6; // Collision_Group_t
+		uint32_t m_MoveType : 6;       // MoveType_t
+	};
+	TR_DEFINE_LUMP(TrPlayerData_v2, "player_data", 2);
+
+	using TrPlayerData = TrPlayerData_v2;
 
 	struct TrServerState_v1
 	{
@@ -423,6 +514,7 @@ namespace player_trace
 			return paused ? serverTick : serverTick + atTick - tick;
 		}
 	};
+	TR_DEFINE_LUMP(TrServerState_v1, "server_state", 1);
 
 	using TrServerState = TrServerState_v1;
 
@@ -431,6 +523,7 @@ namespace player_trace
 		tr_tick tick;
 		TrIdx<TrAbsBox_v1> entCollectBboxAroundPlayerIdx;
 	};
+	TR_DEFINE_LUMP(TrTraceState_v1, "trace_state", 1);
 
 	using TrTraceState = TrTraceState_v1;
 

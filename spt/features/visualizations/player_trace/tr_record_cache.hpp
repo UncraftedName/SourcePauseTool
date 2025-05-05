@@ -188,25 +188,6 @@ namespace player_trace
 
 		Vector landmarkDeltaToFirstMap = vec3_origin;
 
-		struct
-		{
-			TrIdx<Vector> zeroVec{};
-			TrIdx<Vector> invalidVec{};
-			TrIdx<QAngle> invalidAng{};
-			TrIdx<TrTransform> invalidTrans{};
-		} specialIdxs;
-
-		void StartRecording()
-		{
-			specialIdxs.zeroVec = GetCachedIdx(vec3_origin);
-			specialIdxs.invalidVec = GetCachedIdx(vec3_invalid);
-			specialIdxs.invalidAng = GetCachedIdx(QAngle{NAN, NAN, NAN});
-			specialIdxs.invalidTrans = GetCachedIdx(TrTransform{
-			    specialIdxs.invalidVec,
-			    specialIdxs.invalidAng,
-			});
-		}
-
 		void StopRecording()
 		{
 			CollectEntitySnapshot();

@@ -8,148 +8,18 @@
 
 extern const char* SPT_VERSION;
 
-constexpr char TR_FILE_ID[8] = "sausage";
-constexpr uint32_t TR_SERIALIZE_VERSION = 1;
-constexpr size_t TR_MAX_LUMP_NAME_LEN = 32;
-
-namespace player_trace
-{
-
-	template<typename T, typename Tuple>
-	struct tuple_contains_type : std::false_type
-	{
-	};
-
-	template<typename T, typename... Tuple>
-	struct tuple_contains_type<T, std::tuple<Tuple...>> : std::disjunction<std::is_same<T, Tuple>...>
-	{
-	};
-
-	using tr_struct_version = uint32_t;
-
-	template<size_t N>
-	struct _tstring
-	{
-		constexpr _tstring(const char (&str)[N])
-		{
-			std::copy_n(str, N, val);
-		}
-		char val[N];
-	};
-
-	template<_tstring>
-	struct TrUniqueLumpName;
-
-	template<typename T>
-	struct TrLumpInfo;
-
-#define TR_REGISTER_LUMP(T, nameStr, versionNum) \
-	template<> \
-	struct TrUniqueLumpName<nameStr> \
-	{ \
-	}; \
-	template<> \
-	struct TrLumpInfo<T> \
-	{ \
-		static_assert(tuple_contains_type<std::vector<T>, decltype(TrPlayerTrace::_storage)>::value, \
-		              "TrPlayerTrace::_storage must contain std::vector<T>"); \
-		static constexpr const char name[TR_MAX_LUMP_NAME_LEN] = nameStr; \
-		static constexpr tr_struct_version struct_version = versionNum; \
-	}
-
-#define TR_LUMP_TYPE_TO_NAME(T) (TrLumpInfo<T>::name)
-#define TR_LUMP_TYPE_TO_VERSION(T) (TrLumpInfo<T>::struct_version)
-
-	/*
-	* Give a unique name to each vector type in TrPlayerTrace. Anything that doesn't match the name
-	* and version exactly will have to be processed for backwards compat. If you get crazy long error
-	* messages during compilation from this file it probably means you either:
-	* 
-	* - added a new vector to the trace and didn't register it here
-	* - removed a vector from the trace and didn't remove it from here
-	* - registered a duplicate lump name
-	*/
-	TR_REGISTER_LUMP(Vector, "point", 0);
-	TR_REGISTER_LUMP(TrIdx<Vector>, "point_idx", 0);
-	TR_REGISTER_LUMP(QAngle, "angle", 0);
-	TR_REGISTER_LUMP(TrTransform_v1, "transform", 1);
-	TR_REGISTER_LUMP(TrIdx<TrTransform_v1>, "transform_idx", 0);
-	TR_REGISTER_LUMP(TrPhysicsObjectInfo_v1, "physics_object_info", 1);
-	TR_REGISTER_LUMP(TrPhysicsObject_v1, "physics_object", 1);
-	TR_REGISTER_LUMP(TrPhysMesh_v1, "physics_mesh", 1);
-	TR_REGISTER_LUMP(TrEntTransform_v1, "ent_transform", 1);
-	TR_REGISTER_LUMP(TrIdx<TrPhysicsObject_v1>, "physics_object_idx", 0);
-	TR_REGISTER_LUMP(TrAbsBox_v1, "aabb", 1);
-	TR_REGISTER_LUMP(TrEnt_v1, "ent", 0);
-	TR_REGISTER_LUMP(TrEntSnapshot_v1, "ent_snap", 1);
-	TR_REGISTER_LUMP(TrEntSnapshotDelta_v1, "ent_snap_delta", 1);
-	TR_REGISTER_LUMP(TrEntCreateDelta_v1, "ent_create_delta", 1);
-	TR_REGISTER_LUMP(TrEntTransformDelta_v1, "ent_trans_delta", 1);
-	TR_REGISTER_LUMP(TrEntDeleteDelta_v1, "ent_delete_delta", 1);
-	TR_REGISTER_LUMP(TrPortalSnapshot_v1, "portal_snap", 1);
-	TR_REGISTER_LUMP(TrPortal_v1, "portal", 1);
-	TR_REGISTER_LUMP(TrIdx<TrPortal_v1>, "portal_idx", 0);
-	TR_REGISTER_LUMP(char, "string", 0);
-	TR_REGISTER_LUMP(TrTraceState_v1, "trace_state", 1);
-	TR_REGISTER_LUMP(TrServerState_v1, "server_state", 1);
-	TR_REGISTER_LUMP(TrSegmentStart_v1, "segment", 1);
-	TR_REGISTER_LUMP(TrMap_v1, "map", 1);
-	TR_REGISTER_LUMP(TrMapTransition_v1, "map_transition", 1);
-	TR_REGISTER_LUMP(TrLandmark_v1, "landmark", 1);
-	TR_REGISTER_LUMP(TrPlayerData_v1, "player_data", 1);
-	TR_REGISTER_LUMP(TrPlayerContactPoint_v1, "contact_point", 1);
-	TR_REGISTER_LUMP(TrIdx<TrPlayerContactPoint_v1>, "contact_point_idx", 0);
-
-	struct TrPreamble
-	{
-		char fileId[sizeof TR_FILE_ID];
-		uint32_t fileVersion;
-	};
-
-	struct TrHeader
-	{
-		char sptVersion[TR_MAX_SPT_VERSION_LEN];
-		uint32_t lumpsOff;
-		uint32_t nLumps;
-		uint32_t numRecordedTicks;
-		TrIdx<TrAbsBox> playerStandBboxIdx, playerDuckBboxIdx;
-	};
-
-	struct TrLump_v1
-	{
-		char name[TR_MAX_LUMP_NAME_LEN];
-		tr_struct_version struct_version;
-		uint32_t dataOff;
-		uint32_t dataLenBytes;
-		// not necessary but useful for external tools so they don't have to know how to parse the each lump
-		uint32_t nElems;
-	};
-
-	constexpr char TR_XZ_FILE_ID[] = "omg_hi!";
-	constexpr uint32_t TR_XZ_FILE_VERSION = 1;
-
-	struct TrXzFooter
-	{
-		uint32_t numCompressedBytes;
-		uint32_t numUncompressedBytes;
-		char id[sizeof TR_XZ_FILE_ID];
-		uint32_t version;
-	};
-
-} // namespace player_trace
-
 using namespace player_trace;
 
 template<typename T>
 bool ITrWriter::WriteLumpHeader(const std::vector<T>& vec, uint32_t& fileOff, uint32_t& lumpDataFileOff)
 {
 	TrLump lump{
-	    .struct_version = TR_LUMP_TYPE_TO_VERSION(T),
+	    .struct_version = TR_LUMP_VERSION(T),
 	    .dataOff = lumpDataFileOff,
 	    .dataLenBytes = vec.size() * sizeof(T),
 	    .nElems = vec.size(),
 	};
-	strncpy(lump.name, TR_LUMP_TYPE_TO_NAME(T), sizeof lump.name);
+	strncpy(lump.name, TR_LUMP_NAME(T), sizeof lump.name);
 	if (!Write(lump))
 		return false;
 	fileOff += sizeof lump;
@@ -160,7 +30,7 @@ bool ITrWriter::WriteLumpHeader(const std::vector<T>& vec, uint32_t& fileOff, ui
 template<typename T>
 bool ITrWriter::WriteLumpData(const std::vector<T>& vec, uint32_t& fileOff)
 {
-	if (!Write(vec.data(), vec.size() * sizeof(T)))
+	if (!Write(std::as_bytes(std::span{vec})))
 		return false;
 	fileOff += vec.size() * sizeof(T);
 	return true;
@@ -203,45 +73,164 @@ bool ITrWriter::WriteTrace(const TrPlayerTrace& tr)
 }
 
 template<typename T>
-bool ITrReader::ReadLumpData(std::vector<T>& vec,
-                             std::unordered_map<std::string_view, const TrLump*>& lumpMap,
-                             std::string& errMsg)
+static bool ReadLumpData(TrRestore& restore, TrLump& lump, TrRestore::TrLumpDepInfo& depInfo)
 {
-	auto it = lumpMap.find(TR_LUMP_TYPE_TO_NAME(T));
-	if (it == lumpMap.cend())
-		return true; // compat with other versions, don't fill non-existent lumps
+	auto& tr = *restore.trace;
+	auto& rd = *restore.reader;
+	bool anyHandlers = !depInfo.handlers.empty();
 
-	const TrLump& lump = *it->second;
-	if (lump.struct_version != TR_LUMP_TYPE_TO_VERSION(T))
+	std::vector<std::byte> compatBuf;
+
+	if (anyHandlers)
 	{
-		errMsg = std::format("bad lump version for lump '{}' (expected {}, got {})",
-		                     TR_LUMP_TYPE_TO_NAME(T),
-		                     TR_LUMP_TYPE_TO_VERSION(T),
-		                     lump.struct_version);
-		return false;
+		restore.warnings.push_back(
+		    std::format("applying {} compatibility handler(s) to lump '{}' (upgrading from version {} to {})",
+		                depInfo.handlers.size(),
+		                lump.name,
+		                lump.struct_version,
+		                TR_LUMP_VERSION(T)));
+
+		compatBuf.resize(lump.dataLenBytes);
+		if (!rd.ReadTo(std::span{compatBuf}, lump.dataOff))
+			return false;
+
+		for (auto handler : depInfo.handlers)
+		{
+			if (handler->lumpVersion != lump.struct_version)
+				continue;
+			if (!handler->HandleCompat(rd, lump, compatBuf))
+			{
+				if (restore.errMsg.empty())
+				{
+					restore.errMsg = std::format("failed to upgrade lump '{}' to version {}",
+					                             lump.name,
+					                             TR_LUMP_VERSION(T));
+				}
+			}
+		}
 	}
-	if (sizeof(T) * lump.nElems != lump.dataLenBytes)
+
+	if (lump.struct_version != TR_LUMP_VERSION(T))
 	{
-		errMsg = std::format("unexpected number of bytes for lump '{}'", TR_LUMP_TYPE_TO_NAME(T));
-		return false;
-	}
-	vec.resize(lump.dataLenBytes / sizeof(T));
-	if (!ReadTo(std::span<char>{(char*)vec.data(), lump.dataLenBytes}, lump.dataOff))
-	{
-		errMsg = std::format("failed to read lump data for lump '{}'", TR_LUMP_TYPE_TO_NAME(T));
+		restore.errMsg = std::format("bad lump version for lump '{}'{} (expected {}, got {})",
+		                             lump.name,
+		                             depInfo.handlers.empty() ? "" : " after upgrading",
+		                             TR_LUMP_VERSION(T),
+		                             lump.struct_version);
 		return false;
 	}
 
-	lumpMap.erase(it);
+	std::vector<T>& vec = tr.Get<T>();
+	bool numBytesSeemsReasonable = depInfo.handlers.empty() ? sizeof(T) * lump.nElems == lump.dataLenBytes
+	                                                        : compatBuf.size() % sizeof(vec[0]) == 0;
+
+	if (!numBytesSeemsReasonable)
+	{
+		restore.errMsg = std::format("unexpected number of bytes for lump '{}'", lump.name);
+		return false;
+	}
+
+	if (anyHandlers)
+	{
+		vec.resize(compatBuf.size() / sizeof(vec[0]));
+		memcpy(vec.data(), compatBuf.data(), compatBuf.size());
+	}
+	else
+	{
+		vec.resize(lump.nElems);
+		if (!rd.ReadTo(std::as_writable_bytes(std::span{vec}), lump.dataOff))
+			return false;
+	}
 	return true;
 }
 
-bool ITrReader::ReadTrace(TrPlayerTrace& tr, char sptVersionOut[TR_MAX_SPT_VERSION_LEN], std::string& errMsg)
+static bool TrResolveLumpDependencies(TrRestore& restore, const TrLump& lump, int recurseCount = 0)
 {
+	if (recurseCount > 100)
+	{
+		restore.errMsg = "recursive limit reached while calculating lump dependencies";
+		return false;
+	}
+
+	std::span<TrLumpCompatHandler*> test{};
+	auto [lumpDepIt, isNew] = restore.lumpDependencyMap.try_emplace(&lump);
+	if (!isNew)
+		return true;
+
+	auto handlersIt = TrLumpCompatHandler::handlersByName.find(lump.name);
+	if (handlersIt == TrLumpCompatHandler::handlersByName.cend())
+		return true;
+
+	auto firstHandlerIt =
+	    std::ranges::find_if(handlersIt->second,
+	                         [&lump](auto handler) { return handler->lumpVersion >= lump.struct_version; });
+
+	lumpDepIt->second.handlers = std::span{firstHandlerIt, handlersIt->second.cend()};
+
+	for (auto handler : lumpDepIt->second.handlers)
+	{
+		for (auto& depName : handler->lumpDependencies)
+		{
+			auto depLumpIt = restore.nameToLump.find(depName);
+			if (depLumpIt == restore.nameToLump.cend())
+			{
+				restore.errMsg =
+				    std::format("handler for lump '{}' has dependency on non-existent lump '{}'",
+				                lump.name,
+				                depName);
+				return false;
+			}
+
+			if (!TrResolveLumpDependencies(restore, *restore.nameToLump[depName], recurseCount + 1))
+				return false;
+
+			lumpDepIt->second.nDependencies += restore.lumpDependencyMap.at(&lump).nDependencies;
+		}
+	}
+	return true;
+}
+
+struct TrReadDispatch
+{
+	TrLump& lump;
+	TrRestore::TrLumpDepInfo& depInfo;
+	std::function<bool()> readFunc;
+
+	bool operator<(const TrReadDispatch& o) const
+	{
+		return depInfo.nDependencies < o.depInfo.nDependencies;
+	}
+};
+
+template<typename T>
+void TrSetupLumpRead(TrRestore& restore, std::multiset<TrReadDispatch>& orderedLumps)
+{
+	const char* lumpName = TR_LUMP_NAME(T);
+
+	auto it = restore.nameToLump.find(lumpName);
+	if (it == restore.nameToLump.cend())
+	{
+		restore.warnings.push_back(
+		    std::format("lump '{}' declared in TrPlayerTrace but not found in file", lumpName));
+		return;
+	}
+
+	TrLump& lump = *it->second;
+	TrRestore::TrLumpDepInfo& depInfo = restore.lumpDependencyMap.at(&lump);
+
+	orderedLumps.emplace(lump, depInfo, [&]() { return ReadLumpData<T>(restore, lump, depInfo); });
+	restore.nameToLump.erase(it);
+}
+
+bool TrRestore::Restore(TrPlayerTrace& tr, ITrReader& rd)
+{
+	Clear();
 	tr.Clear();
+	trace = &tr;
+	reader = &rd;
 
 	TrPreamble preamble;
-	if (!ReadTo(preamble, 0))
+	if (!rd.ReadTo(preamble, 0))
 	{
 		errMsg = "failed to read preamble";
 		return false;
@@ -262,50 +251,69 @@ bool ITrReader::ReadTrace(TrPlayerTrace& tr, char sptVersionOut[TR_MAX_SPT_VERSI
 	}
 
 	TrHeader header;
-	if (!ReadTo(header, sizeof preamble))
+	if (!rd.ReadTo(header, sizeof preamble))
 	{
 		errMsg = "failed to read header";
 		return false;
 	}
+	if (strncmp(header.sptVersion, SPT_VERSION, TR_MAX_SPT_VERSION_LEN))
+	{
+		warnings.push_back(
+		    std::format("trace was exported with different SPT version '{}' (current version is '{}')",
+		                header.sptVersion,
+		                SPT_VERSION));
+	}
 
-	memcpy(sptVersionOut, header.sptVersion, sizeof header.sptVersion);
 	tr.numRecordedTicks = header.numRecordedTicks;
 	tr.playerStandBboxIdx = header.playerStandBboxIdx;
 	tr.playerDuckBboxIdx = header.playerDuckBboxIdx;
 
-	std::vector<TrLump> lumps{header.nLumps};
-	if (!ReadTo(std::span<char>{(char*)lumps.data(), lumps.size() * sizeof(lumps[0])}, header.lumpsOff))
+	std::vector<TrLump> lumps(header.nLumps);
+	if (!rd.ReadTo(std::as_writable_bytes(std::span{lumps}), header.lumpsOff))
 	{
 		errMsg = "failed to read lump headers";
 		return false;
 	}
-	std::unordered_map<std::string_view, const TrLump*> lumpMap;
+
 	for (auto& lump : lumps)
-		lumpMap[std::string_view{lump.name, strnlen(lump.name, sizeof lump.name)}] = &lump;
-
-	errMsg.clear();
-	// read all lumps and remove them from the lump map
-	if (!std::apply([&](auto&... vecs) { return (ReadLumpData(vecs, lumpMap, errMsg) && ...); }, tr._storage))
 	{
-		if (errMsg.empty())
-			errMsg = "failed to read lump data";
-		return false;
+		lump.name[sizeof(lump.name) - 1] = '\x0'; // explicitly null terminate so we can use it in errors
+		nameToLump[lump.name] = &lump;
 	}
 
-	DoneReadingTrace();
-
-	if (!lumpMap.empty())
+	for (const TrLump& lump : lumps)
 	{
-		// these are warnings I guess?
-		errMsg = "unprocessed lumps remaining: [";
-		for (auto& [lumpName, _] : lumpMap)
+		if (!TrResolveLumpDependencies(*this, lump))
 		{
-			errMsg += lumpName;
-			if (lumpName != (--lumpMap.cend())->first)
-				errMsg += ", ";
+			if (errMsg.empty())
+				errMsg = std::format("failed to compute lump dependencies for lump", lump.name);
+			return false;
 		}
-		errMsg += "]";
 	}
+
+	std::multiset<TrReadDispatch> orderedLumps;
+
+	std::apply([&](auto&... vecs)
+	           { (TrSetupLumpRead<typename std::decay_t<decltype(vecs)>::value_type>(*this, orderedLumps), ...); },
+	           tr._storage);
+
+	TrReadContextScope scope{tr};
+
+	for (auto& dispatch : orderedLumps)
+	{
+		if (!dispatch.readFunc())
+		{
+			if (errMsg.empty())
+				errMsg = std::format("failed to dispatch read for lump '{}'", dispatch.lump.name);
+			return false;
+		}
+	}
+
+	rd.DoneReadingTrace();
+
+	if (!nameToLump.empty())
+		for (auto& [lumpName, _] : nameToLump)
+			warnings.push_back(std::format("lump '{}' was ignored", lumpName));
 
 	return true;
 }
@@ -329,12 +337,12 @@ TrXzFileWriter::~TrXzFileWriter()
 	lzma_end(&lzma_strm);
 }
 
-bool TrXzFileWriter::Write(std::span<const char> sp)
+bool TrXzFileWriter::Write(std::span<const std::byte> sp)
 {
 	if (!alive)
 		return false;
 	lzma_strm.avail_in = sp.size_bytes();
-	lzma_strm.next_in = (unsigned char*)sp.data();
+	lzma_strm.next_in = (uint8_t*)sp.data();
 	return LzmaToOfStream(false);
 }
 
@@ -445,7 +453,7 @@ TrXzFileReader::TrXzFileReader(std::istream& iStream)
 	lzma_end(&lzma_strm);
 }
 
-bool TrXzFileReader::ReadTo(std::span<char> sp, uint32_t at)
+bool TrXzFileReader::ReadTo(std::span<std::byte> sp, uint32_t at)
 {
 	if (at + sp.size() <= outBuf.size())
 	{

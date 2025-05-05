@@ -1253,6 +1253,7 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClCompile Include="spt\features\visualizations\player_trace\tr_collect.cpp" />
     <ClCompile Include="spt\features\visualizations\player_trace\tr_feature.cpp" />
     <ClCompile Include="spt\features\visualizations\player_trace\tr_import_export.cpp" />
+    <ClCompile Include="spt\features\visualizations\player_trace\tr_import_compat.cpp" />
     <ClCompile Include="spt\features\visualizations\player_trace\tr_record_cache.cpp" />
     <ClCompile Include="spt\features\visualizations\player_trace\tr_render_cache.cpp" />
     <ClCompile Include="spt\features\visualizations\portal_placement.cpp" />
