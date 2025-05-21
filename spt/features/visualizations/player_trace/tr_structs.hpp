@@ -140,6 +140,11 @@ namespace player_trace
 		{
 			return operator*();
 		}
+
+		const T& GetOrDefault(const T& o = T{}) const
+		{
+			return IsValid() ? ***this : o; // :)
+		}
 	};
 
 	TR_DEFINE_LUMP(QAngle, "angle", 1);
@@ -614,9 +619,7 @@ namespace player_trace
 		StorageToVersionHolder<decltype(_storage)>::type versions;
 
 		std::unique_ptr<TrRecordingCache> recordingCache;
-		std::unique_ptr<TrRenderingCache> renderingCache;
-
-		TrRecordingCache& GetRecordingCache();
+		mutable std::unique_ptr<TrRenderingCache> renderingCache;
 
 		void CollectServerState(bool hostTickSimulating);
 		void CollectPlayerData();
@@ -650,9 +653,10 @@ namespace player_trace
 			return renderingCache.get();
 		}
 
-		void StopRendering();
+		TrRenderingCache& GetRenderingCache() const;
+		TrRecordingCache& GetRecordingCache();
 
-		TrRenderingCache& GetRenderingCache();
+		void KillRenderingCache();
 
 		size_t GetMemoryUsage() const
 		{
@@ -735,9 +739,10 @@ namespace player_trace
 
 		int GetServerTickAtTick(tr_tick atTick) const;
 		TrIdx<TrMap_v1> GetMapAtTick(tr_tick atTick) const;
-		void HostTickCollect(bool simulated, TrSegmentReason segmentReason, float entCollectRadius);
 		Vector GetAdjacentLandmarkDelta(std::span<const TrLandmark> fromLandmarkSp,
 		                                std::span<const TrLandmark> toLandmarkSp) const;
+
+		void HostTickCollect(bool simulated, TrSegmentReason segmentReason, float entCollectRadius);
 	};
 
 	template<typename T>
@@ -757,9 +762,9 @@ namespace player_trace
 	template<typename T>
 	inline std::span<const T> TrSpan<T>::operator*() const
 	{
-		if (n == 0)
-			return {(T*)nullptr, 0};
-		return {TrReadContextScope::trCtx->Get<T>().data() + start, n};
+		if (n == 0 || !IsValid())
+			return {};
+		return std::span<const T>{TrReadContextScope::trCtx->Get<T>()}.subspan(start, n);
 	}
 } // namespace player_trace
 
