@@ -2,6 +2,7 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
+#include "tr_plot_cache.hpp"
 
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
@@ -12,6 +13,7 @@ void TrPlayerTrace::Clear()
 	recordingCache.reset();
 	renderingCache.reset();
 	entityCache.reset();
+	plotCache.reset();
 
 	playerStandBboxIdx.Invalidate();
 	playerDuckBboxIdx.Invalidate();
@@ -50,6 +52,18 @@ TrRenderingCache& TrPlayerTrace::GetRenderingCache() const
 void TrPlayerTrace::KillRenderingCache()
 {
 	renderingCache.reset();
+}
+
+TrPlotCache& TrPlayerTrace::GetPlotCache() const
+{
+	if (!plotCache)
+		plotCache = std::make_unique<TrPlotCache>();
+	return *plotCache;
+}
+
+void TrPlayerTrace::KillPlotCache()
+{
+	plotCache.reset();
 }
 
 int TrPlayerTrace::GetServerTickAtTick(tr_tick atTick) const
