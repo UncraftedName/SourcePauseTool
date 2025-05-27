@@ -247,6 +247,7 @@ static void TrDrawImGuiPlots(tr_tick& activeTick)
 static void TrDrawPlayerData(tr_tick activeTick)
 {
 	auto& tr = TrReadContextScope::Current();
+	tr_struct_version playerExportVersion = tr.GetFirstExportVersion<TrPlayerData>();
 	auto plIdx = tr.GetAtTick<TrPlayerData>(activeTick);
 	TrPlayerData defaultPl{};
 	auto& pl = plIdx.IsValid() ? **plIdx : defaultPl;
@@ -264,7 +265,7 @@ static void TrDrawPlayerData(tr_tick activeTick)
 	ImGui::Text("VPhys pos: " _VEC_FMT, _VEC_UNP(vPhysPos));
 	ImGui::Text("VPhys ang: " _VEC_FMT, _VEC_UNP(vPhysAng));
 	ImGui::Text("QPhys vel: " _VEC_FMT, _VEC_UNP(pl.qVelIdx.GetOrDefault(vecInvalid)));
-	if (tr.GetFirstExportVersion<TrPlayerData>() >= 2)
+	if (playerExportVersion >= 2)
 		ImGui::Text("VPhys vel: " _VEC_FMT, _VEC_UNP(pl.vVelIdx.GetOrDefault(vecInvalid)));
 	else
 		ImGui::TextDisabled("VPhys vel: data was not recorded on this trace version");
@@ -272,6 +273,23 @@ static void TrDrawPlayerData(tr_tick activeTick)
 	ImGui::Text("Eye ang: " _VEC_FMT, _VEC_UNP(eyeAng));
 	if (utils::DoesGameLookLikePortal())
 	{
+		if (playerExportVersion >= 2)
+		{
+			if (pl.envPortalHandle.IsValid())
+			{
+				ImGui::Text("Portal environment: %d, (serial: %d)",
+				            pl.envPortalHandle.GetEntryIndex(),
+				            pl.envPortalHandle.GetSerialNumber());
+			}
+			else
+			{
+				ImGui::TextDisabled("Portal environment: NULL");
+			}
+		}
+		else
+		{
+			ImGui::TextDisabled("Portal environment: data was not recorded on this trace version");
+		}
 		if (eyePos == sgEyePos)
 		{
 			ImGui::TextDisabled("SG eye pos: same as eye pos");
