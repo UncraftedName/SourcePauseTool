@@ -64,7 +64,6 @@ static void TrDrawDataLine(const TrPlotCache::PlotData& data,
 	vsnprintf(buf, sizeof buf, legendFmt, va);
 	va_end(va);
 
-	ImPlot::SetNextLineStyle(IMPLOT_AUTO_COL, g_plotConfig.lineThickness);
 	int nPlotPoints = (int)data.plotPoints.size();
 	if (nPlotPoints > 0)
 	{
@@ -87,29 +86,66 @@ static void TrDrawXyzPlots(const TrPlotCache::PlotData& data,
                            ImPlotLineFlags lineFlags,
                            const char* legendFmt)
 {
+	// TODO add a config setting for this
+	bool doMarkers = false;
+	auto [xMin, xMax] = ImPlot::GetPlotLimits().X;
+	auto [xPixSize, _] = ImPlot::GetPlotSize();
+	if (xPixSize / (xMax - xMin) > g_plotConfig.lineThickness * 5)
+		doMarkers = true;
+
+	if (doMarkers)
+	{
+		ImPlot::PushStyleVar(ImPlotStyleVar_Marker, ImPlotMarker_Diamond);
+		ImPlot::PushStyleColor(ImPlotCol_MarkerFill, ImVec4{0, 0, 0, 0});
+	}
+
 	for (int i = 0; i < 3; i++)
 		TrDrawDataLine(data, startStructOffset + sizeof(float) * i, lineFlags, legendFmt, 'X' + i);
+
+	if (doMarkers)
+	{
+		ImPlot::PopStyleColor();
+		ImPlot::PopStyleVar();
+	}
 }
 
-static void TrDrawTags(const TrPlotCache::PlotData& data, tr_tick activeTick, bool onlyLines)
+static void TrDrawTags(const TrPlotCache::PlotData& data, tr_tick& activeTick, bool onlyLines)
 {
 	(void)data;
 
-	ImPlot::PlotInfLines("tags", &activeTick, 1);
+	// TODO add to tr config
+	ImVec4 activeTickCol{1.f, 1.f, 0.f, 1.f};
+
+	double dActiveTick = (double)activeTick;
+	if (ImPlot::DragLineX(0, &dActiveTick, activeTickCol))
+		activeTick = TrReadContextScope::Current().ClampValidTick((tr_tick)round(dActiveTick));
+
 	if (onlyLines)
 		return;
 
-	ImVec4 activeTickCol{1.f, 1.f, 0.f, 1.f};
-	ImPlot::TagX(activeTick, activeTickCol, "active");
+	ImPlot::TagX(activeTick, activeTickCol, "active (%" PRIu32 ")", activeTick);
 }
 
-static void TrDrawImGuiPlots(tr_tick activeTick)
+static void TrHandleTickSeek(tr_tick& activeTick)
+{
+	// TODO allow holding control and DRAGGING
+	if (ImPlot::IsPlotHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::GetIO().KeyCtrl)
+	{
+		ImPlotPoint pt = ImPlot::GetPlotMousePos();
+		activeTick = TrReadContextScope::Current().ClampValidTick(pt.x);
+	}
+}
+
+static void TrDrawImGuiPlots(tr_tick& activeTick)
 {
 	auto& tr = TrReadContextScope::Current();
 
 	auto& cfg = g_plotConfig;
 	const TrPlotCache::PlotData& data = tr.GetPlotCache().GetData(cfg.dataType);
 	int nPlotPoints = (int)data.plotPoints.size();
+
+	ImPlot::PushStyleVar(ImPlotStyleVar_LineWeight, g_plotConfig.lineThickness);
+	ImPlot::PushStyleVar(ImPlotStyleVar_MarkerSize, MAX(g_plotConfig.lineThickness * 1.5f, 4.f));
 
 	ImPlotSubplotFlags subPlotFlags = ImPlotSubplotFlags_None;
 	ImPlotFlags plotFlags = ImPlotFlags_Crosshairs;
@@ -170,6 +206,7 @@ static void TrDrawImGuiPlots(tr_tick activeTick)
 			(void)ImPlot::NextColormapColor();
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, vPhysPos), lineFlags, "VPhys %c pos");
 			TrDrawTags(data, activeTick, xAxFlags & ImPlotAxisFlags_NoTickLabels);
+			TrHandleTickSeek(activeTick);
 			ImPlot::PopColormap();
 			ImPlot::EndPlot();
 		}
@@ -196,12 +233,15 @@ static void TrDrawImGuiPlots(tr_tick activeTick)
 
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, vPhysVel), lineFlags, "VPhys %c vel");
 			TrDrawTags(data, activeTick, false);
+			TrHandleTickSeek(activeTick);
 			ImPlot::PopColormap();
 			ImPlot::EndPlot();
 		}
 
 		ImPlot::EndSubplots();
 	}
+
+	ImPlot::PopStyleVar(2);
 }
 
 static void TrDrawPlayerData(tr_tick activeTick)
@@ -483,7 +523,7 @@ static void TrDrawPortalInfo(std::span<const TrIdx<TrPortal>> portalIdxSp)
 	}
 }
 
-void tr_imgui::WindowCallback(tr_tick activeTick)
+void tr_imgui::WindowCallback(tr_tick& activeTick)
 {
 	auto& cfg = g_plotConfig;
 	if (!cfg.plotsInSeparateWindows)
@@ -558,7 +598,7 @@ void PlotConfig::DrawInImGui()
 	ImGui::Checkbox("Display plot in separate window", &plotsInSeparateWindows);
 }
 
-void tr_imgui::PlotTabCallback(tr_tick activeTick)
+void tr_imgui::PlotTabCallback(tr_tick& activeTick)
 {
 	g_plotConfig.DrawInImGui();
 	if (!g_plotConfig.plotsInSeparateWindows)

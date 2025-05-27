@@ -792,6 +792,12 @@ namespace player_trace
 		Vector GetAdjacentLandmarkDelta(std::span<const TrLandmark> fromLandmarkSp,
 		                                std::span<const TrLandmark> toLandmarkSp) const;
 
+		// all getters will still work fine without clamping, this is just for user gui/scroll code
+		tr_tick ClampValidTick(tr_tick tick) const
+		{
+			return numRecordedTicks == 0 ? 0 : clamp(tick, 0, numRecordedTicks - 1);
+		}
+
 		void HostTickCollect(bool simulated, TrSegmentReason segmentReason, float entCollectRadius);
 	};
 

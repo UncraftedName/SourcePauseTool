@@ -351,10 +351,7 @@ void PlayerTraceFeature::SetDisplayTick(tr_tick val)
 
 void PlayerTraceFeature::ClampActiveTick()
 {
-	if (tr.numRecordedTicks == 0)
-		activeDrawTick = 0;
-	else
-		activeDrawTick = clamp(activeDrawTick, 0, tr.numRecordedTicks - 1);
+	activeDrawTick = tr.ClampValidTick(activeDrawTick);
 }
 
 void PlayerTraceFeature::OnTickSignal(bool simulating)
