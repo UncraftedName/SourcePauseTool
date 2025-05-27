@@ -35,12 +35,11 @@ enum TrPhysTypeSelect : int
 
 struct PlotConfig
 {
-	bool setupDone = false;
+	bool initialized = false;
 	bool plotsInSeparateWindows = false;
 	bool autoFit = true;
 	bool limitAutoFit = false;
 	bool linkX = true;
-	bool showXyVel = false;
 	int maxElems = 1000;
 	float lineThickness = -1.f;
 	ImPlotColormap colorMap = -1;
@@ -48,7 +47,7 @@ struct PlotConfig
 	TrPosAndVelSelect posAndVelSelect = TR_PVS_POS_AND_VEL;
 	TrPhysTypeSelect physTypeSelect = TR_PTS_QPHYS_AND_VPHYS;
 
-	void Setup();
+	void Init();
 	void DrawInImGui();
 
 } inline static g_plotConfig;
@@ -168,6 +167,7 @@ static void TrDrawImGuiPlots(tr_tick activeTick)
 			ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, DBL_MAX);
 			ImPlot::PushColormap(cfg.colorMap);
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, qPhysPos), lineFlags, "QPhys %c pos");
+			(void)ImPlot::NextColormapColor();
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, vPhysPos), lineFlags, "VPhys %c pos");
 			TrDrawTags(data, activeTick, xAxFlags & ImPlotAxisFlags_NoTickLabels);
 			ImPlot::PopColormap();
@@ -180,22 +180,20 @@ static void TrDrawImGuiPlots(tr_tick activeTick)
 			ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, DBL_MAX);
 			ImPlot::PushColormap(cfg.colorMap);
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, qPhysVel), lineFlags, "QPhys %c vel");
-			if (cfg.showXyVel)
-			{
-				AssertMsg(0, "setup colormap");
-				ImPlot::SetNextLineStyle(IMPLOT_AUTO_COL, cfg.lineThickness);
-				// TODO won't work if we're using non-paused ticks
-				ImPlot::PlotLineG(
-				    "QPhys XY vel",
-				    [](int idx, void* arr)
-				    {
-					    return ImPlotPoint{(double)idx,
-					                       ((TrPlotCache::PlotPoint*)arr)[idx].qPhysVel.Length2D()};
-				    },
-				    (void*)data.plotPoints.data(),
-				    nPlotPoints,
-				    lineFlags);
-			}
+
+			ImPlot::SetNextLineStyle(IMPLOT_AUTO_COL, cfg.lineThickness);
+			// TODO won't work if we're using non-paused ticks
+			ImPlot::PlotLineG(
+			    "QPhys XY vel",
+			    [](int idx, void* arr)
+			    {
+				    return ImPlotPoint{(double)idx,
+				                       ((TrPlotCache::PlotPoint*)arr)[idx].qPhysVel.Length2D()};
+			    },
+			    (void*)data.plotPoints.data(),
+			    nPlotPoints,
+			    lineFlags);
+
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, vPhysVel), lineFlags, "VPhys %c vel");
 			TrDrawTags(data, activeTick, false);
 			ImPlot::PopColormap();
@@ -495,31 +493,32 @@ void tr_imgui::WindowCallback(tr_tick activeTick)
 	ImGui::End();
 }
 
-void PlotConfig::Setup()
+void PlotConfig::Init()
 {
-	if (setupDone)
+	if (initialized)
 		return;
 
 	// interpolate default lineThickness - 3.5 looks good on 4k but is too thick on smaller monitors
 	lineThickness = 1.f + (3.5f - 1.f) / 3840.f * ImGui::GetMainViewport()->Size.x;
 
 	static const ImU32 cmData[] = {
-	    4279268351,
-	    4280410108,
-	    4278238984,
-	    4292607744,
-	    4294911764,
-	    4294847198,
-	    ImGui::ColorConvertFloat4ToU32({1, 1, 1, 1}), // dummy color for tags
+	    0xff1073ff, // qphys.x
+	    0xff21dffc, // qphys.y
+	    0xff00bf08, // qphys.z
+	    0xffffffff, // qphys vel xy (velocity only)
+	    0xffdbff00, // vphys.x
+	    0xffff2714, // vphys.y
+	    0xfffe2ade, // vphys.z
+	    0xff000000, // tags (dummy color)
 	};
 	colorMap = ImPlot::AddColormap("Player trace", cmData, ARRAYSIZE(cmData));
 
-	setupDone = true;
+	initialized = true;
 }
 
 void PlotConfig::DrawInImGui()
 {
-	Setup();
+	Init();
 	bool onlyUnpaused = dataType == TR_PDT_WITHOUT_PAUSES;
 	if (ImGui::Checkbox("Only unpaused ticks", &onlyUnpaused))
 		dataType = onlyUnpaused ? TR_PDT_WITHOUT_PAUSES : TR_PDT_WITH_PAUSES;
@@ -545,10 +544,6 @@ void PlotConfig::DrawInImGui()
 	ImGui::RadioButton("velocity only", (int*)&posAndVelSelect, TR_PVS_VEL);
 	ImGui::SameLine();
 	ImGui::RadioButton("position & velocity", (int*)&posAndVelSelect, TR_PVS_POS_AND_VEL);
-
-	ImGui::BeginDisabled(!(posAndVelSelect & TR_PVS_VEL));
-	ImGui::Checkbox("Show XY vel", &showXyVel);
-	ImGui::EndDisabled();
 
 	ImGui::RadioButton("QPhys only", (int*)&physTypeSelect, TR_PTS_QPHYS);
 	ImGui::SameLine();
