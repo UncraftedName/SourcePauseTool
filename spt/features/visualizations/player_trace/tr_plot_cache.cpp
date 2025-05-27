@@ -22,7 +22,7 @@ void TrPlotCache::SyncWithTrace()
 	{
 		auto updateIdx = []<typename T>(uint32_t toTick, TrIdx<T>& idx)
 		{
-			if ((idx + 1).IsValid() && (idx + 1)->tick >= toTick)
+			if ((idx + 1).IsValid() && (idx + 1)->tick <= toTick)
 				++idx;
 		};
 
