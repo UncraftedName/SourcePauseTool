@@ -271,8 +271,8 @@ namespace player_trace
 
 		void GetPosAng(Vector& pos, QAngle& ang) const
 		{
-			pos = posIdx.IsValid() ? **posIdx : Vector{NAN};
-			ang = angIdx.IsValid() ? **angIdx : QAngle{NAN, NAN, NAN};
+			pos = posIdx.GetOrDefault(Vector{NAN});
+			ang = angIdx.GetOrDefault(QAngle{NAN, NAN, NAN});
 		}
 	};
 	TR_DEFINE_LUMP(TrTransform_v1, "transform", 1);

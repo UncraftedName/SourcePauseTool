@@ -316,8 +316,12 @@ static void TrDrawPlayerData(tr_tick activeTick)
 	}
 }
 
-static void TrDrawEntityInfo(const TrEntityCache::EntMap& entMap)
+static void TrDrawEntityInfo(tr_tick atTick)
 {
+	auto& tr = TrReadContextScope::Current();
+	auto& entCache = tr.GetEntityCache();
+	auto& entMap = entCache.GetEnts(atTick);
+
 	static std::vector<std::pair<TrIdx<TrEnt>, TrIdx<TrEntTransform>>> sortedEnts;
 	sortedEnts.resize(entMap.size());
 	std::ranges::transform(entMap, sortedEnts.begin(), std::identity{});
@@ -374,8 +378,9 @@ static void TrDrawEntityInfo(const TrEntityCache::EntMap& entMap)
 
 		ImGui::PushID(ent.handle.GetEntryIndex());
 		const char* entName = *ent.nameIdx;
+		ImGui::BeginGroup();
 		if (ImGui::TreeNodeEx("ent_entry",
-		                      ImGuiTreeNodeFlags_None,
+		                      ImGuiTreeNodeFlags_SpanFullWidth,
 		                      "index %d [%s]%s%s%s",
 		                      ent.handle.GetEntryIndex(),
 		                      *ent.networkClassNameIdx,
@@ -458,9 +463,18 @@ static void TrDrawEntityInfo(const TrEntityCache::EntMap& entMap)
 					ImGui::TreePop();
 				}
 				SptImGui::EndBordered();
+				// pad the remaining space with a dummy for hover detection
+				auto [_, height] = ImGui::GetItemRectSize();
+				ImGui::SameLine();
+				ImGui::Dummy(ImVec2{ImGui::GetContentRegionAvail().x, height});
 			}
 			ImGui::TreePop();
 		}
+		ImGui::EndGroup();
+
+		if (ImGui::IsItemHovered())
+			entCache.hoveredEnt = entIdx;
+
 		ImGui::PopID();
 	}
 }
@@ -628,13 +642,14 @@ void tr_imgui::EntityTabCallback(tr_tick activeTick)
 	}
 
 	{
-		auto& entMap = tr.GetEntityCache().GetEnts(activeTick);
+		auto& entCache = tr.GetEntityCache();
+		auto& entMap = entCache.GetEnts(activeTick);
 		char buf[32];
 		snprintf(buf, sizeof buf, "%" PRIu32 " entit%s###ent", entMap.size(), entMap.size() == 1 ? "y" : "ies");
 		if (ImGui::CollapsingHeader(buf))
 		{
 			if (ImGui::BeginChild("ents", childSize, childFlags))
-				TrDrawEntityInfo(entMap);
+				TrDrawEntityInfo(activeTick);
 			ImGui::EndChild();
 		}
 	}
