@@ -632,14 +632,16 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 		mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
+			    // add in landmark delta manually so that meshes can be merged
+			    Vector origin = pos + landmarkDeltaToMapAtTick;
 			    // interfaces::debugOverlay->AddTextOverlay(origin, 0, "%s", className);
 			    ShapeColor color = isTrigger ? trColors.entities.obbTrigger : trColors.entities.obb;
 			    if (drawObb && mins != maxs)
-				    mb.AddBox(pos, mins, maxs, ang, color);
+				    mb.AddBox(origin, mins, maxs, ang, color);
 			    if (drawObb && trStyles.entities.drawObbCenter && !isTrigger && pos != vec3_origin)
 			    {
 				    // a position at exactly the origin *probably* means it's not relevant
-				    mb.AddCross(pos,
+				    mb.AddCross(origin,
 				                trStyles.entities.obbCenterCrossRadius,
 				                trColors.entities.obb.lineColor);
 			    }
@@ -648,7 +650,7 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 				    Vector extra{1.f};
 				    if (mins == maxs)
 					    mins = -(maxs = Vector{trStyles.entities.obbCenterCrossRadius});
-				    mb.AddBox(pos, mins - extra, maxs + extra, ang, trColors.entities.obbHovered);
+				    mb.AddBox(origin, mins - extra, maxs + extra, ang, trColors.entities.obbHovered);
 			    }
 		    }));
 	}
