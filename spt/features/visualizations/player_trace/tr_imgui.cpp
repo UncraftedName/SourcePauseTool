@@ -86,27 +86,8 @@ static void TrDrawXyzPlots(const TrPlotCache::PlotData& data,
                            ImPlotLineFlags lineFlags,
                            const char* legendFmt)
 {
-	// TODO add a config setting for this
-	bool doMarkers = false;
-	auto [xMin, xMax] = ImPlot::GetPlotLimits().X;
-	auto [xPixSize, _] = ImPlot::GetPlotSize();
-	if (xPixSize / (xMax - xMin) > g_plotConfig.lineThickness * 5)
-		doMarkers = true;
-
-	if (doMarkers)
-	{
-		ImPlot::PushStyleVar(ImPlotStyleVar_Marker, ImPlotMarker_Diamond);
-		ImPlot::PushStyleColor(ImPlotCol_MarkerFill, ImVec4{0, 0, 0, 0});
-	}
-
 	for (int i = 0; i < 3; i++)
 		TrDrawDataLine(data, startStructOffset + sizeof(float) * i, lineFlags, legendFmt, 'X' + i);
-
-	if (doMarkers)
-	{
-		ImPlot::PopStyleColor();
-		ImPlot::PopStyleVar();
-	}
 }
 
 static void TrDrawTags(const TrPlotCache::PlotData& data, tr_tick& activeTick, bool onlyLines)
@@ -133,6 +114,33 @@ static void TrHandleTickSeek(tr_tick& activeTick)
 	{
 		ImPlotPoint pt = ImPlot::GetPlotMousePos();
 		activeTick = TrReadContextScope::Current().ClampValidTick(pt.x);
+	}
+}
+
+static bool TrPushMarkerSettings()
+{
+	// TODO add a config setting for this
+	bool doMarkers = false;
+	auto [xMin, xMax] = ImPlot::GetPlotLimits().X;
+	auto [xPixSize, _] = ImPlot::GetPlotSize();
+	if (xPixSize / (xMax - xMin) > g_plotConfig.lineThickness * 5)
+		doMarkers = true;
+
+	if (doMarkers)
+	{
+		ImPlot::PushStyleVar(ImPlotStyleVar_Marker, ImPlotMarker_Diamond);
+		ImPlot::PushStyleColor(ImPlotCol_MarkerFill, ImVec4{0, 0, 0, 0});
+	}
+
+	return doMarkers;
+}
+
+static void TrPopMarkerSettings(bool doMarkers)
+{
+	if (doMarkers)
+	{
+		ImPlot::PopStyleColor();
+		ImPlot::PopStyleVar();
 	}
 }
 
@@ -198,15 +206,16 @@ static void TrDrawImGuiPlots(tr_tick& activeTick)
 				if (cfg.autoFit || cfg.linkX)
 					xAxFlags |= ImPlotAxisFlags_NoTickLabels;
 			}
-
 			ImPlot::SetupAxes(xAxName, "pos", xAxFlags, axisFlags);
 			ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, DBL_MAX);
 			ImPlot::PushColormap(cfg.colorMap);
+			bool doMarkers = TrPushMarkerSettings();
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, qPhysPos), lineFlags, "QPhys %c pos");
 			(void)ImPlot::NextColormapColor();
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, vPhysPos), lineFlags, "VPhys %c pos");
 			TrDrawTags(data, activeTick, xAxFlags & ImPlotAxisFlags_NoTickLabels);
 			TrHandleTickSeek(activeTick);
+			TrPopMarkerSettings(doMarkers);
 			ImPlot::PopColormap();
 			ImPlot::EndPlot();
 		}
@@ -216,6 +225,7 @@ static void TrDrawImGuiPlots(tr_tick& activeTick)
 			ImPlot::SetupAxes(xAxName, "vel", axisFlags, axisFlags);
 			ImPlot::SetupAxisLimitsConstraints(ImAxis_X1, 0, DBL_MAX);
 			ImPlot::PushColormap(cfg.colorMap);
+			bool doMarkers = TrPushMarkerSettings();
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, qPhysVel), lineFlags, "QPhys %c vel");
 
 			ImPlot::SetNextLineStyle(IMPLOT_AUTO_COL, cfg.lineThickness);
@@ -234,6 +244,7 @@ static void TrDrawImGuiPlots(tr_tick& activeTick)
 			TrDrawXyzPlots(data, offsetof(TrPlotCache::PlotPoint, vPhysVel), lineFlags, "VPhys %c vel");
 			TrDrawTags(data, activeTick, false);
 			TrHandleTickSeek(activeTick);
+			TrPopMarkerSettings(doMarkers);
 			ImPlot::PopColormap();
 			ImPlot::EndPlot();
 		}
@@ -384,7 +395,7 @@ static void TrDrawEntityInfo(tr_tick atTick)
 	if (filter.IsActive())
 	{
 		ImGui::SameLine();
-		ImGui::Text("(showing %d results)", nPassed);
+		ImGui::Text("(showing %d result%s)", nPassed, nPassed == 1 ? "" : "s");
 	}
 
 	for (auto [entIdx, entTransIdx] : sortedEnts)
