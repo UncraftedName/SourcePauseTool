@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "test_item.hpp"
 #include <fstream>
 #include "string_utils.hpp"

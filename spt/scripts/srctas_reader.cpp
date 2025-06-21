@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "srctas_reader.hpp"
 
 #include "..\spt-serverplugin.hpp"

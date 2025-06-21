@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "framebulk_handler.hpp"
 
 #include "string_utils.hpp"

@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "file.hpp"
 #include "framebulk_handler2.hpp"
 #include "game_detection.hpp"

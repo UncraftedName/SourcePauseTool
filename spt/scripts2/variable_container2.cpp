@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "srctas_reader2.hpp"
 #include "variable_container2.hpp"
 #include "dbg.h"

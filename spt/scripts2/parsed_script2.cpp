@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "framebulk_handler2.hpp"
 #include "file.hpp"
 #include "parsed_script2.hpp"

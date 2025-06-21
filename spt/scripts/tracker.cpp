@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "tracker.hpp"
 #include "..\sptlib-wrapper.hpp"
 #include "string_utils.hpp"

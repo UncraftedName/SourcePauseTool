@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "tester.hpp"
 #include <filesystem>
 #include "..\spt-serverplugin.hpp"
