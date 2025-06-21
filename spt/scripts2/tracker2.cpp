@@ -4,6 +4,8 @@
 #include "..\features\tas.hpp"
 #include "..\sptlib-wrapper.hpp"
 
+#include <iomanip>
+
 namespace scripts2
 {
 	bool ValidDiff(const Vector& v, float maxDiff)

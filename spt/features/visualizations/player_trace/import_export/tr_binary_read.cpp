@@ -4,6 +4,8 @@
 
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
+#include <format>
+
 using namespace player_trace;
 
 /*

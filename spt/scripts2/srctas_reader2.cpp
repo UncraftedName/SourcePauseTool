@@ -6,6 +6,7 @@
 #include "srctas_reader2.hpp"
 #include "string_utils.hpp"
 
+#include "convar.hpp"
 #include "..\features\afterframes.hpp"
 #include "..\features\demo.hpp"
 #include "..\features\tickrate.hpp"

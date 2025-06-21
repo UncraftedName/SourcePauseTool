@@ -16,6 +16,8 @@
 #include "PlayerState.h"
 #include "vphysics/friction.h"
 
+#include <filesystem>
+
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
 using namespace player_trace;

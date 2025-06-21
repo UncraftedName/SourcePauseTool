@@ -4,6 +4,8 @@
 #include "spt/utils/math.hpp"
 #include "spt/features/ent_props.hpp"
 
+#include <iterator>
+
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
 #define PORTAL_HALF_WIDTH 32.0f

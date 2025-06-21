@@ -4,6 +4,8 @@
 #include "..\features\playerio.hpp"
 #include "..\features\tas.hpp"
 
+#include <iomanip>
+
 namespace scripts
 {
 	bool ValidDiff(const Vector& v, float maxDiff)

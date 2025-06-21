@@ -2,6 +2,7 @@
 
 #include "..\spt-serverplugin.hpp"
 
+#include "convar.hpp"
 #include "..\sptlib-wrapper.hpp"
 #include "game_detection.hpp"
 #include "file.hpp"

@@ -7,6 +7,9 @@
 #define LZMA_API_STATIC
 #include "thirdparty/xz/include/lzma.h"
 
+#include <ostream>
+#include <istream>
+
 #define TR_COMPRESSED_FILE_EXT ".sptr.xz"
 
 namespace player_trace

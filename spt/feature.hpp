@@ -8,7 +8,7 @@
 
 #include "SPTLib\patterns.hpp"
 #include "SPTLib\memutils.hpp"
-#include "convar.hpp"
+#include "convar.h"
 
 /*
 * Prefer using DECL_STATIC_HOOK_XXX over DECL_HOOK_XXX.
