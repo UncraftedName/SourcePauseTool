@@ -1,5 +1,6 @@
-#include "thirdparty\json_spt_include.hpp"
+#include <algorithm>
 #include <inttypes.h>
+#include <array>
 
 #include "imgui_interface.hpp"
 #include "thirdparty/imgui/imgui_internal.h"

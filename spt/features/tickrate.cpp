@@ -1,5 +1,4 @@
-#include "thirdparty\json_spt_include.hpp"
-
+#include <algorithm>
 #include "..\spt-serverplugin.hpp"
 #include "tickrate.hpp"
 #include "convar.hpp"

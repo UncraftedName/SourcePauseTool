@@ -5,6 +5,8 @@
 #include "spt/utils/ent_list.hpp"
 #include "spt/utils/portal_utils.hpp"
 
+#include <functional>
+
 class SptImGuiFeature;
 class SptImGui;
 struct ImGuiWindow;

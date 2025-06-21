@@ -1,5 +1,4 @@
-#include "thirdparty\json_spt_include.hpp"
-
+#include <algorithm>
 #include <unordered_map>
 
 #include "map_utils.hpp"

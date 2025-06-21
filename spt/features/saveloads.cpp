@@ -1,5 +1,4 @@
-#include "thirdparty\json_spt_include.hpp"
-
+#include <algorithm>
 #include "..\sptlib-wrapper.hpp"
 #include "signals.hpp"
 #include "convar.hpp"

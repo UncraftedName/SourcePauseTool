@@ -12,8 +12,13 @@
 #include "thirdparty/imgui/imgui_impl_dx9.h"
 #include "thirdparty/imgui/imgui_impl_win32.h"
 
+// needed for json lib
+#ifdef null
+#undef null
+#endif
+
 #include "thirdparty/x86.h"
-#include "thirdparty/json_spt_include.hpp"
+#include "thirdparty/json.hpp"
 #include "thirdparty/curl/include/curl/curlver.h"
 #include "thirdparty/xz/include/lzma.h"
 

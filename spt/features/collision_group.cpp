@@ -1,5 +1,4 @@
-#include "thirdparty\json_spt_include.hpp"
-
+#include <algorithm>
 #include "ent_utils.hpp"
 #include "..\feature.hpp"
 #include "visualizations\imgui\imgui_interface.hpp"

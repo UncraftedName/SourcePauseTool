@@ -1,4 +1,4 @@
-#include "thirdparty\json_spt_include.hpp"
+#include <algorithm>
 
 #include "condition2.hpp"
 
