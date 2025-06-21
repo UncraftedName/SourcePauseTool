@@ -1,6 +1,7 @@
 #include <algorithm>
 #include "ent_utils.hpp"
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 #include "visualizations\imgui\imgui_interface.hpp"
 #include "spt\utils\ent_list.hpp"
 

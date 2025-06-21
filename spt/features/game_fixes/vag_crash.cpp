@@ -1,6 +1,7 @@
 #if defined(SSDK2007) || defined(SSDK2013)
 
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 #include "..\utils\game_detection.hpp"
 #include "..\cvars.hpp"
 #include "signals.hpp"

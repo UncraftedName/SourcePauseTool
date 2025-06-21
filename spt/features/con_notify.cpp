@@ -1,5 +1,6 @@
 #include "game_detection.hpp"
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 #include "visualizations\imgui\imgui_interface.hpp"
 
 ConVar spt_con_notify_cvar("spt_con_notify", 

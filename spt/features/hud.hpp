@@ -6,6 +6,7 @@
 #include <vector>
 #include <unordered_map>
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 #include "vgui\VGUI.h"
 #include "vgui\IScheme.h"
 #include "VGuiMatSurface\IMatSystemSurface.h"

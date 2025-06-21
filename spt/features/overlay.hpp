@@ -5,6 +5,7 @@
 #endif
 
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 
 class C_BasePlayer;
 enum SkyboxVisibility_t;

@@ -1,5 +1,6 @@
 #pragma once
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 
 // RNG prediction
 class RNGStuff : public FeatureWrapper<RNGStuff>

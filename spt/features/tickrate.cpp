@@ -1,6 +1,7 @@
 #include <algorithm>
 #include "..\spt-serverplugin.hpp"
 #include "tickrate.hpp"
+#include "mem_utils.hpp"
 #include "convar.hpp"
 #include "visualizations\imgui\imgui_interface.hpp"
 

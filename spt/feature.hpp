@@ -6,8 +6,6 @@
 #include <stdexcept>
 #include <algorithm>
 
-#include "mem_utils.hpp"
-
 #include "convar.h"
 
 #define InitCommand(command) InitConcommandBase(command##_command)

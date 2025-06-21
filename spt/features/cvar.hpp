@@ -1,6 +1,7 @@
 #pragma once
 
 #include "spt/feature.hpp"
+#include "mem_utils.hpp"
 
 class CvarStuff : public FeatureWrapper<CvarStuff>
 {

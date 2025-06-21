@@ -1,6 +1,7 @@
 #pragma once
 
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 #include "ent_props.hpp"
 
 #if defined(OE)

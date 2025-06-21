@@ -1,5 +1,6 @@
 #pragma once
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 #include "thirdparty\Signal.h"
 
 #if defined(OE)

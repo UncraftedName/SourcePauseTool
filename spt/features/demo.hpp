@@ -1,5 +1,6 @@
 #pragma once
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 
 // Various demo features
 class DemoStuff : public FeatureWrapper<DemoStuff>

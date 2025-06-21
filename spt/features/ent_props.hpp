@@ -1,6 +1,7 @@
 #pragma once
 
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 #include "datamap_wrapper.hpp"
 #include "spt\utils\ent_list.hpp"
 

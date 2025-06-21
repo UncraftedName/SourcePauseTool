@@ -16,6 +16,7 @@ enum SkyboxVisibility_t;
 #include <optional>
 
 #include "spt\feature.hpp"
+#include "mem_utils.hpp"
 #include "thirdparty\Signal.h"
 
 /*

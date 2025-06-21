@@ -1,4 +1,5 @@
 #include "..\feature.hpp"
+#include "mem_utils.hpp"
 
 namespace patterns
 {
