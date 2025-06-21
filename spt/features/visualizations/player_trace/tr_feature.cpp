@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <algorithm>
+#include <fstream>
 
 #include "spt/feature.hpp"
 

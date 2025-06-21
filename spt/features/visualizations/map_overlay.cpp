@@ -15,6 +15,7 @@
 
 #include <stack>
 #include <mutex>
+#include <fstream>
 
 #define SC_BOX_BRUSH ShapeColor(C_OUTLINE(0, 255, 255, 20))
 #define SC_COMPLEX_BRUSH ShapeColor(C_OUTLINE(255, 0, 255, 20))
