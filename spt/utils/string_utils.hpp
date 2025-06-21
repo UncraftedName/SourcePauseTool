@@ -1,6 +1,8 @@
 #pragma once
+
 #include <string>
 #include <wchar.h>
+#include <sstream>
 #include <tier0\wchartypes.h>
 
 bool whiteSpacesOnly(const std::string& s);

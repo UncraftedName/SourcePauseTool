@@ -3,7 +3,6 @@
 #include <fstream>
 #include <iomanip>
 #include <map>
-#include <sstream>
 #include <string>
 
 #define WIN32_LEAN_AND_MEAN
