@@ -1,5 +1,4 @@
 #include "thirdparty\json_spt_include.hpp"
-#include <stdafx.hpp>
 #include <inttypes.h>
 
 #include "imgui_interface.hpp"

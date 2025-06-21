@@ -1,5 +1,4 @@
 #include "thirdparty\json_spt_include.hpp"
-#include "stdafx.hpp"
 
 #include "..\spt-serverplugin.hpp"
 #include "tickrate.hpp"

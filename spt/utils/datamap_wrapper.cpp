@@ -1,5 +1,4 @@
 #include "thirdparty\json_spt_include.hpp"
-#include "stdafx.hpp"
 #include "datamap_wrapper.hpp"
 
 namespace utils

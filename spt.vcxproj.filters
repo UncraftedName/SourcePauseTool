@@ -750,9 +750,6 @@
     <ClInclude Include="thirdparty\curl\include\curl\urlapi.h">
       <Filter>thirdparty\curl\include\curl</Filter>
     </ClInclude>
-    <ClInclude Include="spt\utils\stdafx.hpp">
-      <Filter>spt\utils</Filter>
-    </ClInclude>
     <ClInclude Include="spt\features\visualizations\renderer\internal\internal_defs.hpp">
       <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClInclude>
