@@ -1,5 +1,3 @@
-#include <stdafx.hpp>
-
 /*
 * We've previously had issues with the version information not updating automatically and the
 * version string being different across different files because it was defined as a macro. This
