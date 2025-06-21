@@ -27,6 +27,8 @@
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
+#include "spt/features/overlay.hpp"
+
 #include <algorithm>
 
 #include "internal_defs.hpp"

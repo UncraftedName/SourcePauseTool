@@ -12,6 +12,7 @@
 #include "visualizations/imgui/imgui_interface.hpp"
 #include "thirdparty/imgui/imgui_internal.h"
 #include "spt/utils/ent_list.hpp"
+#include "spt\utils\mem_utils.hpp"
 
 #include <string>
 #include <unordered_map>

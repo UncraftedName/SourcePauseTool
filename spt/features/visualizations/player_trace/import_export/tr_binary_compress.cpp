@@ -3,6 +3,7 @@
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
 #include <format>
+#include <thread>
 
 using namespace player_trace;
 

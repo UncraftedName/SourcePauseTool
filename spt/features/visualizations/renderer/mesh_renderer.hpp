@@ -4,6 +4,10 @@
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
+class C_BasePlayer;
+enum SkyboxVisibility_t;
+#include "networkvar.h"
+
 #include "view_shared.h"
 #include "viewrender.h"
 

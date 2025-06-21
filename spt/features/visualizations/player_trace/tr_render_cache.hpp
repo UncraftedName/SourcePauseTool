@@ -7,6 +7,8 @@
 
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
+#include "spt/features/visualizations/renderer/mesh_renderer.hpp"
+
 namespace player_trace
 {
 	class TrRenderingCache

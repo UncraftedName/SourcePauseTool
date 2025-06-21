@@ -6,6 +6,7 @@
 #include "..\autojump.hpp"
 #include "SDK\hl_movedata.h"
 #include "..\visualizations\imgui\imgui_interface.hpp"
+#include "spt\utils\mem_utils.hpp"
 
 #ifdef OE
 static void NoclipNofixCVarCallback(ConVar* pConVar, const char* pOldValue);

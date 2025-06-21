@@ -4,6 +4,7 @@
 #include "..\cvars.hpp"
 #include "signals.hpp"
 #include "dbg.h"
+#include "spt\utils\mem_utils.hpp"
 #include <sstream>
 
 AfterticksFeature spt_afterticks;
@@ -206,7 +207,10 @@ void AfterticksFeature::LoadFeature()
 	if (!ORIG_HostRunframe__TargetString || MATCHES_Engine__StringReferences.empty())
 		return;
 
-	GET_MODULE(engine);
+	void* engineHandle;
+	void* engineBase;
+	size_t engineSize = 0;
+	MemUtils::GetModuleInfo(L"engine.dll", &engineHandle, &engineBase, &engineSize);
 
 	for (auto match : MATCHES_Engine__StringReferences)
 	{

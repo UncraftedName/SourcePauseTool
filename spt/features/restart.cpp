@@ -2,7 +2,7 @@
 #include "spt\feature.hpp"
 #include "..\spt-serverplugin.hpp"
 #include "..\sptlib-wrapper.hpp"
-#include "SPTLib\Hooks.hpp"
+#include "spt\utils\mem_utils.hpp"
 
 static HMODULE spt_module = 0;
 

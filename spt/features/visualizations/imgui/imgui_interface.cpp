@@ -5,6 +5,7 @@
 #include "spt/spt-serverplugin.hpp"
 #include "spt/utils/spt_vprof.hpp"
 #include "spt/utils/signals.hpp"
+#include "spt/utils/mem_utils.hpp"
 #include "spt/features/hud.hpp"
 
 #include "thirdparty/imgui/imgui.h"

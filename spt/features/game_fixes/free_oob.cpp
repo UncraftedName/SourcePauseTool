@@ -4,6 +4,8 @@
 #include "interfaces.hpp"
 #include "..\visualizations\imgui\imgui_interface.hpp"
 
+#include "spt\utils\mem_utils.hpp"
+
 #ifndef OE
 
 static void FreeOOBCVarCallback(IConVar* pConVar, const char* pOldValue, float flOldValue);
@@ -50,7 +52,10 @@ void FreeOobFeature::LoadFeature()
 	if (!spt_autojump.ptrCheckJumpButton || !interfaces::gm)
 		return;
 
-	GET_MODULE(server);
+	void* serverHandle;
+	void* serverBase;
+	size_t serverSize = 0;
+	MemUtils::GetModuleInfo(L"server.dll", &serverHandle, &serverBase, &serverSize);
 
 	// we assume TryPlayerMove is 2 entries below CheckJumpButton in the vftable.
 	uintptr_t cjbPtr = (uintptr_t)spt_autojump.ptrCheckJumpButton;

@@ -930,6 +930,9 @@
     <ClInclude Include="spt\features\visualizations\player_trace\import_export\tr_binary_compress.hpp">
       <Filter>spt\features\visualizations\player_trace\import_export</Filter>
     </ClInclude>
+    <ClInclude Include="spt\utils\mem_utils.hpp">
+      <Filter>spt\utils</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">

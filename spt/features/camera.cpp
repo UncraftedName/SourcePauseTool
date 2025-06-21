@@ -11,6 +11,7 @@
 #include "spt\utils\signals.hpp"
 #include "spt\cvars.hpp"
 #include "visualizations\player_trace\tr_config.hpp"
+#include "visualizations\renderer\mesh_renderer.hpp"
 
 #include "usercmd.h"
 #include "view_shared.h"

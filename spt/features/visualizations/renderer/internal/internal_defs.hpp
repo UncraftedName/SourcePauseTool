@@ -17,6 +17,7 @@
 #define VPROF_BUDGETGROUP_MESH_RENDERER _T("Mesh_Renderer")
 
 #include <stack>
+#include <vector>
 
 using VertIndex = unsigned short;
 using DynamicMeshToken = DynamicMesh;

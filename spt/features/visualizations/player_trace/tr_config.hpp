@@ -1,6 +1,6 @@
 #pragma once
 
-#include "spt/features/visualizations/renderer/mesh_renderer.hpp"
+#include "spt/features/visualizations/renderer/mesh_builder.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 #define SPT_PLAYER_TRACE_ENABLED

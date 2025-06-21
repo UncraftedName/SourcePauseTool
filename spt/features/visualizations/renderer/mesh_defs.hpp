@@ -1,10 +1,12 @@
 #pragma once
 
+#include "mathlib/vector.h"
+
 #include <span>
+#include <memory>
+#include <algorithm>
 
-#include "spt\features\overlay.hpp"
-
-#if !defined(OE) && defined(SPT_OVERLAY_ENABLED)
+#if !defined(OE) && !defined(BMS)
 
 #define SPT_MESH_RENDERING_ENABLED
 

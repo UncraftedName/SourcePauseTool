@@ -1,5 +1,6 @@
 #include "..\feature.hpp"
 #include "..\visualizations\imgui\imgui_interface.hpp"
+#include "spt\utils\mem_utils.hpp"
 
 ConVar spt_prevent_snapshot_overflow("spt_prevent_snapshot_overflow",
                                      "0",

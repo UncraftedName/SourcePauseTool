@@ -3,6 +3,7 @@
 #include "..\autojump.hpp"
 #include "interfaces.hpp"
 #include "game_detection.hpp"
+#include "spt\utils\mem_utils.hpp"
 
 #ifndef OE
 
