@@ -1,3 +1,4 @@
+#include "thirdparty\json_spt_include.hpp"
 #include "stdafx.hpp"
 
 #include "condition2.hpp"

@@ -1,6 +1,3 @@
-#pragma once
-#include "stdafx.hpp"
-
 #include <SPTLib\memutils.hpp>
 #include <SPTLib\patterns.hpp>
 #include <array>

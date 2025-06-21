@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <set>
 
 #include "..\feature.hpp"
@@ -15,7 +13,7 @@
 #include "thirdparty/imgui/imgui_impl_win32.h"
 
 #include "thirdparty/x86.h"
-#include "thirdparty/json.hpp"
+#include "thirdparty/json_spt_include.hpp"
 #include "thirdparty/curl/include/curl/curlver.h"
 #include "thirdparty/xz/include/lzma.h"
 

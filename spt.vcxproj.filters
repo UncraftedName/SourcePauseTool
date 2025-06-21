@@ -933,6 +933,9 @@
     <ClInclude Include="spt\features\visualizations\player_trace\import_export\tr_binary_compress.hpp">
       <Filter>spt\features\visualizations\player_trace\import_export</Filter>
     </ClInclude>
+    <ClInclude Include="thirdparty\json_spt_include.hpp">
+      <Filter>thirdparty</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">
