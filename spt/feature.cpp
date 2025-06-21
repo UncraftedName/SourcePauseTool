@@ -8,7 +8,37 @@
 #include "dbg.h"
 #include "SPTLib\Windows\detoursutils.hpp"
 #include "SPTLib\Hooks.hpp"
-#include "cvars.hpp"
+#include "utils\mem_utils.hpp"
+
+struct OffsetHook
+{
+	int32_t offset;
+	const char* patternName;
+	void** origPtr;
+	void* functionHook;
+};
+
+struct RawHook
+{
+	const char* patternName;
+	void** origPtr;
+	void* functionHook;
+};
+
+struct ModuleHookData
+{
+	std::vector<PatternHook> patternHooks;
+	std::vector<MatchAllPattern> matchAllPatterns;
+	std::vector<VFTableHook> vftableHooks;
+	std::vector<OffsetHook> offsetHooks;
+
+	std::vector<std::pair<void**, void*>> funcPairs;
+	std::vector<void**> hookedFunctions;
+	std::vector<VFTableHook> existingVTableHooks;
+	void InitModule(const std::wstring& moduleName);
+	void HookModule(const std::wstring& moduleName);
+	void UnhookModule(const std::wstring& moduleName);
+};
 
 static std::unordered_map<std::string, ModuleHookData> moduleHookData;
 static std::unordered_map<uintptr_t, int> patternIndices;
@@ -101,7 +131,7 @@ void Feature::UnloadFeatures()
 	patternIndices.clear();
 }
 
-void Feature::AddVFTableHook(VFTableHook hook, std::string moduleEnum)
+void AddVFTableHook(VFTableHook hook, std::string moduleEnum)
 {
 	if (moduleHookData.find(moduleEnum) == moduleHookData.end())
 	{
@@ -144,11 +174,7 @@ void Feature::Unhook()
 	}
 }
 
-void Feature::AddOffsetHook(std::string moduleEnum,
-                            int offset,
-                            const char* patternName,
-                            void** origPtr,
-                            void* functionHook)
+void AddOffsetHook(std::string moduleEnum, int offset, const char* patternName, void** origPtr, void* functionHook)
 {
 	if (moduleHookData.find(moduleEnum) == moduleHookData.end())
 	{
@@ -159,7 +185,7 @@ void Feature::AddOffsetHook(std::string moduleEnum,
 	mhd.offsetHooks.push_back(OffsetHook{offset, patternName, origPtr, functionHook});
 }
 
-int Feature::GetPatternIndex(void** origPtr)
+int GetPatternIndex(void** origPtr)
 {
 	uintptr_t ptr = reinterpret_cast<uintptr_t>(origPtr);
 	if (patternIndices.find(ptr) != patternIndices.end())
@@ -180,9 +206,8 @@ void Feature::InitConcommandBase(ConCommandBase& convar)
 bool Feature::AddHudCallback(const char* key, std::function<void(std::string)> func, ConVar& convar)
 {
 #ifdef SPT_HUD_ENABLED
-	bool result = spt_hud_feat.AddHudCallback(key,
-	                                          HudCallback(
-	                                              func, [&convar]() { return convar.GetBool(); }, false));
+	bool result =
+	    spt_hud_feat.AddHudCallback(key, HudCallback(func, [&convar]() { return convar.GetBool(); }, false));
 
 	if (result)
 	{
@@ -195,7 +220,7 @@ bool Feature::AddHudCallback(const char* key, std::function<void(std::string)> f
 #endif
 }
 
-void Feature::AddRawHook(std::string moduleName, void** origPtr, void* functionHook)
+void AddRawHook(std::string moduleName, void** origPtr, void* functionHook)
 {
 	if (moduleHookData.find(moduleName) == moduleHookData.end())
 	{
@@ -207,7 +232,7 @@ void Feature::AddRawHook(std::string moduleName, void** origPtr, void* functionH
 	hookData.hookedFunctions.emplace_back(origPtr);
 }
 
-void Feature::AddPatternHook(PatternHook hook, std::string moduleName)
+void AddPatternHook(PatternHook hook, std::string moduleName)
 {
 	if (moduleHookData.find(moduleName) == moduleHookData.end())
 	{
@@ -218,7 +243,7 @@ void Feature::AddPatternHook(PatternHook hook, std::string moduleName)
 	mhd.patternHooks.push_back(hook);
 }
 
-void Feature::AddMatchAllPattern(MatchAllPattern hook, std::string moduleName)
+void AddMatchAllPattern(MatchAllPattern hook, std::string moduleName)
 {
 	if (moduleHookData.find(moduleName) == moduleHookData.end())
 	{
