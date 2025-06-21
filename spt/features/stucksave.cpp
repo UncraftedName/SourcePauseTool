@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #if !defined(OE)
 
 #include "generic.hpp"

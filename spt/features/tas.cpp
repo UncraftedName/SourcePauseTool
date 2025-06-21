@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "tas.hpp"
 #include "convar.hpp"
 #include "..\sptlib-wrapper.hpp"

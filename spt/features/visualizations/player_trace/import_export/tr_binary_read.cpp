@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <inttypes.h>
 
 #include "tr_binary_internal.hpp"

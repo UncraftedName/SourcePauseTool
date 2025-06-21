@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "hud.hpp"
 
 #ifdef SPT_HUD_ENABLED

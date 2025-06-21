@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "afterticks.hpp"
 #include "generic.hpp"
 #include "..\sptlib-wrapper.hpp"

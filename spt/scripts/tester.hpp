@@ -5,6 +5,8 @@
 #include "test_item.hpp"
 #include "tracker.hpp"
 
+#include <map>
+
 // Test contains the data describing a test
 // Store trackers as a vector of unique_ptrs to the abstract base class
 // Hook AfterFrames into the afterframes queue in ClientDLL

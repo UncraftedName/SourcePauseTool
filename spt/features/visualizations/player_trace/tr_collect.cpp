@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
 

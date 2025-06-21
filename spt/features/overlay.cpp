@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <inttypes.h>
 
 #include "overlay.hpp"

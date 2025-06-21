@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <vector>
 
 #include "property_getter.hpp"

@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "generic.hpp"
 #include "aim.hpp"
 #include "playerio.hpp"

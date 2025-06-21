@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "create_collide.hpp"
 #include "spt\features\ent_props.hpp"
 #include "spt\utils\interfaces.hpp"

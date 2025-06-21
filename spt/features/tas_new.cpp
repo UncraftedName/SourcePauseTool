@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "convar.hpp"
 #include "signals.hpp"
 #include "..\feature.hpp"

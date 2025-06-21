@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <chrono>
 
 #include "..\feature.hpp"

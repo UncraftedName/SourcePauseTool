@@ -9,6 +9,8 @@
 #include "iserverunknown.h"
 #include "trace.h"
 
+#include <vector>
+
 #define INDEX_MASK (MAX_EDICTS - 1)
 
 namespace utils

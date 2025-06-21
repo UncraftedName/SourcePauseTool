@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "..\feature.hpp"
 #include "..\playerio.hpp"
 #include "convar.hpp"

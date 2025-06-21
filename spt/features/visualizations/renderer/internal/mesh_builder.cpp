@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <algorithm>
 
 #include "..\mesh_builder.hpp"

@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "..\cvars.hpp"
 #include "aim.hpp"
 #include "generic.hpp"

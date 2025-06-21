@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #ifndef BMS
 
 #include "..\feature.hpp"

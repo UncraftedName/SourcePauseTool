@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #ifdef OE
 #include "..\feature.hpp"
 #include "..\cvars.hpp"

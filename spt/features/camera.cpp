@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #ifndef OE
 
 #include "spt\feature.hpp"

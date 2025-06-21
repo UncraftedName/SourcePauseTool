@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "afterframes.hpp"
 #include "generic.hpp"
 #include "..\sptlib-wrapper.hpp"

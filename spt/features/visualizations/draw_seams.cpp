@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "worldsize.h"
 
 #include "renderer\mesh_renderer.hpp"

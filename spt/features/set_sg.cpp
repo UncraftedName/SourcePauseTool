@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "..\feature.hpp"
 
 #include "spt\utils\game_detection.hpp"

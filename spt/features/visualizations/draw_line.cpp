@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "renderer\mesh_renderer.hpp"
 #include "imgui/imgui_interface.hpp"
 #include "thirdparty/imgui/imgui_internal.h"

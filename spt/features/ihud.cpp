@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "hud.hpp"
 
 #if !defined(BMS) && defined(SPT_HUD_ENABLED)

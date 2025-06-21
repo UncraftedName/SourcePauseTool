@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "renderer\mesh_renderer.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED

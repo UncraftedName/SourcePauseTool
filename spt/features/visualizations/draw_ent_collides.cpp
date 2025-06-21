@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "..\feature.hpp"
 
 // oh OE, why must you trouble me so?

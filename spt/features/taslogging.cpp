@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "..\feature.hpp"
 #include "cmodel.h"
 #include "SDK\hl_movedata.h"

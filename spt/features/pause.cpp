@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "..\feature.hpp"
 #include "generic.hpp"
 #include "convar.hpp"

@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #ifdef _WIN32
 
 #include "thirdparty\json.hpp"

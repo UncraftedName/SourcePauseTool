@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <unordered_map>
 #include <algorithm>
 #include <fstream>

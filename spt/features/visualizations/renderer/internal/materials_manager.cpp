@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "internal_defs.hpp"
 #include "materials_manager.hpp"
 

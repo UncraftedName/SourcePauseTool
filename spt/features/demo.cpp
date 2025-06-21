@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "demo.hpp"
 #include "generic.hpp"
 #include "signals.hpp"

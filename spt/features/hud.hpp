@@ -12,6 +12,9 @@
 #include "ienginevgui.h"
 #include "Color.h"
 
+#include <map>
+#include <string>
+
 class C_BasePlayer;
 enum SkyboxVisibility_t;
 

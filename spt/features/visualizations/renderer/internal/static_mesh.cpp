@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "internal_defs.hpp"
 #include "mesh_builder_internal.hpp"
 

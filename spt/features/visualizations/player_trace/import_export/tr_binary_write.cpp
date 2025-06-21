@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "tr_binary_internal.hpp"
 
 #ifdef SPT_PLAYER_TRACE_ENABLED

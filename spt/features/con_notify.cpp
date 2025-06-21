@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "game_detection.hpp"
 #include "..\feature.hpp"
 #include "visualizations\imgui\imgui_interface.hpp"

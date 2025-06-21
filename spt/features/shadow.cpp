@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "shadow.hpp"
 #include "..\utils\game_detection.hpp"
 #include "hud.hpp"

@@ -22,8 +22,6 @@
 * love, gifts, and fruit baskets.
 */
 
-#include "stdafx.hpp"
-
 #include "..\mesh_renderer.hpp"
 #include "mesh_renderer_internal.hpp"
 

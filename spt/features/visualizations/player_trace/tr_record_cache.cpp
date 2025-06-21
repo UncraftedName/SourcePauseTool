@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "tr_record_cache.hpp"
 
 #ifdef SPT_PLAYER_TRACE_ENABLED

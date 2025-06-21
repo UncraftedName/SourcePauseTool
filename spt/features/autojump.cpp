@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "autojump.hpp"
 
 #include "basehandle.h"

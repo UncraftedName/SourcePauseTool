@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "tr_render_cache.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/map_utils.hpp"
