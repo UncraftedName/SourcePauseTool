@@ -4,6 +4,8 @@
 #include <vector>
 #include <functional>
 #include <unordered_map>
+#include <future>
+
 #include "SPTLib\patterns.hpp"
 #include "SPTLib\memutils.hpp"
 #include "convar.hpp"

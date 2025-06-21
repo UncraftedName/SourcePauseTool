@@ -4,6 +4,7 @@
 #include <functional>
 #include <sstream>
 #include <time.h>
+#include <future>
 
 #include "vstdlib/IKeyValuesSystem.h"
 #include <SPTLib\Hooks.hpp>

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 extern const char* SPT_VERSION;
 
 #if defined(OE)

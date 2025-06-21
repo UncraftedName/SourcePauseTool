@@ -1,12 +1,12 @@
 #include "stdafx.hpp"
+
+#include <future>
+
 #include "..\spt-serverplugin.hpp"
 #include "SPTLib\sptlib.hpp"
 #include "SPTLib\MemUtils.hpp"
 #include "interfaces.hpp"
 #include "thirdparty\kmp-cpp.hpp"
-#include <atomic>
-#include <thread>
-#include <future>
 
 #ifdef SSDK2013
 #include "convar.hpp"

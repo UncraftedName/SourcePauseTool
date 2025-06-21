@@ -3,6 +3,7 @@
 
 #include <stdarg.h>
 #include <algorithm>
+#include <future>
 
 #include "SPTLib\MemUtils.hpp"
 #include "thirdparty/x86.h"
