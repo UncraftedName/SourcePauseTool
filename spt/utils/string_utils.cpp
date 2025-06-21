@@ -62,7 +62,7 @@ const wchar* FormatTempString(const wchar* format, va_list args)
 const int UTF8_ACCEPT = 0;
 const int UTF8_REJECT = 1;
 
-static const uint8_t utf8d[] = {
+static const uint8_t _utf8d[] = {
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0, // 00..1f
     0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,   0,
@@ -92,11 +92,11 @@ static const uint8_t utf8d[] = {
 
 uint32_t inline decode(uint32_t* state, uint32_t* codep, uint32_t byte)
 {
-	uint32_t type = utf8d[byte];
+	uint32_t type = _utf8d[byte];
 
 	*codep = (*state != UTF8_ACCEPT) ? (byte & 0x3fu) | (*codep << 6) : (0xff >> type) & (byte);
 
-	*state = utf8d[256 + *state * 16 + type];
+	*state = _utf8d[256 + *state * 16 + type];
 	return *state;
 }
 
@@ -107,8 +107,8 @@ uint32_t validate_utf8(uint32_t* state, const char* str, size_t len)
 
 	for (i = 0; i < len; i++)
 	{
-		type = utf8d[(uint8_t)str[i]];
-		*state = utf8d[256 + (*state) * 16 + type];
+		type = _utf8d[(uint8_t)str[i]];
+		*state = _utf8d[256 + (*state) * 16 + type];
 
 		if (*state == UTF8_REJECT)
 			break;
