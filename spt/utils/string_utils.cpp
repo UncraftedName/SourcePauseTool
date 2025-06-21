@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "string_utils.hpp"
 #include <Windows.h>
 #include <algorithm>

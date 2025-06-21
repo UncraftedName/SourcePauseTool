@@ -1,5 +1,3 @@
-#include <stdafx.hpp>
-
 #include "ent_list.hpp"
 #include "spt/features/ent_props.hpp"
 #include "spt/features/property_getter.hpp"

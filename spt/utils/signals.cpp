@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "signals.hpp"
 
 Gallant::Signal0<void> AdjustAngles;

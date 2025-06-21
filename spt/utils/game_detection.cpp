@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <future>
 
 #include "..\spt-serverplugin.hpp"

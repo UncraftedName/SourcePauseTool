@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "convar.hpp"
 #include "file.hpp"
 

@@ -1,4 +1,3 @@
-#include "stdafx.hpp"
 #include "file.hpp"
 #include "interfaces.hpp"
 #include <fstream>

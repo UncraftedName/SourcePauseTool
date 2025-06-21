@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include "..\features\generic.hpp"
 #include "interfaces.hpp"
 #include "vgui_utils.hpp"

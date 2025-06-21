@@ -1,5 +1,3 @@
-#include "stdafx.hpp"
-
 #include <algorithm>
 #include <random>
 #include "math.hpp"
