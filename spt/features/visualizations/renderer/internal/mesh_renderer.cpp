@@ -486,7 +486,7 @@ void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent
 		else
 		{
 			auto& unit = g_meshBuilderInternal.GetDynamicMeshFromToken(unitWrapper._dynamicToken);
-			for (MeshVertData& vData : unit.vDataSlice)
+			for (auto& vData : unit.vData)
 				if (shouldRender(vData.material))
 					components.emplace_back(&unitWrapper, &vData, IMeshWrapper{});
 		}
@@ -548,7 +548,7 @@ void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 
 		auto& debugUnit = g_meshBuilderInternal.GetDynamicMeshFromToken(debugMesh._dynamicToken);
 
-		for (auto& component : debugUnit.vDataSlice)
+		for (auto& component : debugUnit.vData)
 			if (component.indices.size() > 0)
 				debugComponents.emplace_back(&debugMesh, &component, IMeshWrapper{});
 	}
@@ -713,7 +713,7 @@ void MeshRendererDelegate::DrawMesh(const DynamicMesh& dynamicMesh, const Render
 		return;
 	}
 	const DynamicMeshUnit& meshUnit = g_meshBuilderInternal.GetDynamicMeshFromToken(dynamicMesh);
-	if (!meshUnit.vDataSlice.empty())
+	if (!meshUnit.vData.empty())
 	{
 		g_meshRendererInternal.queuedUnitWrappers.emplace_back(dynamicMesh, callback);
 		g_meshRendererInternal.nDynamicsThisFrame++;

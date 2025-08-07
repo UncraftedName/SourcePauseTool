@@ -40,64 +40,6 @@ void GetMaxMeshSize(size_t& maxVerts, size_t& maxIndices, bool dynamic)
 	});
 }
 
-/**************************************** MESH VERT DATA ****************************************/
-
-MeshVertData::MeshVertData(MeshVertData&& other)
-    : verts(std::move(other.verts)), indices(std::move(other.indices)), type(other.type), material(other.material)
-{
-	other.material = nullptr;
-}
-
-MeshVertData::MeshVertData(std::vector<VertexData>& vertDataVec,
-                           std::vector<VertIndex>& vertIndexVec,
-                           MeshPrimitiveType type,
-                           MaterialRef material)
-    : verts(vertDataVec), indices(vertIndexVec), type(type), material(material)
-{
-}
-
-MeshVertData& MeshVertData::operator=(MeshVertData&& other)
-{
-	if (this != &other)
-	{
-		verts = std::move(other.verts);
-		indices = std::move(other.indices);
-		type = other.type;
-		material = other.material;
-		other.material = nullptr;
-	}
-	return *this;
-}
-
-bool MeshVertData::Empty() const
-{
-	return verts.size() == 0 || indices.size() == 0;
-}
-
-/**************************************** MESH UNITS ****************************************/
-
-DynamicMeshUnit::DynamicMeshUnit(VectorSlice<MeshVertData>& vDataSlice, const MeshPositionInfo& posInfo)
-    : vDataSlice(std::move(vDataSlice)), posInfo(posInfo)
-{
-}
-
-DynamicMeshUnit::DynamicMeshUnit(DynamicMeshUnit&& other)
-    : vDataSlice(std::move(other.vDataSlice)), posInfo(other.posInfo)
-{
-}
-
-StaticMeshUnit::StaticMeshUnit(size_t nMeshes, const MeshPositionInfo& posInfo)
-    : meshesArr(new IMeshWrapper[nMeshes]), nMeshes(nMeshes), posInfo(posInfo)
-{
-}
-
-StaticMeshUnit::~StaticMeshUnit()
-{
-	for (size_t i = 0; i < nMeshes; i++)
-		CMatRenderContextPtr(interfaces::materialSystem)->DestroyStaticMesh(meshesArr[i].iMesh);
-	delete[] meshesArr;
-}
-
 /**************************************** MESH BUILDER INTERNAL ****************************************/
 
 IMeshWrapper MeshBuilderInternal::Fuser::CreateIMeshFromSpan(std::span<const MeshComponent> span,
