@@ -18,7 +18,8 @@ void GetMaxMeshSize(size_t& maxVerts, size_t& maxIndices, bool dynamic);
 // used internally for figuring out the render order of translucent meshes, but is also passed to callbacks
 struct MeshPositionInfo
 {
-	Vector mins, maxs;
+	Vector mins{NAN};
+	Vector maxs{NAN};
 };
 
 // winding direction - determines which side a face is visible from; has no effect on lines,
@@ -54,7 +55,7 @@ public:
 	StaticMesh();
 	StaticMesh(const StaticMesh& other);
 	StaticMesh(StaticMesh&& other);
-	StaticMesh(StaticMeshUnit* mesh);
+	StaticMesh(std::shared_ptr<StaticMeshUnit>&& mesh);
 	StaticMesh& operator=(const StaticMesh& r);
 	bool Valid() const;
 	void Destroy();
@@ -78,11 +79,12 @@ public:
 	}
 };
 
-// a token representing a dynamic mesh
-struct DynamicMesh
+struct DynamicMeshToken
 {
 	const size_t dynamicMeshIdx;
 	const int createdFrame;
 };
+
+using DynamicMesh = DynamicMeshToken;
 
 #endif

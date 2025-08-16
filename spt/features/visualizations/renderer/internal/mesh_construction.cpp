@@ -30,11 +30,11 @@
 	         : MeshMaterialSimple::AlphaNoZ)
 
 #define GET_MVD_FACES(color) \
-	g_meshBuilderInternal.GetSimpleMeshComponent(MeshPrimitiveType::Triangles, \
-	                                             _MATERIAL_TYPE_FROM_COLOR((color).faceColor, (color).zTestFaces))
+	stagingBufs.GetSimpleMeshComponent(MeshPrimitiveType::Triangles, \
+	                                   _MATERIAL_TYPE_FROM_COLOR((color).faceColor, (color).zTestFaces))
 #define GET_MVD_LINES(color) \
-	g_meshBuilderInternal.GetSimpleMeshComponent(MeshPrimitiveType::Lines, \
-	                                             _MATERIAL_TYPE_FROM_COLOR((color).lineColor, (color).zTestLines))
+	stagingBufs.GetSimpleMeshComponent(MeshPrimitiveType::Lines, \
+	                                   _MATERIAL_TYPE_FROM_COLOR((color).lineColor, (color).zTestLines))
 
 // winding direction macros
 
@@ -85,8 +85,8 @@
 * precalculated, and MVD_OVERFLOWED(...) may return false even if any of the called functions failed.
 */
 
-#define _MVD_MAX_VERTS g_meshBuilderInternal.tmpMesh.maxVerts
-#define _MVD_MAX_INDICES g_meshBuilderInternal.tmpMesh.maxIndices
+#define _MVD_MAX_VERTS stagingBufs.maxVerts
+#define _MVD_MAX_INDICES stagingBufs.maxIndices
 
 // save how many verts/indices we have
 #define MVD_CHECKPOINT(mvd) \
@@ -142,7 +142,7 @@
 
 /**************************************** HELPER FUNCTIONS ****************************************/
 
-static bool MvdAddLine(MeshVertData& vdl, const Vector& v1, const Vector& v2, color32 c)
+bool MeshBuilderDelegate::MvdAddLine(MeshVertData& vdl, const Vector& v1, const Vector& v2, color32 c)
 {
 	if (c.a == 0)
 		return true;
@@ -160,7 +160,7 @@ static bool MvdAddLine(MeshVertData& vdl, const Vector& v1, const Vector& v2, co
 	return true;
 }
 
-static bool MvdAddLineStripIndices(MeshVertData& vdl, size_t vertsIdx, int nVerts, bool loop)
+bool MeshBuilderDelegate::MvdAddLineStripIndices(MeshVertData& vdl, size_t vertsIdx, int nVerts, bool loop)
 {
 	Assert(nVerts >= 2);
 	MVD_CHECKPOINT(vdl);
@@ -182,7 +182,7 @@ static bool MvdAddLineStripIndices(MeshVertData& vdl, size_t vertsIdx, int nVert
 	return true;
 }
 
-static bool MvdAddLineStrip(MeshVertData& vdl, const Vector* points, int nPoints, bool loop, color32 c)
+bool MeshBuilderDelegate::MvdAddLineStrip(MeshVertData& vdl, const Vector* points, int nPoints, bool loop, color32 c)
 {
 	if (!points || nPoints < 2 || c.a == 0)
 		return true;
@@ -199,7 +199,11 @@ static bool MvdAddLineStrip(MeshVertData& vdl, const Vector* points, int nPoints
 	return true;
 }
 
-static bool MvdAddTris(MeshVertData& vdf, MeshVertData& vdl, const Vector* verts, int nFaces, ShapeColor c)
+bool MeshBuilderDelegate::MvdAddTris(MeshVertData& vdf,
+                                     MeshVertData& vdl,
+                                     const Vector* verts,
+                                     int nFaces,
+                                     ShapeColor c)
 {
 	const bool doFaces = c.faceColor.a != 0;
 	const bool doLines = c.lineColor.a != 0;
@@ -251,13 +255,13 @@ static bool MvdAddTris(MeshVertData& vdf, MeshVertData& vdl, const Vector* verts
 	return true;
 }
 
-static bool MvdAddFaceTriangleStripIndices(MeshVertData& vdf,
-                                           size_t vIdx1,
-                                           size_t vIdx2,
-                                           size_t nVerts,
-                                           bool loop,
-                                           bool mirror,
-                                           WindingDir wd)
+bool MeshBuilderDelegate::MvdAddFaceTriangleStripIndices(MeshVertData& vdf,
+                                                         size_t vIdx1,
+                                                         size_t vIdx2,
+                                                         size_t nVerts,
+                                                         bool loop,
+                                                         bool mirror,
+                                                         WindingDir wd)
 {
 	/*
 	* Creates indices representing a filled triangle strip using existing verts at the given vert indices for faces only.
@@ -336,7 +340,7 @@ static bool MvdAddFaceTriangleStripIndices(MeshVertData& vdf,
 	return true;
 }
 
-static bool MvdAddFacePolygonIndices(MeshVertData& vdf, size_t vertsIdx, int nVerts, WindingDir wd)
+bool MeshBuilderDelegate::MvdAddFacePolygonIndices(MeshVertData& vdf, size_t vertsIdx, int nVerts, WindingDir wd)
 {
 	// Creates indices representing a filled convex polygon using existing verts at the given vert index for faces only.
 	Assert(nVerts >= 3);
@@ -366,7 +370,11 @@ static bool MvdAddFacePolygonIndices(MeshVertData& vdf, size_t vertsIdx, int nVe
 	return true;
 }
 
-static bool MvdAddPolygon(MeshVertData& vdf, MeshVertData& vdl, const Vector* verts, int nVerts, ShapeColor c)
+bool MeshBuilderDelegate::MvdAddPolygon(MeshVertData& vdf,
+                                        MeshVertData& vdl,
+                                        const Vector* verts,
+                                        int nVerts,
+                                        ShapeColor c)
 {
 	const bool doFaces = c.faceColor.a != 0;
 	const bool doLines = c.lineColor.a != 0;
@@ -392,7 +400,7 @@ static bool MvdAddPolygon(MeshVertData& vdf, MeshVertData& vdl, const Vector* ve
 	return true;
 }
 
-static bool MvdAddUnitCube(MeshVertData& vdf, MeshVertData& vdl, ShapeColor c)
+bool MeshBuilderDelegate::MvdAddUnitCube(MeshVertData& vdf, MeshVertData& vdl, ShapeColor c)
 {
 	const bool doFaces = c.faceColor.a != 0;
 	const bool doLines = c.lineColor.a != 0;
@@ -452,7 +460,7 @@ static bool MvdAddUnitCube(MeshVertData& vdf, MeshVertData& vdl, ShapeColor c)
 	return true;
 }
 
-static bool MvdAddSubdivCube(MeshVertData& vdf, MeshVertData& vdl, int nSubdivisions, ShapeColor c)
+bool MeshBuilderDelegate::MvdAddSubdivCube(MeshVertData& vdf, MeshVertData& vdl, int nSubdivisions, ShapeColor c)
 {
 	if (nSubdivisions == 0)
 		return MvdAddUnitCube(vdf, vdl, c);
@@ -579,6 +587,7 @@ static bool MvdAddSubdivCube(MeshVertData& vdf, MeshVertData& vdl, int nSubdivis
 	return true;
 }
 
+// TODO
 static Vector* Scratch(size_t n)
 {
 	static std::unique_ptr<Vector[]> scratch = nullptr;
@@ -1531,36 +1540,29 @@ bool MeshBuilderDelegate::DumpMbCompactMesh(utils::MbCompactMesh& outMesh)
 {
 	bool ret = true;
 
-	for (size_t primType = 0; primType < (size_t)MeshPrimitiveType::Count && ret; primType++)
+	for (auto& mvd : stagingBufs.components)
 	{
-		for (size_t materialType = 0; materialType < (size_t)MeshMaterialSimple::Count && ret; materialType++)
+		switch (mvd.primType)
 		{
-			MeshVertData& mvd =
-			    g_meshBuilderInternal.GetSimpleMeshComponent((MeshPrimitiveType)primType,
-			                                                 (MeshMaterialSimple)materialType);
-			switch ((MeshPrimitiveType)primType)
+		case MeshPrimitiveType::Triangles:
+			for (size_t i = 0; i < mvd.indices.size(); i += 3)
 			{
-			case MeshPrimitiveType::Triangles:
-				for (size_t i = 0; i < mvd.indices.size(); i += 3)
-				{
-					ret &= outMesh.AddTriangle(mvd.verts[mvd.indices[i]],
-					                           mvd.verts[mvd.indices[i + 1]],
-					                           mvd.verts[mvd.indices[i + 2]]);
-					Assert(ret);
-				}
-				break;
-			case MeshPrimitiveType::Lines:
-				for (size_t i = 0; i < mvd.indices.size(); i += 2)
-				{
-					ret &=
-					    outMesh.AddLine(mvd.verts[mvd.indices[i]], mvd.verts[mvd.indices[i + 1]]);
-					Assert(ret);
-				}
-				break;
-			default:
-				Assert(0);
-				break;
+				ret &= outMesh.AddTriangle(mvd.verts[mvd.indices[i]],
+				                           mvd.verts[mvd.indices[i + 1]],
+				                           mvd.verts[mvd.indices[i + 2]]);
+				Assert(ret);
 			}
+			break;
+		case MeshPrimitiveType::Lines:
+			for (size_t i = 0; i < mvd.indices.size(); i += 2)
+			{
+				ret &= outMesh.AddLine(mvd.verts[mvd.indices[i]], mvd.verts[mvd.indices[i + 1]]);
+				Assert(ret);
+			}
+			break;
+		default:
+			Assert(0);
+			break;
 		}
 	}
 	return ret;

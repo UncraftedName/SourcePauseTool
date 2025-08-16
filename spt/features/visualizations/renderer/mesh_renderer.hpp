@@ -10,6 +10,7 @@
 #include "mesh_builder.hpp" // so that users can import just one header
 
 #include <optional>
+#include <memory_resource>
 
 #include "spt\feature.hpp"
 #include "thirdparty\Signal.h"
@@ -84,7 +85,7 @@ public:
 	void DrawMesh(const StaticMesh& mesh, const RenderCallback& callback = nullptr);
 
 private:
-	friend struct MeshRendererInternal;
+	friend class MeshRendererFeature;
 	MeshRendererDelegate() = default;
 	MeshRendererDelegate(MeshRendererDelegate&) = delete;
 };
@@ -104,6 +105,15 @@ public:
 	int CurrentPortalRenderDepth() const;
 	int DestroyAllStaticMeshes() const;
 
+	int FrameNum() const
+	{
+		return persist.frameNum;
+	}
+
+	struct FrameDataImpl;
+	// internal use only, public to prevent lots of friend classes
+	static std::unique_ptr<FrameDataImpl> frameData;
+
 protected:
 	bool ShouldLoadFeature() override;
 	void InitHooks() override;
@@ -113,32 +123,41 @@ protected:
 
 private:
 #ifdef SSDK2007
-	DECL_HOOK_THISCALL(void,
-	                   CSkyBoxView__DrawInternal,
-	                   void*,
-	                   view_id_t iSkyBoxViewID,
-	                   bool bInvokePreAndPostRender,
-	                   ITexture* pRenderTarget);
+	DECL_STATIC_HOOK_THISCALL(void,
+	                          CSkyBoxView__DrawInternal,
+	                          void*,
+	                          view_id_t iSkyBoxViewID,
+	                          bool bInvokePreAndPostRender,
+	                          ITexture* pRenderTarget);
 
 #else
-	DECL_HOOK_THISCALL(void,
-	                   CSkyBoxView__DrawInternal,
-	                   void*,
-	                   view_id_t iSkyBoxViewID,
-	                   bool bInvokePreAndPostRender,
-	                   ITexture* pRenderTarget,
-	                   ITexture* pDepthTarget);
+	DECL_STATIC_HOOK_THISCALL(void,
+	                          CSkyBoxView__DrawInternal,
+	                          void*,
+	                          view_id_t iSkyBoxViewID,
+	                          bool bInvokePreAndPostRender,
+	                          ITexture* pRenderTarget,
+	                          ITexture* pDepthTarget);
 #endif
 
-	DECL_HOOK_THISCALL(void, CRendering3dView__DrawOpaqueRenderables, CRendering3dView*, int param);
+	DECL_STATIC_HOOK_THISCALL(void, CRendering3dView__DrawOpaqueRenderables, CRendering3dView*, int param);
 
-	DECL_HOOK_THISCALL(void,
-	                   CRendering3dView__DrawTranslucentRenderables,
-	                   CRendering3dView*,
-	                   bool bInSkybox,
-	                   bool bShadowDepth);
+	DECL_STATIC_HOOK_THISCALL(void,
+	                          CRendering3dView__DrawTranslucentRenderables,
+	                          CRendering3dView*,
+	                          bool bInSkybox,
+	                          bool bShadowDepth);
+
+	void OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView);
 
 	static void ImGuiCallback();
+
+	struct
+	{
+		int frameNum = 0;
+	} persist;
+
+	inline static std::mutex unloadMutex;
 };
 
 inline MeshRendererFeature spt_meshRenderer;

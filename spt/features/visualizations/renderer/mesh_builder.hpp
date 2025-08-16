@@ -10,6 +10,8 @@
 #include "internal\ref_mgr.hpp"
 #include "spt\utils\mesh_utils.hpp"
 
+struct MbStagingBufs;
+
 struct LineColor
 {
 	color32 lineColor;
@@ -244,10 +246,29 @@ public:
 	bool DumpMbCompactMesh(utils::MbCompactMesh& outMesh);
 
 private:
-	MeshBuilderDelegate() = default;
-	MeshBuilderDelegate(MeshBuilderDelegate&) = delete;
+	using MeshVertData = struct MbComponentBufs;
 
-	friend struct MeshBuilderInternal;
+	bool MvdAddLine(MeshVertData& vdl, const Vector& v1, const Vector& v2, color32 c);
+	bool MvdAddLineStripIndices(MeshVertData& vdl, size_t vertsIdx, int nVerts, bool loop);
+	bool MvdAddLineStrip(MeshVertData& vdl, const Vector* points, int nPoints, bool loop, color32 c);
+	bool MvdAddTris(MeshVertData& vdf, MeshVertData& vdl, const Vector* verts, int nFaces, ShapeColor c);
+	bool MvdAddFaceTriangleStripIndices(MeshVertData& vdf,
+	                                    size_t vIdx1,
+	                                    size_t vIdx2,
+	                                    size_t nVerts,
+	                                    bool loop,
+	                                    bool mirror,
+	                                    WindingDir wd);
+	bool MvdAddFacePolygonIndices(MeshVertData& vdf, size_t vertsIdx, int nVerts, WindingDir wd);
+	bool MvdAddPolygon(MeshVertData& vdf, MeshVertData& vdl, const Vector* verts, int nVerts, ShapeColor c);
+	bool MvdAddUnitCube(MeshVertData& vdf, MeshVertData& vdl, ShapeColor c);
+	bool MvdAddSubdivCube(MeshVertData& vdf, MeshVertData& vdl, int nSubdivisions, ShapeColor c);
+
+	MbStagingBufs& stagingBufs;
+
+	MeshBuilderDelegate(MbStagingBufs& stagingBufs) : stagingBufs{stagingBufs} {}
+	MeshBuilderDelegate(MeshBuilderDelegate&) = delete;
+	friend class MeshBuilderPro;
 };
 
 using MeshCreateFunc = std::function<void(MeshBuilderDelegate& mb)>;

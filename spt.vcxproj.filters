@@ -789,9 +789,6 @@
     <ClInclude Include="spt\features\visualizations\renderer\internal\ref_mgr.hpp">
       <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClInclude>
-    <ClInclude Include="spt\features\visualizations\renderer\internal\vector_slice.hpp">
-      <Filter>spt\features\visualizations\renderer\internal</Filter>
-    </ClInclude>
     <ClInclude Include="spt\features\visualizations\renderer\mesh_builder.hpp">
       <Filter>spt\features\visualizations\renderer</Filter>
     </ClInclude>

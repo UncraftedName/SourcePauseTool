@@ -38,9 +38,20 @@ struct AutoRefPtr
 		return *this;
 	}
 
-	AutoRefPtr& operator=(const AutoRefPtr rhs)
+	AutoRefPtr& operator=(const AutoRefPtr& rhs)
 	{
 		return *this = rhs._ptr;
+	}
+
+	AutoRefPtr& operator=(AutoRefPtr&& rhs)
+	{
+		if (this != &rhs)
+		{
+			Release();
+			_ptr = rhs._ptr;
+			rhs._ptr = nullptr;
+		}
+		return *this;
 	}
 
 	operator T() const

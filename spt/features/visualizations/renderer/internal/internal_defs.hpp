@@ -20,7 +20,6 @@
 #include <stack>
 
 using VertIndex = utils::MbCompactMesh::idx_type;
-using DynamicMeshToken = DynamicMesh;
 
 template<class T>
 using VectorStack = std::stack<T, std::vector<T>>;

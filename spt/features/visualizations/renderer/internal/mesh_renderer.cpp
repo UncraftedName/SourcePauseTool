@@ -129,7 +129,8 @@ void MeshRendererFeature::LoadFeature()
 {
 	if (!signal.Works)
 		return;
-	RenderViewPre_Signal.Connect(&g_meshRendererInternal, &MeshRendererInternal::OnRenderViewPre_Signal);
+
+	RenderViewPre_Signal.Connect(this, &MeshRendererFeature::OnRenderViewPre_Signal);
 	InitConcommandBase(y_spt_draw_mesh_debug);
 	InitCommand(y_spt_destroy_all_static_meshes);
 	SptImGuiGroup::Dev_Mesh.RegisterUserCallback(MeshRendererFeature::ImGuiCallback);
@@ -137,10 +138,32 @@ void MeshRendererFeature::LoadFeature()
 
 void MeshRendererFeature::UnloadFeature()
 {
+	std::unique_lock lk{unloadMutex};
 	signal.Clear();
-	g_meshRendererInternal.FrameCleanup();
+	frameData.reset();
 	g_meshMaterialMgr.Unload();
 	StaticMesh::DestroyAll();
+}
+
+std::unique_ptr<MeshRendererFeature::FrameDataImpl> MeshRendererFeature::frameData;
+
+void MeshRendererFeature::OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView)
+{
+	// ensure we only run once per frame
+	if (spt_overlay.renderingOverlay || !spt_meshRenderer.signal.Works)
+		return;
+
+	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	persist.frameNum++;
+	{
+		std::unique_lock lk{unloadMutex};
+		size_t nBytesAllocedLast = frameData ? frameData->outerCountingResource.nTotalBytesAlloc.load() : 0;
+		frameData = std::make_unique<FrameDataImpl>(nBytesAllocedLast);
+	}
+	frameData->renderer.inSignal = true;
+	MeshRendererDelegate renderDelgate{};
+	signal(renderDelgate);
+	frameData->renderer.inSignal = false;
 }
 
 void MeshRendererFeature::ImGuiCallback()
@@ -168,29 +191,40 @@ void MeshRendererFeature::ImGuiCallback()
 	};
 	SptImGui::CvarCombo(y_spt_draw_mesh_debug, "##draw_mesh_debug", opts, ARRAYSIZE(opts));
 
-	const auto& allVerts = g_meshBuilderInternal.sharedLists.simple.verts;
-	const auto& allIndices = g_meshBuilderInternal.sharedLists.simple.indices;
+	size_t totalVerts = 0;
+	size_t totalIndices = 0;
+	size_t totalDynamics = 0;
+	size_t totalStatics = 0;
+	size_t nBytesAlloced = 0;
+	size_t nBytesUsed = 0;
 
-	size_t totalVerts = std::accumulate(allVerts.cbegin(),
-	                                    allVerts.cend(),
-	                                    0,
-	                                    [](auto a, auto& vData) { return a + vData.size(); });
+	if (frameData)
+	{
+		totalDynamics = frameData->renderer.stats.nDynamicsThisFrame;
+		totalStatics = frameData->renderer.stats.nStaticsThisFrame;
+		nBytesAlloced = frameData->outerCountingResource.nTotalBytesAlloc.load();
+		nBytesUsed = frameData->innerCountingResource.nTotalBytesAlloc.load();
 
-	size_t totalIndices = std::accumulate(allIndices.cbegin(),
-	                                      allIndices.cend(),
-	                                      0,
-	                                      [](auto a, auto& vData) { return a + vData.size(); });
+		for (const auto& unit : frameData->renderer.dynamicUnits)
+		{
+			for (const auto& component : unit.componentBufs)
+			{
+				totalVerts += component.verts.size();
+				totalIndices += component.indices.size();
+			}
+		}
+	}
 
-	ImGui::Text("%3u dynamic wrappers this frame: %6u verts %6u indices",
-	            g_meshRendererInternal.nDynamicsThisFrame,
-	            totalVerts,
-	            totalIndices);
-	ImGui::Text("%3u static mesh wrappers this frame", g_meshRendererInternal.nStaticsThisFrame);
+	ImGui::Text("%3u dynamic units this frame: %6u verts %6u indices", totalDynamics, totalVerts, totalIndices);
+	ImGui::Text("%3u static mesh units this frame", totalStatics);
+	ImGui::Text("%6u bytes allocated this frame (%6u used)", nBytesAlloced, nBytesUsed);
 }
 
 int MeshRendererFeature::CurrentPortalRenderDepth() const
 {
-	return MAX(0, (int)g_meshRendererInternal.debugMeshInfo.descriptionSlices.size() - 1);
+	if (!frameData)
+		return 0;
+	return MAX(0, (int)frameData->renderer.debugMeshViews.size() - 1);
 }
 
 int MeshRendererFeature::DestroyAllStaticMeshes() const
@@ -200,11 +234,13 @@ int MeshRendererFeature::DestroyAllStaticMeshes() const
 
 IMPL_HOOK_THISCALL(MeshRendererFeature, void, CRendering3dView__DrawOpaqueRenderables, CRendering3dView*, int param)
 {
+	std::unique_lock lk{unloadMutex};
 	// HACK - param is a bool in SSDK2007 and enum in SSDK2013
 	// render order shouldn't matter here
-	spt_meshRenderer.ORIG_CRendering3dView__DrawOpaqueRenderables(thisptr, param);
-	if (spt_meshRenderer.signal.Works)
-		g_meshRendererInternal.OnDrawOpaques(thisptr);
+	ORIG_CRendering3dView__DrawOpaqueRenderables(thisptr, param);
+	// TODO - in all of the calls to the renderer functions, I should set the default memory resource to the null one
+	if (frameData)
+		frameData->renderer.OnDrawOpaques(thisptr);
 }
 
 IMPL_HOOK_THISCALL(MeshRendererFeature,
@@ -214,10 +250,11 @@ IMPL_HOOK_THISCALL(MeshRendererFeature,
                    bool inSkybox,
                    bool shadowDepth)
 {
+	std::unique_lock lk{unloadMutex};
 	// render order matters here, render our stuff on top of other translucents
-	spt_meshRenderer.ORIG_CRendering3dView__DrawTranslucentRenderables(thisptr, inSkybox, shadowDepth);
-	if (spt_meshRenderer.signal.Works)
-		g_meshRendererInternal.OnDrawTranslucents(thisptr);
+	ORIG_CRendering3dView__DrawTranslucentRenderables(thisptr, inSkybox, shadowDepth);
+	if (frameData)
+		frameData->renderer.OnDrawTranslucents(thisptr);
 }
 
 #ifdef SSDK2007
@@ -229,9 +266,11 @@ IMPL_HOOK_THISCALL(MeshRendererFeature,
                    bool bInvoke,
                    ITexture* pRenderTarget)
 {
-	g_meshRendererInternal.renderingSkyBox = true;
-	spt_meshRenderer.ORIG_CSkyBoxView__DrawInternal(thisptr, id, bInvoke, pRenderTarget);
-	g_meshRendererInternal.renderingSkyBox = false;
+	if (frameData)
+		frameData->renderer.renderingSkyBox = true;
+	ORIG_CSkyBoxView__DrawInternal(thisptr, id, bInvoke, pRenderTarget);
+	if (frameData)
+		frameData->renderer.renderingSkyBox = false;
 }
 #else
 IMPL_HOOK_THISCALL(MeshRendererFeature,
@@ -243,87 +282,79 @@ IMPL_HOOK_THISCALL(MeshRendererFeature,
                    ITexture* pRenderTarget,
                    ITexture* pDepthTarget)
 {
-	g_meshRendererInternal.renderingSkyBox = true;
-	spt_meshRenderer.ORIG_CSkyBoxView__DrawInternal(thisptr, id, bInvoke, pRenderTarget, pDepthTarget);
-	g_meshRendererInternal.renderingSkyBox = false;
+	if (frameData)
+		frameData->renderer.renderingSkyBox = true;
+	ORIG_CSkyBoxView__DrawInternal(thisptr, id, bInvoke, pRenderTarget, pDepthTarget);
+	if (frameData)
+		frameData->renderer.renderingSkyBox = false;
 }
 #endif
 
 /**************************************** MESH UNIT WRAPPER ****************************************/
 
-MeshUnitWrapper::MeshUnitWrapper(DynamicMeshToken dynamicToken, const RenderCallback& callback)
-    : _staticMeshPtr(nullptr)
-    , _dynamicToken(dynamicToken)
-    , callback(callback)
-    , posInfo(g_meshBuilderInternal.GetDynamicMeshFromToken(dynamicToken).posInfo)
-{
-}
-
-MeshUnitWrapper::MeshUnitWrapper(const std::shared_ptr<StaticMeshUnit>& staticMeshPtr, const RenderCallback& callback)
-    : _staticMeshPtr(staticMeshPtr), _dynamicToken{}, callback(callback), posInfo(staticMeshPtr->posInfo)
-{
-}
-
 // returns true if this unit should be rendered
-bool MeshUnitWrapper::ApplyCallbackAndCalcCamDist()
+std::optional<MbUnitRenderData> MbMeshUnit::GetRenderData() const
 {
-	auto& viewInfo = g_meshRendererInternal.viewInfo;
+	Assert(spt_meshRenderer.frameData);
+
+	auto& internalRenderer = spt_meshRenderer.frameData->renderer;
+	auto& viewInfo = internalRenderer.viewInfo;
+
+	MbUnitRenderData ret{
+	    .posInfo =
+	        staticUnit ? staticUnit->posInfo : internalRenderer.GetDynamicMeshFromToken(dynamicToken).posInfo,
+	    .hasCallback = !!callback,
+	};
+	auto& posInfo = ret.posInfo;
 
 	if (callback)
 	{
 		// apply callback
 
-		const MeshPositionInfo& unitPosInfo =
-		    _staticMeshPtr ? _staticMeshPtr->posInfo
-		                   : g_meshBuilderInternal.GetDynamicMeshFromToken(_dynamicToken).posInfo;
-
 		CallbackInfoIn infoIn = {
 		    *viewInfo.viewSetup,
-		    unitPosInfo,
+		    posInfo,
 		    spt_meshRenderer.CurrentPortalRenderDepth(),
 		    spt_overlay.renderingOverlay,
 		};
 
-		callback(infoIn, cbInfoOut = CallbackInfoOut{});
+		callback(infoIn, ret.cbInfoOut);
 
-		if (cbInfoOut.skipRender || cbInfoOut.colorModulate.a == 0)
-			return false;
-		TransformAABB(cbInfoOut.mat, unitPosInfo.mins, unitPosInfo.maxs, posInfo.mins, posInfo.maxs);
+		if (ret.cbInfoOut.skipRender || ret.cbInfoOut.colorModulate.a == 0)
+			return std::nullopt;
+		TransformAABB(ret.cbInfoOut.mat, posInfo.mins, posInfo.maxs, posInfo.mins, posInfo.maxs);
 	}
 
 	// do frustum check
 
-	auto& frustum = g_meshRendererInternal.viewInfo.frustum;
+	auto& frustum = viewInfo.frustum;
 	for (int i = 0; i < 6; i++)
 		if (BoxOnPlaneSide((float*)&posInfo.mins, (float*)&posInfo.maxs, &frustum[i]) == 2)
-			return false;
+			return std::nullopt;
 
 	// calc camera to mesh "distance"
 
-	CalcClosestPointOnAABB(posInfo.mins, posInfo.maxs, viewInfo.viewSetup->origin, camDistSqrTo);
-	if (viewInfo.viewSetup->origin == camDistSqrTo)
-		camDistSqrTo = (posInfo.mins + posInfo.maxs) / 2.f; // if inside cube, use center idfk
-	camDistSqr = viewInfo.viewSetup->origin.DistToSqr(camDistSqrTo);
+	CalcClosestPointOnAABB(posInfo.mins, posInfo.maxs, viewInfo.viewSetup->origin, ret.camDistSqrTo);
+	if (viewInfo.viewSetup->origin == ret.camDistSqrTo)
+		ret.camDistSqrTo = (posInfo.mins + posInfo.maxs) / 2.f; // if inside cube, use center idfk
+	ret.camDistSqr = viewInfo.viewSetup->origin.DistToSqr(ret.camDistSqrTo);
 
-	return true;
+	return ret;
 }
 
-// We pretend this mesh wrapper contains a mesh from this unit, but it could be a fused mesh.
-// All that matters is that we use its material and our callback.
-void MeshUnitWrapper::Render(const IMeshWrapper mw)
+void MeshRendererInternal::Render(const IMeshWrapper& mw, const MbUnitRenderData& renderData)
 {
 	if (!mw.iMesh)
 		return;
-
 	CMatRenderContextPtr context{interfaces::materialSystem};
-	if (callback)
+	if (renderData.hasCallback)
 	{
-		color32 cMod = cbInfoOut.colorModulate;
+		color32 cMod = renderData.cbInfoOut.colorModulate;
 		mw.material->ColorModulate(cMod.r / 255.f, cMod.g / 255.f, cMod.b / 255.f);
 		mw.material->AlphaModulate(cMod.a / 255.f);
 		context->MatrixMode(MATERIAL_MODEL);
 		context->PushMatrix();
-		context->LoadMatrix(cbInfoOut.mat);
+		context->LoadMatrix(renderData.cbInfoOut.mat);
 	}
 	else
 	{
@@ -332,36 +363,13 @@ void MeshUnitWrapper::Render(const IMeshWrapper mw)
 	}
 	context->Bind(mw.material);
 	mw.iMesh->Draw();
-	if (!_staticMeshPtr)
-		context->Flush();
-	if (callback)
+	if (mw.dynamic)
+		context->Flush(); // dynamic meshes seem to be slightly glitchy, this sometimes fixes that
+	if (renderData.hasCallback)
 		context->PopMatrix();
 }
 
 /**************************************** MESH RENDER FEATURE ****************************************/
-
-void MeshRendererInternal::FrameCleanup()
-{
-	queuedUnitWrappers.clear();
-	g_meshBuilderInternal.FrameCleanup();
-	Assert(debugMeshInfo.descriptionSlices.empty());
-	nDynamicsThisFrame = 0;
-	nStaticsThisFrame = 0;
-}
-
-void MeshRendererInternal::OnRenderViewPre_Signal(void* thisptr, CViewSetup* cameraView)
-{
-	// ensure we only run once per frame
-	if (spt_overlay.renderingOverlay || !spt_meshRenderer.signal.Works)
-		return;
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
-	FrameCleanup();
-	frameNum++;
-	inSignal = true;
-	MeshRendererDelegate renderDelgate{};
-	spt_meshRenderer.signal(renderDelgate);
-	inSignal = false;
-}
 
 void MeshRendererInternal::SetupViewInfo(CRendering3dView* rendering3dView)
 {
@@ -389,13 +397,21 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
 
-	// push a new debug slice, the corresponding pop is at the end of DrawTranslucents
-	debugMeshInfo.descriptionSlices.emplace(debugMeshInfo.sharedDescriptionList);
+	// add a new debug view, the corresponding pop is at the end of DrawTranslucents
+	debugMeshViews.emplace_back(mr);
 
-	static std::vector<MeshComponent> components;
+	std::pmr::vector<MbStagingComponent> components{&mr};
 	CollectRenderableComponents(components, true);
-	std::ranges::stable_sort(components, std::less{});
-	DrawAll(components, y_spt_draw_mesh_debug.GetBool(), true);
+
+	std::pmr::vector<std::reference_wrapper<MbStagingComponent>> sortedComponents{
+	    components.begin(),
+	    components.end(),
+	    &mr,
+	};
+
+	std::ranges::stable_sort(sortedComponents, std::less{});
+
+	DrawAll(sortedComponents, y_spt_draw_mesh_debug.GetBool(), true);
 	components.clear();
 }
 
@@ -407,8 +423,14 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
 
-	static std::vector<MeshComponent> components;
+	std::pmr::vector<MbStagingComponent> components{&mr};
 	CollectRenderableComponents(components, false);
+
+	std::pmr::vector<std::reference_wrapper<MbStagingComponent>> sortedComponents{
+	    components.begin(),
+	    components.end(),
+	    &mr,
+	};
 
 	/*
 	* Translucent meshes must be sorted by distance first which makes them not as good for fusing. In theory
@@ -418,56 +440,53 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 	* other in case <=> returns equivalent. I think this could be useful if I decide to spill components in case
 	* of overflow.
 	*/
-	std::ranges::stable_sort(components,
-	                         [](const MeshComponent& a, const MeshComponent& b)
+	std::ranges::stable_sort(sortedComponents,
+	                         [](const MbStagingComponent& a, const MbStagingComponent& b)
 	                         {
-		                         IMaterial* matA = a.vertData ? a.vertData->material : a.iMeshWrapper.material;
-		                         IMaterial* matB = b.vertData ? b.vertData->material : b.iMeshWrapper.material;
-		                         if (matA != matB)
-		                         {
-			                         bool ignoreZA = matA->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
-			                         bool ignoreZB = matB->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ);
-			                         if (ignoreZA != ignoreZB)
-				                         return ignoreZA < ignoreZB;
-		                         }
-		                         float distA = a.unitWrapper->camDistSqr;
-		                         float distB = b.unitWrapper->camDistSqr;
-		                         if (distA
-		                             != distB) // same distance likely means that these are from the same unit
-			                         return distA > distB;
+		                         MaterialRef matA = a.component.GetMaterial();
+		                         MaterialRef matB = b.component.GetMaterial();
+		                         auto ta = std::make_tuple(matA,
+		                                                   matA->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ),
+		                                                   a.renderData.camDistSqr);
+		                         auto tb = std::make_tuple(matB,
+		                                                   matB->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ),
+		                                                   b.renderData.camDistSqr);
+		                         if (auto cmp = ta <=> tb; cmp != std::weak_ordering::equivalent)
+			                         return cmp < 0;
 		                         return a < b;
 	                         });
 
-	DrawAll(components, y_spt_draw_mesh_debug.GetBool(), false);
+	DrawAll(sortedComponents, y_spt_draw_mesh_debug.GetBool(), false);
 
 	if (y_spt_draw_mesh_debug.GetBool())
 	{
-		AddDebugCrosses(debugMeshInfo.descriptionSlices.top(), components);
-		DrawDebugMeshes(debugMeshInfo.descriptionSlices.top()); // draw all translucent!!! debug meshes
+		AddDebugCrosses(components);
+		DrawDebugMeshesForCurrentView(); // draw all translucent!!! debug meshes
 	}
-	debugMeshInfo.descriptionSlices.pop();
-	components.clear();
+	debugMeshViews.pop_back();
 }
 
-void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent>& components, bool opaques)
+void MeshRendererInternal::CollectRenderableComponents(std::pmr::vector<MbStagingComponent>& components, bool opaques)
 {
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+
 	// go through all components of all queued meshes and return those that are eligable for rendering right now
-	for (MeshUnitWrapper& unitWrapper : queuedUnitWrappers)
+	for (MbMeshUnit& unit : queuedUnits)
 	{
-		if (!unitWrapper.ApplyCallbackAndCalcCamDist())
+		std::optional<MbUnitRenderData> renderData = unit.GetRenderData();
+		if (!renderData)
 			continue; // the mesh is outside our frustum or the user wants to skip rendering
 
-		if (unitWrapper.callback && opaques && unitWrapper.cbInfoOut.colorModulate.a < 1)
+		if (unit.callback && opaques && renderData->cbInfoOut.colorModulate.a < 1)
 			continue; // color modulation forces all meshes in this unit to be translucent
 
-		auto shouldRender = [&unitWrapper, opaques](IMaterial* material)
+		auto shouldRender = [&renderData, opaques](IMaterial* material)
 		{
 			if (!material)
 				return false;
 
-			if (unitWrapper.callback)
-				if (unitWrapper.cbInfoOut.colorModulate.a < 255)
+			if (renderData->hasCallback)
+				if (renderData->cbInfoOut.colorModulate.a < 255)
 					return !opaques; // callback changed alpha component, make translucent if < 1 otherwise opaque
 
 			bool opaqueMaterial = !material->GetMaterialVarFlag(MATERIAL_VAR_IGNOREZ)
@@ -476,38 +495,39 @@ void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent
 			return opaques == opaqueMaterial;
 		};
 
-		if (unitWrapper._staticMeshPtr)
+		// TODO - I'm copying the mesh render data for each component, I should plop it into a separate (linked) list
+
+		if (unit.IsDynamic())
 		{
-			auto& unit = *unitWrapper._staticMeshPtr;
-			for (size_t i = 0; i < unit.nMeshes; i++)
-				if (shouldRender(unit.meshesArr[i].material))
-					components.emplace_back(&unitWrapper, (MeshVertData*)0, unit.meshesArr[i]);
+			for (auto& component : GetDynamicMeshFromToken(unit.dynamicToken).componentBufs)
+				if (shouldRender(component.GetMaterial()))
+					components.emplace_back(MbMeshComponent{component}, *renderData);
 		}
 		else
 		{
-			auto& unit = g_meshBuilderInternal.GetDynamicMeshFromToken(unitWrapper._dynamicToken);
-			for (auto& vData : unit.vData)
-				if (shouldRender(vData.material))
-					components.emplace_back(&unitWrapper, &vData, IMeshWrapper{});
+			for (auto& component : unit.staticUnit->meshes)
+				if (shouldRender(component.material))
+					components.emplace_back(MbMeshComponent{component}, *renderData);
 		}
 	}
 }
 
-void MeshRendererInternal::AddDebugCrosses(DebugDescList& debugList, std::span<const MeshComponent> span)
+void MeshRendererInternal::AddDebugCrosses(std::span<const MbStagingComponent> span)
 {
-	for (auto& mc : span)
+	auto& debugDescs = debugMeshViews.back().descs;
+	for (auto& comp : span)
 	{
-		const MeshPositionInfo& posInfo = mc.unitWrapper->posInfo;
+		const MeshPositionInfo& posInfo = comp.renderData.posInfo;
 		float maxDiameter = VectorMaximum(posInfo.maxs - posInfo.mins);
 		const float smallest = 1, biggest = 15, falloff = 100;
 		// scale cross by the AABB size, plot this bad boy in desmos as a function of maxBoxDim
 		float size = -falloff * (biggest - smallest) / (maxDiameter + falloff) + biggest;
 
-		debugList.emplace_back(mc.unitWrapper->camDistSqrTo, size, DEBUG_COLOR_CROSS);
+		debugDescs.emplace_back(DebugCross{comp.renderData.camDistSqrTo, size}, DEBUG_COLOR_CROSS);
 	}
 }
 
-void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
+void MeshRendererInternal::DrawDebugMeshesForCurrentView()
 {
 	/*
 	* This is like a miniature version of what the whole renderer does, but we don't have to worry about drawing
@@ -516,55 +536,54 @@ void MeshRendererInternal::DrawDebugMeshes(DebugDescList& debugList)
 	* batch them together.
 	*/
 
-	static std::vector<MeshUnitWrapper> debugUnitWrappers;
+	size_t oldNUnits = queuedUnits.size();
 
-	for (auto& debugDesc : debugList)
+	for (auto& debugDesc : debugMeshViews.back().descs)
 	{
-		debugUnitWrappers.emplace_back(spt_meshBuilder.CreateDynamicMesh(
+		spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
-			    if (debugDesc.isBox)
+			    if (std::holds_alternative<DebugBox>(debugDesc.desc))
 			    {
 				    mb.AddBox(vec3_origin,
-				              debugDesc.box.mins,
-				              debugDesc.box.maxs,
+				              std::get<DebugBox>(debugDesc.desc).mins,
+				              std::get<DebugBox>(debugDesc.desc).maxs,
 				              vec3_angle,
 				              {C_WIRE(debugDesc.color), false, false});
 			    }
 			    else
 			    {
-				    mb.AddCross(debugDesc.cross.crossPos,
-				                debugDesc.cross.size,
+				    mb.AddCross(std::get<DebugCross>(debugDesc.desc).crossPos,
+				                std::get<DebugCross>(debugDesc.desc).size,
 				                {debugDesc.color, false});
 			    }
-		    }));
+		    });
 	}
 
-	static std::vector<MeshComponent> debugComponents;
+	auto dynUnits = std::span(queuedUnits).subspan(oldNUnits);
 
-	for (MeshUnitWrapper& debugMesh : debugUnitWrappers)
-	{
-		Assert(!debugMesh._staticMeshPtr);
+	std::pmr::vector<MbStagingComponent> components{&mr};
 
-		auto& debugUnit = g_meshBuilderInternal.GetDynamicMeshFromToken(debugMesh._dynamicToken);
+	for (auto& unit : dynUnits)
+		if (auto renderData = unit.GetRenderData(); renderData)
+			for (auto& component : GetDynamicMeshFromToken(unit.dynamicToken).componentBufs)
+				components.emplace_back(MbMeshComponent{component}, *renderData);
 
-		for (auto& component : debugUnit.vData)
-			if (component.indices.size() > 0)
-				debugComponents.emplace_back(&debugMesh, &component, IMeshWrapper{});
-	}
-	std::ranges::stable_sort(debugComponents, std::less{});
-	DrawAll(debugComponents, false, true);
-
-	debugUnitWrappers.clear();
-	debugComponents.clear();
+	std::pmr::vector<std::reference_wrapper<MbStagingComponent>> sortedComponents{
+	    components.begin(),
+	    components.end(),
+	    &mr,
+	};
+	std::ranges::stable_sort(sortedComponents, std::less{});
+	DrawAll(sortedComponents, false, true);
 }
 
-void MeshRendererInternal::DrawAll(std::span<const MeshComponent> span, bool addDebugMeshes, bool opaques)
+void MeshRendererInternal::DrawAll(std::span<const std::reference_wrapper<MbStagingComponent>> span,
+                                   bool addDebugMeshes,
+                                   bool opaques)
 {
-	if (span.empty())
-		return;
-
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+
 	/*
 	* We create a subspan of fullSpan: compatSpan. Our goal is to give spans to the builder that can be
 	* fused together. Static meshes can't be fused (they're already IMesh* objects), so we render those
@@ -574,69 +593,75 @@ void MeshRendererInternal::DrawAll(std::span<const MeshComponent> span, bool add
 
 	while (!span.empty())
 	{
-		if (span.front().vertData)
+		if (span.front().get().IsDynamic())
 		{
-			auto uncompatIt = span.begin() + 1;
-			while (uncompatIt != span.end() && (span.front() <=> *uncompatIt) == 0)
-				++uncompatIt;
+			auto it =
+			    std::ranges::find_if(span,
+			                         [span](auto& staging) { return (span.front() <=> staging) != 0; });
 
-			std::span<const MeshComponent> compatSpan{span.begin(), uncompatIt};
-			g_meshBuilderInternal.fuser.BeginIMeshCreation(compatSpan, true);
-			IMeshWrapper mw;
-			while (mw = g_meshBuilderInternal.fuser.GetNextIMeshWrapper(), mw.iMesh)
+			std::span attemptFuseSpan{span.begin(), it};
+			AssertMsg(!attemptFuseSpan.empty(),
+			          "spt: operator<=> does not return equivalent for two of the same staging component");
+
+			MbIMeshBuilder builder{
+			    attemptFuseSpan,
+			    [](const std::reference_wrapper<MbStagingComponent>& staging) -> auto&
+			    { return staging.get().component.GetDynamic(); },
+			    true,
+			};
+			while (builder.FuseNext())
 			{
-				span.begin()->unitWrapper->Render(mw);
+				auto& [imw, fusedSpan] = builder.GetCurrent();
+				Render(imw, fusedSpan.front().get().renderData);
 				if (addDebugMeshes)
-				{
-					AddDebugBox(debugMeshInfo.descriptionSlices.top(),
-					            g_meshBuilderInternal.fuser.lastFusedSpan,
-					            opaques);
-				}
+					AddDebugBoxesForFusedDynamic(fusedSpan, opaques);
+				span = span.subspan(fusedSpan.size());
 			}
-			span = span.subspan(compatSpan.size());
 		}
 		else
 		{
 			// a single static mesh
-			span.front().unitWrapper->Render(span.front().iMeshWrapper);
+			auto component = span.front();
+			Render(component.get().component.GetStatic(), component.get().renderData);
 			if (addDebugMeshes)
-				AddDebugBox(debugMeshInfo.descriptionSlices.top(), span.first(1), opaques);
+				AddDebugBoxForStatic(component);
 			span = span.subspan(1);
 		}
 	}
 }
 
-void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, std::span<const MeshComponent> span, bool opaques)
+void MeshRendererInternal::AddDebugBoxesForFusedDynamic(
+    std::span<const std::reference_wrapper<MbStagingComponent>> span,
+    bool opaques)
 {
-	if (span.begin()->vertData)
-	{
-		Vector batchedMins{INFINITY};
-		Vector batchedMaxs{-INFINITY};
-		for (auto& mc : span)
-		{
-			VectorMin(mc.unitWrapper->posInfo.mins, batchedMins, batchedMins);
-			VectorMax(mc.unitWrapper->posInfo.maxs, batchedMaxs, batchedMaxs);
+	auto& debugDescs = debugMeshViews.back().descs;
 
-			debugList.emplace_back(mc.unitWrapper->posInfo.mins - Vector{1.f},
-			                       mc.unitWrapper->posInfo.maxs + Vector{1.f},
-			                       mc.unitWrapper->callback ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
-			                                                : DEBUG_COLOR_DYNAMIC_MESH);
-		}
-		if (span.size() > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
-		{
-			debugList.emplace_back(batchedMins - Vector{opaques ? 2.5f : 2.f},
-			                       batchedMaxs + Vector{opaques ? 2.5f : 2.f},
-			                       opaques ? DEBUG_COLOR_FUSED_DYNAMIC_MESH_OPAQUE
-			                               : DEBUG_COLOR_FUSED_DYNAMIC_MESH_TRANSLUCENT);
-		}
-	}
-	else
+	Vector fusedMins{std::numeric_limits<float>::infinity()};
+	Vector fusedMaxs = -fusedMins;
+	for (auto staging : span)
 	{
-		Assert(span.size() == 1);
-		debugList.emplace_back(span.front().unitWrapper->posInfo.mins - Vector{1.f},
-		                       span.front().unitWrapper->posInfo.maxs + Vector{1.f},
-		                       DEBUG_COLOR_STATIC_MESH);
+		auto& posInfo = staging.get().renderData.posInfo;
+		VectorMin(posInfo.mins, fusedMins, fusedMins);
+		VectorMax(posInfo.maxs, fusedMaxs, fusedMaxs);
+
+		debugDescs.emplace_back(DebugBox{posInfo.mins - Vector{1.f}, posInfo.maxs + Vector{1.f}},
+		                        staging.get().renderData.hasCallback ? DEBUG_COLOR_DYNAMIC_MESH_WITH_CALLBACK
+		                                                             : DEBUG_COLOR_DYNAMIC_MESH);
 	}
+	if (span.size() > 1 && y_spt_draw_mesh_debug.GetInt() >= 2)
+	{
+		debugDescs.emplace_back(DebugBox{fusedMins - Vector{opaques ? 2.5f : 2.f},
+		                                 fusedMaxs + Vector{opaques ? 2.5f : 2.f}},
+		                        opaques ? DEBUG_COLOR_FUSED_DYNAMIC_MESH_OPAQUE
+		                                : DEBUG_COLOR_FUSED_DYNAMIC_MESH_TRANSLUCENT);
+	}
+}
+
+void MeshRendererInternal::AddDebugBoxForStatic(const MbStagingComponent& component)
+{
+	auto& descs = debugMeshViews.back().descs;
+	auto& posInfo = component.renderData.posInfo;
+	descs.emplace_back(DebugBox{posInfo.mins - Vector{1.f}, posInfo.maxs + Vector{1.f}}, DEBUG_COLOR_STATIC_MESH);
 }
 
 /**************************************** SPACESHIP ****************************************/
@@ -658,71 +683,81 @@ void MeshRendererInternal::AddDebugBox(DebugDescList& debugList, std::span<const
 * The last four are statics; they would be ordererd in a way to minimize context switching e.g. [9], [10], [11]
 * would have the same material & color modulation.
 */
-std::weak_ordering MeshComponent::operator<=>(const MeshComponent& rhs) const
+std::weak_ordering operator<=>(const MbStagingComponent& a, const MbStagingComponent& b)
 {
-	using W = std::weak_ordering;
+	constexpr auto eqv = std::weak_ordering::equivalent;
+
 	// group dynamics together
-	if (!vertData != !rhs.vertData)
-		return !vertData <=> !rhs.vertData;
-	// group the same primitive type together
-	// between dynamics
-	if (vertData && rhs.vertData)
+	if (auto cmp = a.component.IsDynamic() <=> b.component.IsDynamic(); cmp != eqv)
+		return cmp;
+
+	if (a.component.IsDynamic())
 	{
-		if (vertData->type != rhs.vertData->type)
-			return vertData->type <=> rhs.vertData->type;
-		// group those without a callback together
-		if (!unitWrapper->callback != !rhs.unitWrapper->callback)
-			return !unitWrapper->callback <=> !rhs.unitWrapper->callback;
-		// if both have a callback, only group together if it's the same unit (the callback will be the same)
-		if (unitWrapper->callback && rhs.unitWrapper->callback)
-			return unitWrapper <=> rhs.unitWrapper;
+		// between dynamics group by whether we have a callback, then by unit
+		auto ta = std::make_tuple(a.renderData.hasCallback, &a.renderData);
+		auto tb = std::make_tuple(b.renderData.hasCallback, &b.renderData);
+		if (auto cmp = ta <=> tb; cmp != eqv)
+			return cmp;
 	}
 	else
 	{
 		// between statics, if both are in the same unit they'll have the same material, callback, colormod, etc.
-		if (&unitWrapper == &rhs.unitWrapper)
-			return W::equivalent;
+		if (&a.renderData == &b.renderData)
+			return std::weak_ordering::equivalent;
 	}
+
 	// group the same materials together
-	IMaterial* matA = vertData ? vertData->material : iMeshWrapper.material;
-	IMaterial* matB = rhs.vertData ? rhs.vertData->material : rhs.iMeshWrapper.material;
-	if (matA != matB)
-		return matA <=> matB;
+	if (auto cmp = a.component.GetMaterial() <=> b.component.GetMaterial(); cmp != eqv)
+		return cmp;
+
 	// group the same color mod for a material together, switching color mod seems to be very slow
-	if (unitWrapper->callback && rhs.unitWrapper->callback)
-	{
-		return *reinterpret_cast<int*>(&unitWrapper->cbInfoOut.colorModulate)
-		       <=> *reinterpret_cast<int*>(&rhs.unitWrapper->cbInfoOut.colorModulate);
-	}
-	return W::equivalent;
+	auto ta = std::make_tuple(a.renderData.hasCallback,
+	                          *reinterpret_cast<const int*>(&a.renderData.cbInfoOut.colorModulate));
+	auto tb = std::make_tuple(b.renderData.hasCallback,
+	                          *reinterpret_cast<const int*>(&b.renderData.cbInfoOut.colorModulate));
+	if (auto cmp = ta <=> tb; cmp != eqv)
+		return cmp;
+
+	return eqv;
 }
 
 /**************************************** MESH RENDERER DELEGATE ****************************************/
 
 void MeshRendererDelegate::DrawMesh(const DynamicMesh& dynamicMesh, const RenderCallback& callback)
 {
-	if (!g_meshRendererInternal.inSignal)
+	if (!spt_meshRenderer.frameData)
+	{
+		AssertMsg(0, "spt: Frame data was not initialized");
+		return;
+	}
+	auto& internalRenderer = spt_meshRenderer.frameData->renderer;
+	if (!internalRenderer.inSignal)
 	{
 		AssertMsg(0, "spt: Meshes can only be drawn in MeshRenderSignal!");
 		return;
 	}
-	if (dynamicMesh.createdFrame != g_meshRendererInternal.frameNum)
+	if (dynamicMesh.createdFrame != spt_meshRenderer.FrameNum())
 	{
 		AssertMsg(0, "spt: Attempted to reuse a dynamic mesh between frames");
 		Warning("spt: Can only draw dynamic meshes on the frame they were created!\n");
 		return;
 	}
-	const DynamicMeshUnit& meshUnit = g_meshBuilderInternal.GetDynamicMeshFromToken(dynamicMesh);
-	if (!meshUnit.vData.empty())
+	if (!internalRenderer.GetDynamicMeshFromToken(dynamicMesh).IsEmpty())
 	{
-		g_meshRendererInternal.queuedUnitWrappers.emplace_back(dynamicMesh, callback);
-		g_meshRendererInternal.nDynamicsThisFrame++;
+		internalRenderer.queuedUnits.emplace_back(dynamicMesh, callback);
+		internalRenderer.stats.nDynamicsThisFrame++;
 	}
 }
 
 void MeshRendererDelegate::DrawMesh(const StaticMesh& staticMesh, const RenderCallback& callback)
 {
-	if (!g_meshRendererInternal.inSignal)
+	if (!spt_meshRenderer.frameData)
+	{
+		AssertMsg(0, "spt: Frame data was not initialized");
+		return;
+	}
+	auto& internalRenderer = spt_meshRenderer.frameData->renderer;
+	if (!internalRenderer.inSignal)
 	{
 		AssertMsg(0, "spt: Meshes can only be drawn in MeshRenderSignal!");
 		return;
@@ -733,10 +768,10 @@ void MeshRendererDelegate::DrawMesh(const StaticMesh& staticMesh, const RenderCa
 		Warning("spt: Attempting to draw an invalid static mesh!\n");
 		return;
 	}
-	if (staticMesh.meshPtr->nMeshes > 0)
+	if (!staticMesh.meshPtr->IsEmpty())
 	{
-		g_meshRendererInternal.queuedUnitWrappers.emplace_back(staticMesh.meshPtr, callback);
-		g_meshRendererInternal.nStaticsThisFrame++;
+		internalRenderer.queuedUnits.emplace_back(staticMesh.meshPtr, callback);
+		internalRenderer.stats.nStaticsThisFrame++;
 	}
 }
 

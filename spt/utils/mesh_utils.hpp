@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <string_view>
 #include <limits>
+#include <memory_resource>
 
 #include "math.hpp"
 #include "serialize.hpp"
@@ -49,6 +50,11 @@ namespace utils
 	public:
 		static constexpr size_t MB_CM_MAX_NUM_VERTS = MB_CM_INVALID_IDX - 1;
 		static constexpr color32 MB_CM_DEFAULT_COLOR{255, 255, 255, 255};
+
+		MbCompactMesh(std::pmr::memory_resource& mr = *std::pmr::get_default_resource())
+		    : points{&mr}, colors{&mr}, faceIndices{&mr}, lineIndices{&mr}, vertToIdxMap{&mr}
+		{
+		}
 
 		void Clear();
 
@@ -104,12 +110,12 @@ namespace utils
 			}
 		};
 
-		std::vector<Vector> points;
-		std::vector<color32> colors;
-		std::vector<idx_type> faceIndices;
-		std::vector<idx_type> lineIndices;
+		std::pmr::vector<Vector> points;
+		std::pmr::vector<color32> colors;
+		std::pmr::vector<idx_type> faceIndices;
+		std::pmr::vector<idx_type> lineIndices;
 
-		std::unordered_map<MbColoredVert, idx_type, VertHasher> vertToIdxMap;
+		std::pmr::unordered_map<MbColoredVert, idx_type, VertHasher> vertToIdxMap;
 		uint32_t lastCachedVertIdx = 0;
 	};
 } // namespace utils

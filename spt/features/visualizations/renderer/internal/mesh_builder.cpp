@@ -40,278 +40,85 @@ void GetMaxMeshSize(size_t& maxVerts, size_t& maxIndices, bool dynamic)
 	});
 }
 
-/**************************************** MESH BUILDER INTERNAL ****************************************/
-
-IMeshWrapper MeshBuilderInternal::Fuser::CreateIMeshFromSpan(std::span<const MeshComponent> span,
-                                                             size_t totalVerts,
-                                                             size_t totalIndices)
+void MbStagingBufs::PackVertices(std::pmr::memory_resource& mr)
 {
-	if (totalVerts == 0 || totalIndices == 0)
-		return IMeshWrapper{};
-
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
-
-#ifdef DEBUG
-	Assert(totalVerts <= maxVerts);
-	Assert(totalIndices <= maxIndices);
-	Assert(span.front().vertData);
-	// may not be true anymore because of AddMbCompactMesh()
-	// Assert(totalVerts <= totalIndices);
-	for (auto& mc : span.subspan(1))
+	for (auto& component : components)
 	{
-		Assert(mc.vertData);
-		Assert(span.front().vertData->type == mc.vertData->type);
-		Assert(span.front().vertData->material == mc.vertData->material);
-	}
-#endif
-
-	MaterialRef material = span.front().vertData->material;
-
-	if (!material)
-		return IMeshWrapper{};
-
-	CMatRenderContextPtr context{interfaces::materialSystem};
-	context->Bind(material);
-
-	if (!dynamic && material->GetVertexFormat() == VERTEX_FORMAT_UNKNOWN)
-	{
-		AssertMsg(0, "We tried so hard, but in the end it doesn't even matter");
-		Warning("spt: Static mesh material vertex format is unknown but shouldn't be. Grab a programmer!\n");
-		return IMeshWrapper{};
-	}
-
-	IMesh* iMesh;
-	if (dynamic)
-		iMesh = context->GetDynamicMesh(true, nullptr, nullptr, material);
-	else
-		iMesh = context->CreateStaticMesh(material->GetVertexFormat() & ~VERTEX_FORMAT_COMPRESSED,
-		                                  TEXTURE_GROUP_STATIC_VERTEX_BUFFER_WORLD,
-		                                  material);
-
-	if (!iMesh)
-	{
-		AssertMsg(0, "Didn't get an IMesh* object");
-		return IMeshWrapper{};
-	}
-
-	switch (span.front().vertData->type)
-	{
-	case MeshPrimitiveType::Lines:
-		iMesh->SetPrimitiveType(MATERIAL_LINES);
-		Assert(totalIndices % 2 == 0);
-		break;
-	case MeshPrimitiveType::Triangles:
-		iMesh->SetPrimitiveType(MATERIAL_TRIANGLES);
-		Assert(totalIndices % 3 == 0);
-		break;
-	default:
-		AssertMsg(0, "Unknown mesh primitive type");
-		return IMeshWrapper{};
-	}
-
-	// now we can fill the IMesh buffers
-
-	MeshDesc_t desc;
-	iMesh->LockMesh(totalVerts, totalIndices, desc);
-
-	size_t vertIdx = 0;
-	size_t idxIdx = 0; // ;)
-	size_t idxOffset = 0;
-
-	for (auto& mc : span)
-	{
-		for (const VertexData& vert : mc.vertData->verts)
-		{
-			*(Vector*)((uintptr_t)desc.m_pPosition + vertIdx * desc.m_VertexSize_Position) = vert.pos;
-			unsigned char* pColor = desc.m_pColor + vertIdx * desc.m_VertexSize_Color;
-			pColor[0] = vert.col.b;
-			pColor[1] = vert.col.g;
-			pColor[2] = vert.col.r;
-			pColor[3] = vert.col.a;
-			vertIdx++;
-		}
-		for (VertIndex vIdx : mc.vertData->indices)
-			desc.m_pIndices[idxIdx++] = vIdx + desc.m_nFirstVertex + idxOffset;
-		idxOffset = vertIdx;
-	}
-	AssertEquals(vertIdx, totalVerts);
-	AssertEquals(idxIdx, totalIndices);
-
-	iMesh->UnlockMesh(totalVerts, totalIndices, desc);
-
-	return {iMesh, material};
-}
-
-void MeshBuilderInternal::Fuser::BeginIMeshCreation(std::span<const MeshComponent> span, bool _dynamic)
-{
-	curSpan = span;
-	dynamic = _dynamic;
-	GetMaxMeshSize(maxVerts, maxIndices, _dynamic);
-}
-
-IMeshWrapper MeshBuilderInternal::Fuser::GetNextIMeshWrapper()
-{
-	size_t totalNumVerts, totalNumIndices;
-	for (;;)
-	{
-		if (curSpan.empty())
-			return IMeshWrapper{}; // done with iteration
-
-		totalNumVerts = curSpan.front().vertData->verts.size();
-		totalNumIndices = curSpan.front().vertData->indices.size();
-
-		if (totalNumIndices > maxIndices || totalNumVerts > maxVerts)
-		{
-			AssertMsg(0, "too many verts/indices");
-			Warning("spt: mesh has too many verts or indices, this would cause a game error\n");
-			curSpan = curSpan.subspan(1); // skip this component
+		if (component.IsEmpty())
 			continue;
-		}
-		else
+
+		utils::MbCompactMesh compactMesh(mr);
+		auto& verts = component.verts;
+		auto& indices = component.indices;
+
+		switch (component.primType)
 		{
-			break;
-		}
-	}
-	size_t numComponents = 1;
-	for (; numComponents < curSpan.size(); numComponents++)
-	{
-		size_t curNumVerts = curSpan[numComponents].vertData->verts.size();
-		size_t curNumIndices = curSpan[numComponents].vertData->indices.size();
-
-		// this used to be true, but may not be because AddMbCompactMesh() blindly copies the entire vertex buffer
-		// Assert(curNumIndices >= curNumVerts);
-
-		if (totalNumIndices + curNumIndices > maxIndices || totalNumVerts + curNumVerts > maxVerts)
-		{
-			break;
-		}
-		totalNumVerts += curNumVerts;
-		totalNumIndices += curNumIndices;
-	}
-	lastFusedSpan = curSpan.first(numComponents);
-	curSpan = curSpan.subspan(numComponents);
-	return CreateIMeshFromSpan(lastFusedSpan, totalNumVerts, totalNumIndices);
-}
-
-void MeshBuilderInternal::FrameCleanup()
-{
-	while (!dynamicMeshUnits.empty())
-		dynamicMeshUnits.pop();
-#ifdef DEBUG
-	for (auto& vertArray : sharedLists.simple.verts)
-		Assert(vertArray.size() == 0);
-	for (auto& idxArray : sharedLists.simple.indices)
-		Assert(idxArray.size() == 0);
-#endif
-}
-
-const DynamicMeshUnit& MeshBuilderInternal::GetDynamicMeshFromToken(DynamicMeshToken token) const
-{
-	return dynamicMeshUnits._Get_container()[token.dynamicMeshIdx];
-}
-
-void MeshBuilderInternal::TmpMesh::Create(const MeshCreateFunc& createFunc, bool dynamic)
-{
-	// check that we don't have any existing data
-	Assert(!std::count_if(components.cbegin(),
-	                      components.cend(),
-	                      [](const MeshVertData& vd) { return vd.verts.vec || vd.indices.vec || vd.material; }));
-
-	// initialize the simple components
-	components.resize(MAX_SIMPLE_COMPONENTS);
-	for (size_t i = 0; i < (size_t)MeshPrimitiveType::Count; i++)
-	{
-		for (size_t j = 0; j < (size_t)MeshMaterialSimple::Count; j++)
-		{
-			size_t k = SIMPLE_COMPONENT_INDEX(i, j);
-			components[k].verts.assign_to_end(g_meshBuilderInternal.sharedLists.simple.verts[k]);
-			components[k].indices.assign_to_end(g_meshBuilderInternal.sharedLists.simple.indices[k]);
-			components[k].type = (MeshPrimitiveType)i;
-			components[k].material = g_meshMaterialMgr.GetMaterial((MeshMaterialSimple)j);
-		}
-	}
-
-	// used by the delegate to check if the temp mesh is too big
-	GetMaxMeshSize(maxVerts, maxIndices, dynamic);
-
-	// let the user fill the tmp mesh buffers
-	MeshBuilderDelegate builderDelegate{};
-	createFunc(builderDelegate);
-}
-
-void MeshBuilderInternal::TmpMesh::PackVertices()
-{
-	utils::MbCompactMesh compactMesh;
-
-	for (size_t primType = 0; primType < (size_t)MeshPrimitiveType::Count; primType++)
-	{
-		for (size_t materialType = 0; materialType < (size_t)MeshMaterialSimple::Count; materialType++)
-		{
-			compactMesh.Clear();
-
-			MeshVertData& mvd =
-			    g_meshBuilderInternal.GetSimpleMeshComponent((MeshPrimitiveType)primType,
-			                                                 (MeshMaterialSimple)materialType);
-			// assert on AddXXX return since we should never end up with more vertices
-			switch ((MeshPrimitiveType)primType)
+		case MeshPrimitiveType::Triangles:
+			for (size_t i = 0; i < indices.size(); i += 3)
 			{
-			case MeshPrimitiveType::Triangles:
-				for (size_t i = 0; i < mvd.indices.size(); i += 3)
-				{
-					[[maybe_unused]] bool ret =
-					    compactMesh.AddTriangle(mvd.verts[mvd.indices[i]],
-					                            mvd.verts[mvd.indices[i + 1]],
-					                            mvd.verts[mvd.indices[i + 2]]);
-					Assert(ret);
-				}
-				break;
-			case MeshPrimitiveType::Lines:
-				for (size_t i = 0; i < mvd.indices.size(); i += 2)
-				{
-					[[maybe_unused]] bool ret = compactMesh.AddLine(mvd.verts[mvd.indices[i]],
-					                                                mvd.verts[mvd.indices[i + 1]]);
-					Assert(ret);
-				}
-				break;
-			default:
-				Assert(0);
-				break;
+				[[maybe_unused]] bool ret = compactMesh.AddTriangle(verts[indices[i]],
+				                                                    verts[indices[i + 1]],
+				                                                    verts[indices[i + 2]]);
+				Assert(ret);
 			}
-			mvd.verts.resize(0);
-			mvd.indices.resize(0);
-
-			auto& points = compactMesh.GetPoints();
-			auto& colors = compactMesh.GetColors();
-			auto& faceIndices = compactMesh.GetFaceIndices();
-			auto& lineIndices = compactMesh.GetLineIndices();
-
-			Assert(points.size() == colors.size());
-			for (size_t i = 0; i < points.size(); i++)
-				mvd.verts.emplace_back(points[i], colors[i]);
-			if (primType == (size_t)MeshPrimitiveType::Triangles)
-				mvd.indices.add_range(faceIndices.cbegin(), faceIndices.cend());
-			else
-				mvd.indices.add_range(lineIndices.cbegin(), lineIndices.cend());
-
-			Assert(mvd.indices.size() >= mvd.verts.size());
+			break;
+		case MeshPrimitiveType::Lines:
+			for (size_t i = 0; i < indices.size(); i += 2)
+			{
+				[[maybe_unused]] bool ret =
+				    compactMesh.AddLine(verts[indices[i]], verts[indices[i + 1]]);
+				Assert(ret);
+			}
+			break;
+		default:
+			Assert(0);
+			break;
 		}
+
+		auto& newPoints = compactMesh.GetPoints();
+		auto& newColors = compactMesh.GetColors();
+		auto& newFaceIndices = compactMesh.GetFaceIndices();
+		auto& newLineIndices = compactMesh.GetLineIndices();
+		Assert(newPoints.size() == newColors.size());
+
+		if (verts.size() == newPoints.size())
+			continue; // not possible to compact
+
+		component.verts.resize(0);
+
+		for (size_t i = 0; i < newPoints.size(); i++)
+			component.verts.emplace_back(newPoints[i], newColors[i]);
+		if (component.primType == MeshPrimitiveType::Triangles)
+			indices.assign(newFaceIndices.cbegin(), newFaceIndices.cend());
+		else
+			indices.assign(newLineIndices.cbegin(), newLineIndices.cend());
+
+		Assert(indices.size() >= verts.size());
 	}
 }
 
-MeshPositionInfo MeshBuilderInternal::TmpMesh::CalcPosInfo()
+MeshPositionInfo MbStagingBufs::CalcPosInfo()
 {
-	MeshPositionInfo pi{Vector{INFINITY}, Vector{-INFINITY}};
-	for (MeshVertData& vData : components)
+	constexpr float inf = std::numeric_limits<float>::infinity();
+	MeshPositionInfo pi{Vector{inf}, Vector{-inf}};
+	bool any = false;
+	for (auto& component : components)
 	{
-		for (VertexData& vert : vData.verts)
+		for (const VertexData& vert : component.verts)
 		{
 			VectorMin(vert.pos, pi.mins, pi.mins);
 			VectorMax(vert.pos, pi.maxs, pi.maxs);
+			any = true;
 		}
 	}
-	// this isn't strictly necessary, but infinities and NaNs might mess with the system so best to avoid them
-	for (int i = 0; i < 3; i++)
-		AssertMsg(pi.mins[i] > -1e30 && pi.maxs[i] < 1e30, "mesh likely contains weird point(s)");
+
+	if (any)
+	{
+		// this isn't strictly necessary, but infinities and NaNs might mess with the system so best to avoid them
+		float lower = -VectorMaximum(-pi.mins);
+		float upper = VectorMaximum(pi.mins);
+		AssertMsg(lower > -1e30 && upper < 1e30, "mesh likely contains weird point(s)");
+	}
 
 	return pi;
 }
@@ -321,58 +128,57 @@ MeshPositionInfo MeshBuilderInternal::TmpMesh::CalcPosInfo()
 StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 {
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
-	auto& tmpMesh = g_meshBuilderInternal.tmpMesh;
-	tmpMesh.Create(createFunc, false);
-	tmpMesh.PackVertices(); // compactify with MbCompactMesh
-
-	size_t numPopulated = std::count_if(tmpMesh.components.cbegin(),
-	                                    tmpMesh.components.cend(),
-	                                    [](const MeshVertData& vd) { return !vd.Empty(); });
-
-	StaticMeshUnit* mu = new StaticMeshUnit{numPopulated, tmpMesh.CalcPosInfo()};
-
-	for (size_t i = tmpMesh.components.size(), muIdx = 0; i-- > 0;)
-	{
-		auto& vd = tmpMesh.components[i];
-		if (!vd.Empty())
-		{
-			MeshComponent mc{.vertData = &vd};
-			g_meshBuilderInternal.fuser.BeginIMeshCreation({&mc, 1}, false);
-			mu->meshesArr[muIdx++] = g_meshBuilderInternal.fuser.GetNextIMeshWrapper();
-		}
-		tmpMesh.components.pop_back();
-	}
-	return StaticMesh{mu};
+	std::pmr::monotonic_buffer_resource mr{4096};
+	MbStagingBufs stagingBufs{mr, false};
+	MeshBuilderDelegate del{stagingBufs};
+	createFunc(del);
+	stagingBufs.PackVertices(mr);
+	MeshPositionInfo posInfo = stagingBufs.CalcPosInfo();
+	auto [first, last] =
+	    std::ranges::remove_if(stagingBufs.components, [](const MbComponentBufs& comp) { return comp.IsEmpty(); });
+	std::vector<IMeshWrapper> meshes;
+	MbIMeshBuilder builder{std::span{first, last}, std::identity{}, false};
+	while (builder.FuseNext())
+		meshes.push_back(std::move(builder.GetCurrent().imw));
+	meshes.shrink_to_fit();
+	return StaticMesh{std::make_shared<StaticMeshUnit>(std::move(meshes), stagingBufs.CalcPosInfo())};
 }
 
 DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 {
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
-	auto& tmpMesh = g_meshBuilderInternal.tmpMesh;
-	tmpMesh.Create(createFunc, true);
-
-	const MeshPositionInfo posInfo = tmpMesh.CalcPosInfo();
-	VectorSlice<MeshVertData> dynamicSlice{g_meshBuilderInternal.sharedLists.dynamicMeshData};
-	for (size_t i = tmpMesh.components.size(); i-- > 0;)
+	if (!spt_meshRenderer.frameData)
 	{
-		if (!tmpMesh.components[i].Empty())
-			dynamicSlice.emplace_back(std::move(tmpMesh.components[i]));
-		tmpMesh.components.pop_back();
+		AssertMsg(0, "spt: Frame data was not initialized");
+		return {0, -1};
 	}
-	g_meshBuilderInternal.dynamicMeshUnits.emplace(dynamicSlice, posInfo);
-	return {g_meshBuilderInternal.dynamicMeshUnits.size() - 1, g_meshRendererInternal.frameNum};
+	auto& internalRenderer = spt_meshRenderer.frameData->renderer;
+	if (!internalRenderer.inSignal)
+	{
+		AssertMsg(0, "spt: Dynamic meshes can only be created in the MeshRenderSignal!");
+		return {0, -1};
+	}
+
+	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	auto& mr = spt_meshRenderer.frameData->mr;
+	MbStagingBufs stagingBufs{mr, true};
+	MeshBuilderDelegate del{stagingBufs};
+	createFunc(del);
+	MeshPositionInfo posInfo = stagingBufs.CalcPosInfo();
+	std::pmr::vector<MbComponentBufs> nonEmptyComponents{&mr};
+	for (auto& component : stagingBufs.components)
+		if (!component.IsEmpty())
+			nonEmptyComponents.push_back(std::move(component));
+	auto& dynUnits = spt_meshRenderer.frameData->renderer.dynamicUnits;
+	dynUnits.emplace_back(std::move(nonEmptyComponents), stagingBufs.CalcPosInfo());
+	return DynamicMeshToken{dynUnits.size() - 1, spt_meshRenderer.FrameNum()};
 }
 
 void MeshBuilderPro::CreateMeshContext(const MeshCreateFunc& createFunc)
 {
-	auto& tmpMesh = g_meshBuilderInternal.tmpMesh;
-	tmpMesh.Create(createFunc, true);
-	for (size_t i = tmpMesh.components.size(); i-- > 0;)
-	{
-		tmpMesh.components.back().verts.resize(0);
-		tmpMesh.components.back().indices.resize(0);
-		tmpMesh.components.pop_back();
-	}
+	std::pmr::monotonic_buffer_resource mr{4096};
+	MbStagingBufs stagingBufs{mr, false};
+	MeshBuilderDelegate del{stagingBufs};
+	createFunc(del);
 }
 
 #endif

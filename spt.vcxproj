@@ -1577,7 +1577,6 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClInclude Include="spt\features\visualizations\renderer\internal\mesh_builder_internal.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\internal\mesh_renderer_internal.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\internal\ref_mgr.hpp" />
-    <ClInclude Include="spt\features\visualizations\renderer\internal\vector_slice.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\mesh_builder.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\mesh_defs.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\mesh_renderer.hpp" />

@@ -33,8 +33,7 @@ StaticMesh::StaticMesh(StaticMesh&& other) : meshPtr(std::move(other.meshPtr)), 
 	other.prev = other.next = nullptr;
 }
 
-StaticMesh::StaticMesh(StaticMeshUnit* mesh)
-    : meshPtr(std::shared_ptr<StaticMeshUnit>(mesh)), prev(nullptr), next(nullptr)
+StaticMesh::StaticMesh(std::shared_ptr<StaticMeshUnit>&& mesh) : meshPtr(mesh), prev(nullptr), next(nullptr)
 {
 	AttachToFront();
 }
