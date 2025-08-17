@@ -1095,6 +1095,9 @@
     <ClInclude Include="spt\flatbuffers_schemas\fb_pack_defs.hpp">
       <Filter>spt\flatbuffers_schemas</Filter>
     </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\internal\imesh_builder.hpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">

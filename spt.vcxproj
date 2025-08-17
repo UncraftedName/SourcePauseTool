@@ -1572,6 +1572,7 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClInclude Include="spt\features\visualizations\player_trace\tr_record_cache.hpp" />
     <ClInclude Include="spt\features\visualizations\player_trace\tr_render_cache.hpp" />
     <ClInclude Include="spt\features\visualizations\player_trace\tr_structs.hpp" />
+    <ClInclude Include="spt\features\visualizations\renderer\internal\imesh_builder.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\internal\internal_defs.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\internal\materials_manager.hpp" />
     <ClInclude Include="spt\features\visualizations\renderer\internal\mesh_builder_internal.hpp" />

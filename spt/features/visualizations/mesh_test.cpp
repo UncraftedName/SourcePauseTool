@@ -22,6 +22,8 @@ ConVar y_spt_draw_mesh_examples("y_spt_draw_mesh_examples",
                                 FCVAR_CHEAT | FCVAR_DONTRECORD,
                                 "Draw a bunch of example meshes near the origin.");
 
+ConVar spt_draw_mesh_examples_max_count("spt_draw_mesh_examples_max_count", "1000", 0);
+
 static std::vector<class BaseMeshRenderTest*> tests;
 
 class BaseMeshRenderTest
@@ -53,6 +55,7 @@ protected:
 		{
 			spt_meshRenderer.signal.Connect(this, &MeshTestFeature::OnMeshRenderSignal);
 			InitConcommandBase(y_spt_draw_mesh_examples);
+			InitConcommandBase(spt_draw_mesh_examples_max_count);
 		}
 	};
 
@@ -67,10 +70,14 @@ protected:
 
 		if (!y_spt_draw_mesh_examples.GetBool())
 			return;
+		int m = spt_draw_mesh_examples_max_count.GetInt();
+		int i = 0;
 		for (auto testCase : tests)
 		{
 			testCase->DrawName(mr);
 			testCase->TestFunc(mr);
+			if (++i > m)
+				break;
 		}
 	}
 

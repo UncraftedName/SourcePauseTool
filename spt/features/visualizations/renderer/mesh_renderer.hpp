@@ -157,7 +157,7 @@ private:
 		int frameNum = 0;
 	} persist;
 
-	inline static std::mutex unloadMutex;
+	inline static std::recursive_mutex rendererUnloadMutex;
 };
 
 inline MeshRendererFeature spt_meshRenderer;

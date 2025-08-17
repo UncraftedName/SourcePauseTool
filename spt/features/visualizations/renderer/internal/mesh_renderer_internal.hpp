@@ -19,7 +19,7 @@ struct MbUnitRenderData
 
 struct MbStagingComponent
 {
-	MbMeshComponent component;
+	MbComponent component;
 	MbUnitRenderData renderData;
 
 	bool IsDynamic() const
@@ -69,7 +69,7 @@ struct MeshRendererInternal
 	std::pmr::vector<MbDynamicMeshUnit> dynamicUnits;
 	std::pmr::vector<MbMeshUnit> queuedUnits;
 
-	bool inSignal = false;
+	bool acceptUserData = false;
 	bool renderingSkyBox = false;
 
 	struct
@@ -210,6 +210,44 @@ struct MeshRendererFeature::FrameDataImpl
 	    , renderer{mr}
 	{
 	}
+};
+
+struct MbParanoidAllocScope
+{
+#ifdef DEBUG
+	class AssertMemResource : public std::pmr::memory_resource
+	{
+	protected:
+		void* do_allocate(std::size_t, std::size_t) override
+		{
+			Assert(0);
+			throw std::bad_alloc{};
+		}
+
+		void do_deallocate(void*, std::size_t, std::size_t) override
+		{
+			Assert(0);
+			throw std::bad_alloc{};
+		}
+
+		bool do_is_equal(const std::pmr::memory_resource& other) const noexcept override
+		{
+			return dynamic_cast<const AssertMemResource*>(&other) != nullptr;
+		}
+	} assertMemResource;
+
+	std::pmr::memory_resource* oldResource;
+
+	MbParanoidAllocScope() : oldResource{std::pmr::get_default_resource()}
+	{
+		std::pmr::set_default_resource(&assertMemResource);
+	}
+
+	~MbParanoidAllocScope()
+	{
+		std::pmr::set_default_resource(oldResource);
+	}
+#endif
 };
 
 #endif

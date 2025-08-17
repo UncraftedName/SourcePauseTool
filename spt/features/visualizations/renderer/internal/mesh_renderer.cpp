@@ -26,6 +26,7 @@
 
 #include "..\mesh_renderer.hpp"
 #include "mesh_renderer_internal.hpp"
+#include "imesh_builder.hpp"
 
 #ifdef SPT_MESH_RENDERING_ENABLED
 
@@ -138,9 +139,10 @@ void MeshRendererFeature::LoadFeature()
 
 void MeshRendererFeature::UnloadFeature()
 {
-	std::unique_lock lk{unloadMutex};
 	signal.Clear();
+	rendererUnloadMutex.lock();
 	frameData.reset();
+	rendererUnloadMutex.unlock();
 	g_meshMaterialMgr.Unload();
 	StaticMesh::DestroyAll();
 }
@@ -155,15 +157,14 @@ void MeshRendererFeature::OnRenderViewPre_Signal(void* thisptr, CViewSetup* came
 
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	persist.frameNum++;
-	{
-		std::unique_lock lk{unloadMutex};
-		size_t nBytesAllocedLast = frameData ? frameData->outerCountingResource.nTotalBytesAlloc.load() : 0;
-		frameData = std::make_unique<FrameDataImpl>(nBytesAllocedLast);
-	}
-	frameData->renderer.inSignal = true;
+
+	std::unique_lock lk{rendererUnloadMutex};
+	size_t nBytesAllocedLast = frameData ? frameData->outerCountingResource.nTotalBytesAlloc.load() : 0;
+	frameData = std::make_unique<FrameDataImpl>(nBytesAllocedLast);
+	frameData->renderer.acceptUserData = true;
 	MeshRendererDelegate renderDelgate{};
 	signal(renderDelgate);
-	frameData->renderer.inSignal = false;
+	frameData->renderer.acceptUserData = false;
 }
 
 void MeshRendererFeature::ImGuiCallback()
@@ -198,6 +199,7 @@ void MeshRendererFeature::ImGuiCallback()
 	size_t nBytesAlloced = 0;
 	size_t nBytesUsed = 0;
 
+	std::unique_lock lk{rendererUnloadMutex};
 	if (frameData)
 	{
 		totalDynamics = frameData->renderer.stats.nDynamicsThisFrame;
@@ -215,13 +217,17 @@ void MeshRendererFeature::ImGuiCallback()
 		}
 	}
 
-	ImGui::Text("%3u dynamic units this frame: %6u verts %6u indices", totalDynamics, totalVerts, totalIndices);
-	ImGui::Text("%3u static mesh units this frame", totalStatics);
+	ImGui::Text("%3u dynamic units queued this frame: %6u verts %6u indices",
+	            totalDynamics,
+	            totalVerts,
+	            totalIndices);
+	ImGui::Text("%3u static mesh units queued this frame", totalStatics);
 	ImGui::Text("%6u bytes allocated this frame (%6u used)", nBytesAlloced, nBytesUsed);
 }
 
 int MeshRendererFeature::CurrentPortalRenderDepth() const
 {
+	std::unique_lock lk{rendererUnloadMutex};
 	if (!frameData)
 		return 0;
 	return MAX(0, (int)frameData->renderer.debugMeshViews.size() - 1);
@@ -234,11 +240,12 @@ int MeshRendererFeature::DestroyAllStaticMeshes() const
 
 IMPL_HOOK_THISCALL(MeshRendererFeature, void, CRendering3dView__DrawOpaqueRenderables, CRendering3dView*, int param)
 {
-	std::unique_lock lk{unloadMutex};
 	// HACK - param is a bool in SSDK2007 and enum in SSDK2013
 	// render order shouldn't matter here
 	ORIG_CRendering3dView__DrawOpaqueRenderables(thisptr, param);
 	// TODO - in all of the calls to the renderer functions, I should set the default memory resource to the null one
+	std::unique_lock lk{rendererUnloadMutex};
+	MbParanoidAllocScope scope{};
 	if (frameData)
 		frameData->renderer.OnDrawOpaques(thisptr);
 }
@@ -250,9 +257,10 @@ IMPL_HOOK_THISCALL(MeshRendererFeature,
                    bool inSkybox,
                    bool shadowDepth)
 {
-	std::unique_lock lk{unloadMutex};
 	// render order matters here, render our stuff on top of other translucents
 	ORIG_CRendering3dView__DrawTranslucentRenderables(thisptr, inSkybox, shadowDepth);
+	std::unique_lock lk{rendererUnloadMutex};
+	MbParanoidAllocScope scope{};
 	if (frameData)
 		frameData->renderer.OnDrawTranslucents(thisptr);
 }
@@ -266,11 +274,17 @@ IMPL_HOOK_THISCALL(MeshRendererFeature,
                    bool bInvoke,
                    ITexture* pRenderTarget)
 {
-	if (frameData)
-		frameData->renderer.renderingSkyBox = true;
+	{
+		std::unique_lock lk{rendererUnloadMutex};
+		if (frameData)
+			frameData->renderer.renderingSkyBox = true;
+	}
 	ORIG_CSkyBoxView__DrawInternal(thisptr, id, bInvoke, pRenderTarget);
-	if (frameData)
-		frameData->renderer.renderingSkyBox = false;
+	{
+		std::unique_lock lk{rendererUnloadMutex};
+		if (frameData)
+			frameData->renderer.renderingSkyBox = false;
+	}
 }
 #else
 IMPL_HOOK_THISCALL(MeshRendererFeature,
@@ -282,11 +296,17 @@ IMPL_HOOK_THISCALL(MeshRendererFeature,
                    ITexture* pRenderTarget,
                    ITexture* pDepthTarget)
 {
-	if (frameData)
-		frameData->renderer.renderingSkyBox = true;
+	{
+		std::unique_lock lk{rendererUnloadMutex};
+		if (frameData)
+			frameData->renderer.renderingSkyBox = true;
+	}
 	ORIG_CSkyBoxView__DrawInternal(thisptr, id, bInvoke, pRenderTarget, pDepthTarget);
-	if (frameData)
-		frameData->renderer.renderingSkyBox = false;
+	{
+		std::unique_lock lk{rendererUnloadMutex};
+		if (frameData)
+			frameData->renderer.renderingSkyBox = false;
+	}
 }
 #endif
 
@@ -501,13 +521,13 @@ void MeshRendererInternal::CollectRenderableComponents(std::pmr::vector<MbStagin
 		{
 			for (auto& component : GetDynamicMeshFromToken(unit.dynamicToken).componentBufs)
 				if (shouldRender(component.GetMaterial()))
-					components.emplace_back(MbMeshComponent{component}, *renderData);
+					components.emplace_back(MbComponent{component}, *renderData);
 		}
 		else
 		{
 			for (auto& component : unit.staticUnit->meshes)
 				if (shouldRender(component.material))
-					components.emplace_back(MbMeshComponent{component}, *renderData);
+					components.emplace_back(MbComponent{component}, *renderData);
 		}
 	}
 }
@@ -536,11 +556,12 @@ void MeshRendererInternal::DrawDebugMeshesForCurrentView()
 	* batch them together.
 	*/
 
-	size_t oldNUnits = queuedUnits.size();
+	std::pmr::vector<DynamicMesh> debugMeshes{&mr};
 
+	acceptUserData = true;
 	for (auto& debugDesc : debugMeshViews.back().descs)
 	{
-		spt_meshBuilder.CreateDynamicMesh(
+		debugMeshes.push_back(spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
 			    if (std::holds_alternative<DebugBox>(debugDesc.desc))
@@ -557,17 +578,20 @@ void MeshRendererInternal::DrawDebugMeshesForCurrentView()
 				                std::get<DebugCross>(debugDesc.desc).size,
 				                {debugDesc.color, false});
 			    }
-		    });
+		    }));
 	}
-
-	auto dynUnits = std::span(queuedUnits).subspan(oldNUnits);
+	acceptUserData = false;
 
 	std::pmr::vector<MbStagingComponent> components{&mr};
 
-	for (auto& unit : dynUnits)
+	for (auto dynMesh : debugMeshes)
+	{
+		stats.nDynamicsThisFrame++;
+		MbMeshUnit unit{dynMesh, nullptr};
 		if (auto renderData = unit.GetRenderData(); renderData)
 			for (auto& component : GetDynamicMeshFromToken(unit.dynamicToken).componentBufs)
-				components.emplace_back(MbMeshComponent{component}, *renderData);
+				components.emplace_back(MbComponent{component}, *renderData);
+	}
 
 	std::pmr::vector<std::reference_wrapper<MbStagingComponent>> sortedComponents{
 	    components.begin(),
@@ -687,24 +711,25 @@ std::weak_ordering operator<=>(const MbStagingComponent& a, const MbStagingCompo
 {
 	constexpr auto eqv = std::weak_ordering::equivalent;
 
+	if (&a == &b)
+		return eqv;
+
 	// group dynamics together
 	if (auto cmp = a.component.IsDynamic() <=> b.component.IsDynamic(); cmp != eqv)
 		return cmp;
 
 	if (a.component.IsDynamic())
 	{
-		// between dynamics group by whether we have a callback, then by unit
-		auto ta = std::make_tuple(a.renderData.hasCallback, &a.renderData);
-		auto tb = std::make_tuple(b.renderData.hasCallback, &b.renderData);
+		// between dynamics group by whether we have a callback, then by primitive type, then by unit
+		auto ta = std::make_tuple(a.renderData.hasCallback, a.component.GetDynamic().primType);
+		auto tb = std::make_tuple(b.renderData.hasCallback, b.component.GetDynamic().primType);
 		if (auto cmp = ta <=> tb; cmp != eqv)
 			return cmp;
 	}
-	else
-	{
-		// between statics, if both are in the same unit they'll have the same material, callback, colormod, etc.
-		if (&a.renderData == &b.renderData)
-			return std::weak_ordering::equivalent;
-	}
+
+	// same unit => same material, callback, colormod, etc.
+	if (&a.renderData == &b.renderData)
+		return eqv;
 
 	// group the same materials together
 	if (auto cmp = a.component.GetMaterial() <=> b.component.GetMaterial(); cmp != eqv)
@@ -731,7 +756,7 @@ void MeshRendererDelegate::DrawMesh(const DynamicMesh& dynamicMesh, const Render
 		return;
 	}
 	auto& internalRenderer = spt_meshRenderer.frameData->renderer;
-	if (!internalRenderer.inSignal)
+	if (!internalRenderer.acceptUserData)
 	{
 		AssertMsg(0, "spt: Meshes can only be drawn in MeshRenderSignal!");
 		return;
@@ -757,7 +782,7 @@ void MeshRendererDelegate::DrawMesh(const StaticMesh& staticMesh, const RenderCa
 		return;
 	}
 	auto& internalRenderer = spt_meshRenderer.frameData->renderer;
-	if (!internalRenderer.inSignal)
+	if (!internalRenderer.acceptUserData)
 	{
 		AssertMsg(0, "spt: Meshes can only be drawn in MeshRenderSignal!");
 		return;

@@ -12,6 +12,7 @@
 
 #include "internal_defs.hpp"
 #include "mesh_renderer_internal.hpp"
+#include "imesh_builder.hpp"
 
 // TODO use this to implement auto-spilling?
 void GetMaxMeshSize(size_t& maxVerts, size_t& maxIndices, bool dynamic)
@@ -112,6 +113,7 @@ MeshPositionInfo MbStagingBufs::CalcPosInfo()
 		}
 	}
 
+#ifdef DEBUG
 	if (any)
 	{
 		// this isn't strictly necessary, but infinities and NaNs might mess with the system so best to avoid them
@@ -119,6 +121,7 @@ MeshPositionInfo MbStagingBufs::CalcPosInfo()
 		float upper = VectorMaximum(pi.mins);
 		AssertMsg(lower > -1e30 && upper < 1e30, "mesh likely contains weird point(s)");
 	}
+#endif
 
 	return pi;
 }
@@ -134,10 +137,10 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 	createFunc(del);
 	stagingBufs.PackVertices(mr);
 	MeshPositionInfo posInfo = stagingBufs.CalcPosInfo();
-	auto [first, last] =
+	auto [firstEmpty, _] =
 	    std::ranges::remove_if(stagingBufs.components, [](const MbComponentBufs& comp) { return comp.IsEmpty(); });
 	std::vector<IMeshWrapper> meshes;
-	MbIMeshBuilder builder{std::span{first, last}, std::identity{}, false};
+	MbIMeshBuilder builder{std::span{stagingBufs.components.cbegin(), firstEmpty}, std::identity{}, false};
 	while (builder.FuseNext())
 		meshes.push_back(std::move(builder.GetCurrent().imw));
 	meshes.shrink_to_fit();
@@ -146,19 +149,21 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 
 DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 {
+	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+
 	if (!spt_meshRenderer.frameData)
 	{
 		AssertMsg(0, "spt: Frame data was not initialized");
 		return {0, -1};
 	}
 	auto& internalRenderer = spt_meshRenderer.frameData->renderer;
-	if (!internalRenderer.inSignal)
+	if (!internalRenderer.acceptUserData)
 	{
 		AssertMsg(0, "spt: Dynamic meshes can only be created in the MeshRenderSignal!");
 		return {0, -1};
 	}
 
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	MbParanoidAllocScope scope{};
 	auto& mr = spt_meshRenderer.frameData->mr;
 	MbStagingBufs stagingBufs{mr, true};
 	MeshBuilderDelegate del{stagingBufs};
@@ -169,7 +174,7 @@ DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 		if (!component.IsEmpty())
 			nonEmptyComponents.push_back(std::move(component));
 	auto& dynUnits = spt_meshRenderer.frameData->renderer.dynamicUnits;
-	dynUnits.emplace_back(std::move(nonEmptyComponents), stagingBufs.CalcPosInfo());
+	dynUnits.emplace_back(std::move(nonEmptyComponents), posInfo);
 	return DynamicMeshToken{dynUnits.size() - 1, spt_meshRenderer.FrameNum()};
 }
 
