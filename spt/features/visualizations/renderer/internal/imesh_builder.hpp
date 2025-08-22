@@ -155,7 +155,6 @@ private:
 
 		CMatRenderContextPtr context{interfaces::materialSystem};
 		MaterialRef material = firstComp.GetMaterial();
-		context->Bind(material);
 
 		IMesh* iMesh;
 
@@ -165,6 +164,7 @@ private:
 		}
 		else
 		{
+			context->Bind(material);
 			VertexFormat_t vFmt = material->GetVertexFormat();
 			if (vFmt == VERTEX_FORMAT_UNKNOWN)
 			{
@@ -211,10 +211,7 @@ public:
 		FuseData fData = GetNextFuseSpan();
 		std::optional<IMeshWrapper> imw = CreateAndSetupIMesh(fData);
 		if (!imw)
-		{
-			curFused.Reset();
 			return false;
-		}
 		PopulateIMeshBuffers(imw->iMesh, fData);
 
 		curFused.imw = std::move(*imw);

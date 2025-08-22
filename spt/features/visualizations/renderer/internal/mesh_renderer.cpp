@@ -420,7 +420,7 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 	// add a new debug view, the corresponding pop is at the end of DrawTranslucents
 	debugMeshViews.emplace_back(mr);
 
-	std::pmr::vector<MbStagingComponent> components{&mr};
+	std::pmr::list<MbStagingComponent> components{&mr};
 	CollectRenderableComponents(components, true);
 
 	std::pmr::vector<std::reference_wrapper<MbStagingComponent>> sortedComponents{
@@ -443,7 +443,7 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	SetupViewInfo(renderingView);
 
-	std::pmr::vector<MbStagingComponent> components{&mr};
+	std::pmr::list<MbStagingComponent> components{&mr};
 	CollectRenderableComponents(components, false);
 
 	std::pmr::vector<std::reference_wrapper<MbStagingComponent>> sortedComponents{
@@ -486,12 +486,12 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 	debugMeshViews.pop_back();
 }
 
-void MeshRendererInternal::CollectRenderableComponents(std::pmr::vector<MbStagingComponent>& components, bool opaques)
+void MeshRendererInternal::CollectRenderableComponents(std::pmr::list<MbStagingComponent>& components, bool opaques)
 {
 	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 
 	// go through all components of all queued meshes and return those that are eligable for rendering right now
-	for (MbMeshUnit& unit : queuedUnits)
+	for (const MbMeshUnit& unit : queuedUnits)
 	{
 		std::optional<MbUnitRenderData> renderData = unit.GetRenderData();
 		if (!renderData)
@@ -532,10 +532,10 @@ void MeshRendererInternal::CollectRenderableComponents(std::pmr::vector<MbStagin
 	}
 }
 
-void MeshRendererInternal::AddDebugCrosses(std::span<const MbStagingComponent> span)
+void MeshRendererInternal::AddDebugCrosses(std::pmr::list<MbStagingComponent>& components)
 {
 	auto& debugDescs = debugMeshViews.back().descs;
-	for (auto& comp : span)
+	for (auto& comp : components)
 	{
 		const MeshPositionInfo& posInfo = comp.renderData.posInfo;
 		float maxDiameter = VectorMaximum(posInfo.maxs - posInfo.mins);
@@ -556,42 +556,41 @@ void MeshRendererInternal::DrawDebugMeshesForCurrentView()
 	* batch them together.
 	*/
 
-	std::pmr::vector<DynamicMesh> debugMeshes{&mr};
+	auto& debugDescs = debugMeshViews.back().descs;
+	std::pmr::vector<MbStagingComponent> components{&mr};
+	components.reserve(debugDescs.size());
 
 	acceptUserData = true;
-	for (auto& debugDesc : debugMeshViews.back().descs)
+	for (auto& debugDesc : debugDescs)
 	{
-		debugMeshes.push_back(spt_meshBuilder.CreateDynamicMesh(
+		DynamicMesh dynMesh = spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
-			    if (std::holds_alternative<DebugBox>(debugDesc.desc))
+			    if (auto box = std::get_if<DebugBox>(&debugDesc.desc))
 			    {
 				    mb.AddBox(vec3_origin,
-				              std::get<DebugBox>(debugDesc.desc).mins,
-				              std::get<DebugBox>(debugDesc.desc).maxs,
+				              box->mins,
+				              box->maxs,
 				              vec3_angle,
 				              {C_WIRE(debugDesc.color), false, false});
 			    }
+			    else if (auto cross = std::get_if<DebugCross>(&debugDesc.desc))
+			    {
+				    mb.AddCross(cross->crossPos, cross->size, {debugDesc.color, false});
+			    }
 			    else
 			    {
-				    mb.AddCross(std::get<DebugCross>(debugDesc.desc).crossPos,
-				                std::get<DebugCross>(debugDesc.desc).size,
-				                {debugDesc.color, false});
+				    __debugbreak();
 			    }
-		    }));
-	}
-	acceptUserData = false;
+		    });
 
-	std::pmr::vector<MbStagingComponent> components{&mr};
-
-	for (auto dynMesh : debugMeshes)
-	{
 		stats.nDynamicsThisFrame++;
 		MbMeshUnit unit{dynMesh, nullptr};
 		if (auto renderData = unit.GetRenderData(); renderData)
 			for (auto& component : GetDynamicMeshFromToken(unit.dynamicToken).componentBufs)
 				components.emplace_back(MbComponent{component}, *renderData);
 	}
+	acceptUserData = false;
 
 	std::pmr::vector<std::reference_wrapper<MbStagingComponent>> sortedComponents{
 	    components.begin(),
@@ -601,6 +600,9 @@ void MeshRendererInternal::DrawDebugMeshesForCurrentView()
 	std::ranges::stable_sort(sortedComponents, std::less{});
 	DrawAll(sortedComponents, false, true);
 }
+
+// move define to imesh builder
+#define MB_FUSE_MESHES 1
 
 void MeshRendererInternal::DrawAll(std::span<const std::reference_wrapper<MbStagingComponent>> span,
                                    bool addDebugMeshes,
@@ -619,11 +621,15 @@ void MeshRendererInternal::DrawAll(std::span<const std::reference_wrapper<MbStag
 	{
 		if (span.front().get().IsDynamic())
 		{
+#if MB_FUSE_MESHES
 			auto it =
 			    std::ranges::find_if(span,
 			                         [span](auto& staging) { return (span.front() <=> staging) != 0; });
+#else
+			auto it = span.begin() + 1;
+#endif
 
-			std::span attemptFuseSpan{span.begin(), it};
+			std::span attemptFuseSpan(span.begin(), it);
 			AssertMsg(!attemptFuseSpan.empty(),
 			          "spt: operator<=> does not return equivalent for two of the same staging component");
 
@@ -639,8 +645,8 @@ void MeshRendererInternal::DrawAll(std::span<const std::reference_wrapper<MbStag
 				Render(imw, fusedSpan.front().get().renderData);
 				if (addDebugMeshes)
 					AddDebugBoxesForFusedDynamic(fusedSpan, opaques);
-				span = span.subspan(fusedSpan.size());
 			}
+			span = span.subspan(attemptFuseSpan.size());
 		}
 		else
 		{
@@ -721,19 +727,21 @@ std::weak_ordering operator<=>(const MbStagingComponent& a, const MbStagingCompo
 	if (a.component.IsDynamic())
 	{
 		// between dynamics group by whether we have a callback, then by primitive type, then by unit
-		auto ta = std::make_tuple(a.renderData.hasCallback, a.component.GetDynamic().primType);
-		auto tb = std::make_tuple(b.renderData.hasCallback, b.component.GetDynamic().primType);
+		auto ta = std::make_tuple(a.renderData.hasCallback,
+		                          a.component.GetDynamic().primType,
+		                          a.component.GetDynamic().matType);
+		auto tb = std::make_tuple(b.renderData.hasCallback,
+		                          b.component.GetDynamic().primType,
+		                          b.component.GetDynamic().matType);
 		if (auto cmp = ta <=> tb; cmp != eqv)
 			return cmp;
 	}
-
-	// same unit => same material, callback, colormod, etc.
-	if (&a.renderData == &b.renderData)
-		return eqv;
-
-	// group the same materials together
-	if (auto cmp = a.component.GetMaterial() <=> b.component.GetMaterial(); cmp != eqv)
-		return cmp;
+	else
+	{
+		// statics - group the same materials together
+		if (auto cmp = a.component.GetMaterial() <=> b.component.GetMaterial(); cmp != eqv)
+			return cmp;
+	}
 
 	// group the same color mod for a material together, switching color mod seems to be very slow
 	auto ta = std::make_tuple(a.renderData.hasCallback,
@@ -742,6 +750,13 @@ std::weak_ordering operator<=>(const MbStagingComponent& a, const MbStagingCompo
 	                          *reinterpret_cast<const int*>(&b.renderData.cbInfoOut.colorModulate));
 	if (auto cmp = ta <=> tb; cmp != eqv)
 		return cmp;
+
+	// for dynamics, assume that each callback is different unless we're dealing with components from a single unit
+	if (a.component.IsDynamic() && a.renderData.hasCallback)
+	{
+		if (auto cmp = &a.renderData <=> &b.renderData; cmp != eqv)
+			return cmp;
+	}
 
 	return eqv;
 }

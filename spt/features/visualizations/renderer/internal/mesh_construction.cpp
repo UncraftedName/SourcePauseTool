@@ -329,7 +329,7 @@ bool MeshBuilderDelegate::MvdAddFaceTriangleStripIndices(MeshVertData& vdf,
 
 	if ((wd & WD_BOTH) == WD_BOTH)
 	{
-		vdf.indices.insert(vdf.indices.begin(), vdf.indices.rbegin(), vdf.indices.rend() - origSize);
+		vdf.indices.insert(vdf.indices.end(), vdf.indices.rbegin(), vdf.indices.rend() - origSize);
 	}
 	else if ((wd & WD_BOTH) == WD_CCW)
 	{
@@ -436,9 +436,9 @@ bool MeshBuilderDelegate::MvdAddUnitCube(MeshVertData& vdf, MeshVertData& vdl, S
 			vdf.verts.emplace_back(pos, c.faceColor);
 
 		if (c.wd & WD_CW)
-			vdf.indices.insert(vdf.indices.begin(), faceIndices.cbegin(), faceIndices.cend());
+			vdf.indices.insert(vdf.indices.end(), faceIndices.cbegin(), faceIndices.cend());
 		if (c.wd & WD_CCW)
-			vdf.indices.insert(vdf.indices.begin(), faceIndices.crbegin(), faceIndices.crend());
+			vdf.indices.insert(vdf.indices.end(), faceIndices.crbegin(), faceIndices.crend());
 
 		for (size_t i = origIdxCount; i < vdf.indices.size(); i++)
 			vdf.indices[i] += origVertCount;
@@ -450,7 +450,7 @@ bool MeshBuilderDelegate::MvdAddUnitCube(MeshVertData& vdf, MeshVertData& vdl, S
 
 		for (Vector pos : verts)
 			vdl.verts.emplace_back(pos, c.lineColor);
-		vdl.indices.insert(vdl.indices.begin(), lineIndices.cbegin(), lineIndices.cend());
+		vdl.indices.insert(vdl.indices.end(), lineIndices.cbegin(), lineIndices.cend());
 
 		for (size_t i = origIdxCount; i < vdl.indices.size(); i++)
 			vdl.indices[i] += origVertCount;

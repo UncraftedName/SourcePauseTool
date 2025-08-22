@@ -185,10 +185,10 @@ struct MbStagingBufs
 
 struct MbDynamicMeshUnit
 {
-	std::pmr::vector<MbComponentBufs> componentBufs;
+	std::pmr::forward_list<MbComponentBufs> componentBufs;
 	MeshPositionInfo posInfo;
 
-	MbDynamicMeshUnit(std::pmr::vector<MbComponentBufs>&& componentBufs, const MeshPositionInfo& posInfo)
+	MbDynamicMeshUnit(std::pmr::forward_list<MbComponentBufs>&& componentBufs, const MeshPositionInfo& posInfo)
 	    : componentBufs(std::move(componentBufs)), posInfo(posInfo)
 	{
 	}

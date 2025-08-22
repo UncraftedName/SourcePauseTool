@@ -53,6 +53,8 @@ struct MbMeshUnit
 	{
 	}
 
+	MbMeshUnit(MbMeshUnit&) = delete;
+
 	bool IsDynamic() const
 	{
 		return !staticUnit;
@@ -67,7 +69,8 @@ struct MeshRendererInternal
 	std::pmr::memory_resource& mr;
 
 	std::pmr::vector<MbDynamicMeshUnit> dynamicUnits;
-	std::pmr::vector<MbMeshUnit> queuedUnits;
+	// TODO change (most) lists to forward lists?
+	std::pmr::list<MbMeshUnit> queuedUnits;
 
 	bool acceptUserData = false;
 	bool renderingSkyBox = false;
@@ -145,7 +148,7 @@ struct MeshRendererInternal
 	*/
 
 	MeshRendererInternal(std::pmr::memory_resource& mr)
-	    : mr{mr}, dynamicUnits{&mr}, queuedUnits{&mr}, debugMeshViews{&mr}
+	    : mr(mr), dynamicUnits(&mr), queuedUnits(&mr), debugMeshViews(&mr)
 	{
 	}
 
@@ -153,13 +156,12 @@ struct MeshRendererInternal
 	void OnDrawTranslucents(CRendering3dView* rendering3dView);
 
 	void SetupViewInfo(CRendering3dView* rendering3dView);
-	void CollectRenderableComponents(std::pmr::vector<MbStagingComponent>& components, bool opaques);
+	void CollectRenderableComponents(std::pmr::list<MbStagingComponent>& components, bool opaques);
 	void DrawAll(std::span<const std::reference_wrapper<MbStagingComponent>> span,
 	             bool addDebugMeshes,
 	             bool opaques);
 
-	void AddDebugCrosses(std::span<const MbStagingComponent> span);
-	void AddDebugBox(std::span<const std::reference_wrapper<MbStagingComponent>> span, bool opaques);
+	void AddDebugCrosses(std::pmr::list<MbStagingComponent>& components);
 	void AddDebugBoxesForFusedDynamic(std::span<const std::reference_wrapper<MbStagingComponent>> span,
 	                                  bool opaques);
 	void AddDebugBoxForStatic(const MbStagingComponent& component);

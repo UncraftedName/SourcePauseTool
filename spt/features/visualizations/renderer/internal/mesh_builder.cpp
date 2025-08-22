@@ -169,10 +169,10 @@ DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 	MeshBuilderDelegate del{stagingBufs};
 	createFunc(del);
 	MeshPositionInfo posInfo = stagingBufs.CalcPosInfo();
-	std::pmr::vector<MbComponentBufs> nonEmptyComponents{&mr};
+	std::pmr::forward_list<MbComponentBufs> nonEmptyComponents{&mr};
 	for (auto& component : stagingBufs.components)
 		if (!component.IsEmpty())
-			nonEmptyComponents.push_back(std::move(component));
+			nonEmptyComponents.push_front(std::move(component));
 	auto& dynUnits = spt_meshRenderer.frameData->renderer.dynamicUnits;
 	dynUnits.emplace_back(std::move(nonEmptyComponents), posInfo);
 	return DynamicMeshToken{dynUnits.size() - 1, spt_meshRenderer.FrameNum()};
