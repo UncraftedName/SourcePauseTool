@@ -1098,6 +1098,9 @@
     <ClInclude Include="spt\features\visualizations\renderer\internal\imesh_builder.hpp">
       <Filter>spt\features\visualizations\renderer\internal</Filter>
     </ClInclude>
+    <ClInclude Include="spt\features\visualizations\renderer\internal\component_buffers.hpp">
+      <Filter>spt\features\visualizations\renderer\internal</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">

@@ -7,28 +7,6 @@
 #include "..\mesh_builder.hpp"
 #include "materialsystem\itexture.h"
 
-struct MaterialRefMgr
-{
-	inline void AddRef(IMaterial* mat) const
-	{
-		if (mat)
-			mat->IncrementReferenceCount();
-	}
-
-	// TODO - materials that have been used don't get deleted here, not an issue now but will be one with text
-	inline void Release(IMaterial*& mat) const
-	{
-		if (mat)
-		{
-			mat->DecrementReferenceCount();
-			mat->DeleteIfUnreferenced();
-			mat = nullptr;
-		}
-	}
-};
-
-using MaterialRef = AutoRefPtr<IMaterial*, MaterialRefMgr>;
-
 /*struct TextureRefMgr
 {
 	inline void AddRef(ITexture* tex) const
@@ -47,24 +25,31 @@ using MaterialRef = AutoRefPtr<IMaterial*, MaterialRefMgr>;
 
 using TextureRef = AutoRefPtr<ITexture*, TextureRefMgr>;*/
 
-enum class MeshMaterialSimple : unsigned char
+enum MbSimpleMeshMaterialType : unsigned char
 {
-	Opaque,
-	Alpha,
-	AlphaNoZ,
-	Count
+	MB_SMMT_OPAQUE,
+	MB_SMMT_ALPHA,
+	MB_SMMT_ALPHA_NOZ,
+
+	MB_SMMT_COUNT,
 };
 
-
-struct MeshBuilderMatMgr
+enum MbMeshPrimitiveType : unsigned char
 {
-	MaterialRef matOpaque, matAlpha, matAlphaNoZ;
+	MB_MPT_LINES,
+	MB_MPT_TRIS,
+
+	MB_MPT_COUNT,
+};
+
+struct MbMaterialManager
+{
+	IMaterial *matOpaque, *matAlpha, *matAlphaNoZ;
 
 	void Load();
 	void Unload();
-	MaterialRef GetMaterial(MeshMaterialSimple materialType);
-};
 
-inline MeshBuilderMatMgr g_meshMaterialMgr;
+	IMaterial* GetMaterial(MbSimpleMeshMaterialType matType) const;
+};
 
 #endif

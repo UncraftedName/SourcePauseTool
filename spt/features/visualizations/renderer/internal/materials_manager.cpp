@@ -9,42 +9,53 @@
 
 /**************************************** MATERIAL MANAGER ****************************************/
 
-void MeshBuilderMatMgr::Load()
+void MbMaterialManager::Load()
 {
 	KeyValues* kv;
 
 	kv = new KeyValues("unlitgeneric");
 	kv->SetInt("$vertexcolor", 1);
 	matOpaque = interfaces::materialSystem->CreateMaterial("_spt_UnlitOpaque", kv);
+	matOpaque->IncrementReferenceCount();
 
 	kv = new KeyValues("unlitgeneric");
 	kv->SetInt("$vertexcolor", 1);
 	kv->SetInt("$vertexalpha", 1);
 	matAlpha = interfaces::materialSystem->CreateMaterial("_spt_UnlitTranslucent", kv);
+	matAlpha->IncrementReferenceCount();
 
 	kv = new KeyValues("unlitgeneric");
 	kv->SetInt("$vertexcolor", 1);
 	kv->SetInt("$vertexalpha", 1);
 	kv->SetInt("$ignorez", 1);
 	matAlphaNoZ = interfaces::materialSystem->CreateMaterial("_spt_UnlitTranslucentNoZ", kv);
+	matAlphaNoZ->IncrementReferenceCount();
 }
 
-void MeshBuilderMatMgr::Unload()
+void MbMaterialManager::Unload()
 {
-	std::array<MaterialRef*, 3> mats{&matOpaque, &matAlpha, &matAlphaNoZ};
-	for (MaterialRef* mat : mats)
-		(*mat).Release();
-}
-
-MaterialRef MeshBuilderMatMgr::GetMaterial(MeshMaterialSimple materialType)
-{
-	switch (materialType)
+	std::array<std::reference_wrapper<IMaterial*>, 3> mats{matOpaque, matAlpha, matAlphaNoZ};
+	for (IMaterial* mat : mats)
 	{
-	case MeshMaterialSimple::Opaque:
+		// TODO - materials that have been used don't get deleted here, not an issue now but will be one with text
+		if (mat)
+		{
+			mat->DecrementReferenceCount();
+			mat->DeleteIfUnreferenced();
+			mat = nullptr;
+		}
+	}
+}
+
+IMaterial* MbMaterialManager::GetMaterial(MbSimpleMeshMaterialType matType) const
+{
+	switch (matType)
+	{
+	case MB_SMMT_OPAQUE:
 		return matOpaque;
-	case MeshMaterialSimple::Alpha:
+	case MB_SMMT_ALPHA:
 		return matAlpha;
-	case MeshMaterialSimple::AlphaNoZ:
+	case MB_SMMT_ALPHA_NOZ:
 		return matAlphaNoZ;
 	default:
 		Assert(0);
