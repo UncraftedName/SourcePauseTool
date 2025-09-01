@@ -35,17 +35,14 @@ namespace player_trace
 		TR_SR_COLORED_COUNT,
 	};
 
-	enum TrPlayerCameraDrawType
-	{
-		TR_PCDT_FRUSTUM,
-		TR_PCDT_BOX_AND_LINE,
+	/*
+	* Some visual configuration settings for style & colors. The stuff here should be anything
+	* configurable that can't be changed via cvars.
+	*/
 
-		TR_PCDT_COUNT,
-	};
-
-	struct
+	struct TrColors
 	{
-		struct
+		struct PlayerPath
 		{
 			std::array<ShapeColor, TR_SR_COLORED_COUNT> segmentEndPoints{
 			    ShapeColor{C_OUTLINE(200, 100, 100, 255), true, true, WD_BOTH},
@@ -64,7 +61,7 @@ namespace player_trace
 			float segmentEndpointOpacity = .2f;
 		} playerPath;
 
-		struct
+		struct PlayerPath
 		{
 			/*
 			* Colors pulled from:
@@ -113,9 +110,9 @@ namespace player_trace
 		} entities;
 	} inline trColors;
 
-	struct
+	struct TrStyles
 	{
-		struct
+		struct PlayerHull
 		{
 			float contactNormalLength = 20;
 			float originCubeSize = 1.f;
@@ -143,7 +140,7 @@ namespace player_trace
 
 		} playerHull;
 
-		struct
+		struct PlayerPath
 		{
 			struct
 			{
@@ -162,6 +159,8 @@ namespace player_trace
 
 			float maxDistBeforeImplicitBreakSqr = 130.f * 130.f; // max speed + crouch spamming
 			uint32_t maxTicksToRenderAsDynamicMesh = 1000;
+
+			bool settingsDirty = true;
 
 		} playerPath;
 

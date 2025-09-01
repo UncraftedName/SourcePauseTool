@@ -9,6 +9,7 @@ namespace player_trace::tr_imgui
 	void PlayerTabCallback(tr_tick activeTick);
 	void EntityTabCallback(tr_tick activeTick);
 	void PortalTabCallback(tr_tick activeTick);
+	void SettingsTabCallback();
 
 } // namespace player_trace::tr_imgui
 

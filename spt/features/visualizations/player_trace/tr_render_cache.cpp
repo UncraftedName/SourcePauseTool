@@ -99,15 +99,10 @@ void TrRenderingCache::RebuildPlayerHullMeshes()
 	}
 }
 
-void TrRenderingCache::RebuildEyeMeshes(float fov)
+void TrRenderingCache::RebuildEyeMeshes(TrPlayerCameraDrawType camType, float fov)
 {
-	int expectedDrawType = clamp(spt_trace_draw_cam_style.GetInt(), 0, TR_PCDT_COUNT - 1);
-
-	if (meshes.camType != expectedDrawType || meshes.eyeMeshFov != fov)
+	if (meshes.camType != camType || meshes.eyeMeshFov != fov)
 		StaticMesh::DestroyAllV(meshes.eyes, meshes.sgEyes);
-
-	meshes.camType = (TrPlayerCameraDrawType)expectedDrawType;
-	meshes.eyeMeshFov = fov;
 
 	auto buildFrustumFunc = [fov](MeshBuilderDelegate& mb, ShapeColor color)
 	{
@@ -463,12 +458,13 @@ void TrRenderingCache::RebuildPhysMeshes(const TrEntityCache::EntMap& entMap)
 	std::erase_if(physMeshes, [](const auto& entry) { return !entry.second.isActive; });
 }
 
-void TrRenderingCache::RenderPlayerPath(MeshRendererDelegate& mr, const Vector& landmarkDeltaToFirstMap)
+void TrRenderingCache::RenderPlayerPath(MeshRendererDelegate& mr, const TrDrawSettings& settings)
 {
 	RebuildPlayerPathMeshes();
 
-	RenderCallback cb = [landmarkDeltaToFirstMap](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
-	{ PositionMatrix(landmarkDeltaToFirstMap, infoOut.mat); };
+	Vector landmarkDelta = settings.landmarkDeltaToFirstMap; // capture by value
+	RenderCallback cb = [landmarkDelta](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
+	{ PositionMatrix(landmarkDelta, infoOut.mat); };
 
 	for (auto& m : meshes.playerPath.staticMeshes)
 		mr.DrawMesh(m, cb);
@@ -476,20 +472,21 @@ void TrRenderingCache::RenderPlayerPath(MeshRendererDelegate& mr, const Vector& 
 		mr.DrawMesh(m, cb);
 }
 
-void TrRenderingCache::RenderPlayerHull(MeshRendererDelegate& mr,
-                                        const Vector& landmarkDeltaToMapAtTick,
-                                        tr_tick atTick)
+void TrRenderingCache::RenderPlayerHull(MeshRendererDelegate& mr, const TrDrawSettings& settings)
 {
 	auto& tr = TrReadContextScope::Current();
 
-	auto pdIdx = tr.GetAtTick<TrPlayerData>(atTick);
+	auto pdIdx = tr.GetAtTick<TrPlayerData>(settings.params.atTick);
 	if (!pdIdx.IsValid())
 		return;
+	const TrPlayerData& pd = **pdIdx;
 
 	RebuildPlayerHullMeshes();
-	RebuildEyeMeshes(pdIdx->fov == 0 ? 90.f : pdIdx->fov);
+	float eyeMeshFov = settings.params.eyeMeshFovOverride;
+	if (eyeMeshFov <= 0.f)
+		eyeMeshFov = pd.fov == 0 ? 90.f : pd.fov;
+	RebuildEyeMeshes(settings.params.camType, eyeMeshFov);
 
-	const TrPlayerData& pd = **pdIdx;
 	TrTransform qPhysTransform{pd.qPosIdx, {}};
 
 	struct
@@ -508,7 +505,7 @@ void TrRenderingCache::RenderPlayerHull(MeshRendererDelegate& mr,
 	{
 		if (!bDraw || !mesh.Valid())
 			continue;
-		Vector pos = **trans.posIdx + landmarkDeltaToMapAtTick;
+		Vector pos = **trans.posIdx + settings.landmarkDeltaToFirstMap;
 		QAngle ang = trans.angIdx.IsValid() ? **trans.angIdx : vec3_angle;
 		if (!pos.IsValid() || !ang.IsValid())
 			continue;
@@ -517,15 +514,15 @@ void TrRenderingCache::RenderPlayerHull(MeshRendererDelegate& mr,
 		            { AngleMatrix(ang, pos, infoOut.mat); });
 	}
 
-	if (spt_trace_draw_contact_points.GetBool())
+	if (settings.params.drawFlags & TR_DRAW_PLAYER_CONTACT_POINTS)
 	{
 		for (auto contactPtIdx : *pd.contactPtsSp)
 		{
 			mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
-			    [contactPtIdx, &pd, &landmarkDeltaToMapAtTick](MeshBuilderDelegate& mb)
+			    [contactPtIdx, &pd, &settings](MeshBuilderDelegate& mb)
 			    {
 				    Vector maxs{1.f};
-				    const Vector& pos = **contactPtIdx->posIdx + landmarkDeltaToMapAtTick;
+				    const Vector& pos = **contactPtIdx->posIdx + settings.landmarkDeltaToFirstMap;
 				    mb.AddBox(pos, -maxs, maxs, vec3_angle, trColors.playerHull.contactPt);
 				    // DebugDrawContactPoints does (pt - norm * len), not sure why it's not (pt + norm * len)
 				    mb.AddLine(pos,
@@ -536,12 +533,12 @@ void TrRenderingCache::RenderPlayerHull(MeshRendererDelegate& mr,
 	}
 }
 
-void TrRenderingCache::RenderPortals(MeshRendererDelegate& mr, const Vector& landmarkDeltaToMapAtTick, tr_tick atTick)
+void TrRenderingCache::RenderPortals(MeshRendererDelegate& mr, const TrDrawSettings& settings)
 {
 	auto& tr = TrReadContextScope::Current();
 	RebuildPortalMeshes();
 
-	auto snapIdx = tr.GetAtTick<TrPortalSnapshot>(atTick);
+	auto snapIdx = tr.GetAtTick<TrPortalSnapshot>(settings.params.atTick);
 	if (!snapIdx.IsValid())
 		return;
 
@@ -555,7 +552,7 @@ void TrRenderingCache::RenderPortals(MeshRendererDelegate& mr, const Vector& lan
 		                             : (portal.isOrange ? meshes.closedOrangePortal : meshes.closedBluePortal);
 		if (!mesh.Valid())
 			continue;
-		Vector pos = **portal.transIdx->posIdx + landmarkDeltaToMapAtTick;
+		Vector pos = **portal.transIdx->posIdx + settings.landmarkDeltaToFirstMap;
 		QAngle ang = **portal.transIdx->angIdx;
 		mr.DrawMesh(mesh,
 		            [pos, ang](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
@@ -563,30 +560,12 @@ void TrRenderingCache::RenderPortals(MeshRendererDelegate& mr, const Vector& lan
 	}
 }
 
-void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& landmarkDeltaToMapAtTick, tr_tick atTick)
+void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const TrDrawSettings& settings)
 {
 	auto& tr = TrReadContextScope::Current();
 	auto& entCache = tr.GetEntityCache();
-	auto& entMap = entCache.GetEnts(atTick);
+	auto& entMap = entCache.GetEnts(settings.params.atTick);
 	RebuildPhysMeshes(entMap);
-
-	if (trStyles.entities.drawEntCollectRadius)
-	{
-		auto traceStateIdx = tr.GetAtTick<TrTraceState>(atTick);
-		auto plDataIdx = tr.GetAtTick<TrPlayerData>(atTick);
-		if (plDataIdx.IsValid() && plDataIdx->qPosIdx->IsValid() && traceStateIdx.IsValid())
-		{
-			mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
-			    [&](MeshBuilderDelegate& mb)
-			    {
-				    mb.AddBox(**plDataIdx->qPosIdx + landmarkDeltaToMapAtTick,
-				              **traceStateIdx->entCollectBboxAroundPlayerIdx->minsIdx,
-				              **traceStateIdx->entCollectBboxAroundPlayerIdx->maxsIdx,
-				              vec3_angle,
-				              trColors.entities.collectAABB);
-			    }));
-		}
-	}
 
 	const char* allowedTriggers[] = {
 	    "trigger_once",
@@ -630,7 +609,7 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 		    [&](MeshBuilderDelegate& mb)
 		    {
 			    // add in landmark delta manually so that meshes can be merged
-			    Vector origin = pos + landmarkDeltaToMapAtTick;
+			    Vector origin = pos + settings.landmarkDeltaToFirstMap;
 			    // interfaces::debugOverlay->AddTextOverlay(origin, 0, "%s", className);
 			    ShapeColor color = isTrigger ? trColors.entities.obbTrigger : trColors.entities.obb;
 			    if (drawObb && mins != maxs)
@@ -655,7 +634,7 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 
 	for (auto [entIdx, transIdx] : entMap)
 	{
-		if (!spt_trace_draw_portal_collision_entities.GetBool()
+		if (!(settings.params.drawFlags & TR_DRAW_PORTAL_COLLISION_ENTITIES)
 		    && !strcmp(*entIdx->classNameIdx, "portalsimulator_collisionentity"))
 		{
 			continue;
@@ -669,7 +648,7 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 			auto physMeshIt = meshes.ents.physObjs.find(physIdxsp[i]->meshIdx);
 			if (physMeshIt != meshes.ents.physObjs.cend() && physMeshIt->second.mesh.Valid())
 			{
-				Vector pos = **physMeshTransIdxSp[i]->posIdx + landmarkDeltaToMapAtTick;
+				Vector pos = **physMeshTransIdxSp[i]->posIdx + settings.landmarkDeltaToFirstMap;
 				QAngle ang = **physMeshTransIdxSp[i]->angIdx;
 				mr.DrawMesh(physMeshIt->second.mesh,
 				            [pos, ang](const CallbackInfoIn& infoIn, CallbackInfoOut& infoOut)
@@ -684,6 +663,26 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 				Assert(0);
 			}
 		}
+	}
+}
+
+void TrRenderingCache::RenderEntCollectRadius(MeshRendererDelegate& mr, const TrDrawSettings& settings)
+{
+	auto& tr = TrReadContextScope::Current();
+
+	auto traceStateIdx = tr.GetAtTick<TrTraceState>(settings.params.atTick);
+	auto plDataIdx = tr.GetAtTick<TrPlayerData>(settings.params.atTick);
+	if (plDataIdx.IsValid() && plDataIdx->qPosIdx->IsValid() && traceStateIdx.IsValid())
+	{
+		mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
+		    [&](MeshBuilderDelegate& mb)
+		    {
+			    mb.AddBox(**plDataIdx->qPosIdx + settings.landmarkDeltaToFirstMap,
+			              **traceStateIdx->entCollectBboxAroundPlayerIdx->minsIdx,
+			              **traceStateIdx->entCollectBboxAroundPlayerIdx->maxsIdx,
+			              vec3_angle,
+			              trColors.entities.collectAABB);
+		    }));
 	}
 }
 
@@ -751,7 +750,7 @@ void TrRenderingCache::CacheLandmarkOffsetsToFirstMapFromTraceData()
 	}
 }
 
-void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, tr_tick atTick)
+void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, const TrDrawParams& params)
 {
 	auto& tr = TrReadContextScope::Current();
 
@@ -761,16 +760,31 @@ void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, tr_tick atTick)
 		renderedLastTimeOnMap = utils::GetLoadedMap();
 	}
 
-	atTick = tr.numRecordedTicks == 0 ? 0 : clamp(atTick, 0, tr.numRecordedTicks - 1);
-	Vector landmarkdelta = GetLandmarkOffsetToFirstMap(utils::GetLoadedMap());
-	RenderPlayerPath(mr, landmarkdelta);
-	TrIdx<TrMap> atMap = tr.GetMapAtTick(atTick);
+	if (!params.drawIfTickOutsideRange && params.atTick >= tr.numRecordedTicks)
+		return;
+
+	TrDrawSettings settings{
+	    .params = params,
+	    .landmarkDeltaToFirstMap = GetLandmarkOffsetToFirstMap(utils::GetLoadedMap()),
+	};
+
+	if (params.drawFlags & TR_DRAW_PLAYER_PATH)
+		RenderPlayerPath(mr, settings);
+
+	TrIdx<TrMap> atMap = tr.GetMapAtTick(params.atTick);
 	if (!atMap.IsValid())
 		return;
-	landmarkdelta -= GetLandmarkOffsetToFirstMap(*atMap->nameIdx);
-	RenderPlayerHull(mr, landmarkdelta, atTick);
-	RenderPortals(mr, landmarkdelta, atTick);
-	RenderEntities(mr, landmarkdelta, atTick);
+
+	settings.landmarkDeltaToFirstMap -= GetLandmarkOffsetToFirstMap(*atMap->nameIdx);
+
+	if (params.drawFlags & TR_DRAW_PLAYER_HULL)
+		RenderPlayerHull(mr, settings);
+	if (params.drawFlags & TR_DRAW_PORTALS)
+		RenderPortals(mr, settings);
+	if (params.drawFlags & TR_DRAW_ENTS)
+		RenderEntities(mr, settings);
+	if (params.drawFlags & TR_DRAW_ENT_COLLECT_RADIUS)
+		RenderEntCollectRadius(mr, settings);
 }
 
 #endif

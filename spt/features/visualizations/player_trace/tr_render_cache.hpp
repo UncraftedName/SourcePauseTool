@@ -10,21 +10,69 @@
 
 namespace player_trace
 {
+	enum TrDrawFlags : uint32_t
+	{
+		TR_DRAW_NONE = 0,
+
+		TR_DRAW_PLAYER_PATH = 1 << 0,
+		TR_DRAW_PLAYER_PATH_CONES = 1 << 1, // only show if paired with DRAW_PLAYER_PATH
+		TR_DRAW_PLAYER_HULL = 1 << 2,
+		TR_DRAW_PLAYER_CONTACT_POINTS = 1 << 3, // only shown if paired with DRAW_PLAYER_HULL
+		TR_DRAW_PORTALS = 1 << 4,
+		TR_DRAW_PORTAL_COLLISION_ENTITIES = 1 << 5,
+		TR_DRAW_ENTS = 1 << 6,
+		TR_DRAW_ENT_COLLECT_RADIUS = 1 << 7,
+	};
+
+	enum TrPlayerCameraDrawType
+	{
+		TR_PCDT_FRUSTUM,
+		TR_PCDT_BOX_AND_LINE,
+
+		TR_PCDT_COUNT,
+	};
+
+	struct TrDrawParams
+	{
+		TrDrawFlags drawFlags = TR_DRAW_NONE;
+		TrPlayerCameraDrawType camType = TR_PCDT_FRUSTUM;
+		float eyeMeshFovOverride = -1; // -1 to use the FOV recorded in the trace
+		tr_tick atTick = 0;
+		bool drawIfTickOutsideRange = true;
+	};
+
+	/*
+	* Anytime something changes trStyles or trColors, set the appropriate dirty flag here. That
+	* will cause the relevant meshes to be rebuilt.
+	*/
+	struct TrRenderingCacheDirtyFlags
+	{
+		uint32_t playerPath : 1 = 1;
+		uint32_t playerEyes : 1 = 1;
+	} inline trRenderCacheDirtyFlags;
+
 	class TrRenderingCache
 	{
 	private:
+		struct TrDrawSettings
+		{
+			const TrDrawParams& params;
+			Vector landmarkDeltaToFirstMap{std::numeric_limits<float>::infinity()};
+		};
+
 		std::unordered_map<std::string, Vector> mapToFirstMapLandmarkOffset;
 
 		void RebuildPlayerHullMeshes();
-		void RebuildEyeMeshes(float fov);
+		void RebuildEyeMeshes(TrPlayerCameraDrawType camType, float fov);
 		void RebuildPlayerPathMeshes();
 		void RebuildPortalMeshes();
 		void RebuildPhysMeshes(const TrEntityCache::EntMap& entMap);
 
-		void RenderPlayerPath(MeshRendererDelegate& mr, const Vector& landmarkDeltaToFirstMap);
-		void RenderPlayerHull(MeshRendererDelegate& mr, const Vector& landmarkDeltaToMapAtTick, tr_tick atTick);
-		void RenderPortals(MeshRendererDelegate& mr, const Vector& landmarkDeltaToMapAtTick, tr_tick atTick);
-		void RenderEntities(MeshRendererDelegate& mr, const Vector& landmarkDeltaToMapAtTick, tr_tick atTick);
+		void RenderPlayerPath(MeshRendererDelegate& mr, const TrDrawSettings& settings);
+		void RenderPlayerHull(MeshRendererDelegate& mr, const TrDrawSettings& settings);
+		void RenderPortals(MeshRendererDelegate& mr, const TrDrawSettings& settings);
+		void RenderEntities(MeshRendererDelegate& mr, const TrDrawSettings& settings);
+		void RenderEntCollectRadius(MeshRendererDelegate& mr, const TrDrawSettings& settings);
 
 		/*
 		* The player path coordinates are computed relative to the first map of the trace, but in order
@@ -58,10 +106,6 @@ namespace player_trace
 			StaticMesh eyes, sgEyes;
 			StaticMesh openBluePortal, openOrangePortal, closedBluePortal, closedOrangePortal;
 
-			TrPlayerCameraDrawType camType;
-			float eyeMeshFov;
-			bool playerPathGeneratedWithCones;
-
 			struct
 			{
 				std::vector<StaticMesh> staticMeshes;
@@ -87,8 +131,9 @@ namespace player_trace
 
 	public:
 		TrRenderingCache() = default;
-		TrRenderingCache(const TrRenderingCache&) = delete;
-		void RenderAll(MeshRendererDelegate& mr, tr_tick atTick);
+		TrRenderingCache(TrRenderingCache&) = delete;
+		TrRenderingCache(TrRenderingCache&&) = delete;
+		void RenderAll(MeshRendererDelegate& mr, const TrDrawParams& params);
 	};
 
 } // namespace player_trace

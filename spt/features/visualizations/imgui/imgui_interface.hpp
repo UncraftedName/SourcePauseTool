@@ -193,6 +193,7 @@ namespace SptImGuiGroup
 	inline Tab PlayerTrace_Player{"Player data", &PlayerTrace};
 	inline Tab PlayerTrace_Entities{"Active entities", &PlayerTrace};
 	inline Tab PlayerTrace_Portals{"Active portals", &PlayerTrace};
+	inline Tab PlayerTrace_Settings{"Settings", &PlayerTrace};
 
 	// quality of life and/or purely visual stuff
 	inline Tab QoL{"QoL", &Root};

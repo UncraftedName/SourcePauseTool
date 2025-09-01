@@ -356,4 +356,29 @@ void tr_imgui::PortalTabCallback(tr_tick activeTick)
 	}
 }
 
+void tr_imgui::SettingsTabCallback()
+{
+	if (ImGui::TreeNode("Recording options"))
+	{
+		SptImGui::CvarDraggableFloat(spt_trace_ent_collect_radius, "Entity collection radius", 1.f);
+		ImGui::TreePop();
+	}
+	if (ImGui::TreeNode("Rendering options"))
+	{
+		if (ImGui::TreeNode("Player path"))
+		{
+			if (ImGui::TreeNode("Cones"))
+			{
+				ImGui::SliderInt("resolution", &trStyles.playerPath.cones.nCirclePoints, 3, 20);
+				ImGui::SliderFloat("length", &trStyles.playerPath.cones.length, 0.1f, 10.f);
+				ImGui::SliderFloat("radius", &trStyles.playerPath.cones.radius, 0.1f, 5.f);
+				ImGui::SliderInt("tick interval", &trStyles.playerPath.cones.tickInterval, 1, 30);
+				ImGui::TreePop();
+			}
+			ImGui::TreePop();
+		}
+		ImGui::TreePop();
+	}
+}
+
 #endif

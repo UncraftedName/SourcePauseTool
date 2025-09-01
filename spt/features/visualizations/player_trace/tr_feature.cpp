@@ -204,7 +204,11 @@ ConVar spt_trace_autoplay("spt_trace_autoplay", "0", FCVAR_DONTRECORD, "Play the
 ConVar spt_trace_ent_collect_radius("spt_trace_ent_collect_radius",
                                     "250",
                                     FCVAR_DONTRECORD,
-                                    "The radius around the player used for entity collection");
+                                    "The radius around the player used for entity collection",
+                                    true,
+                                    0.f,
+                                    false,
+                                    0.f);
 ConVar spt_trace_draw_portal_collision_entities(
     "spt_trace_draw_portal_collision_entities",
     "0",
@@ -295,6 +299,8 @@ void PlayerTraceFeature::LoadFeature()
 			    tr_imgui::PortalTabCallback(activeDrawTick);
 		    });
 	}
+
+	SptImGuiGroup::PlayerTrace_Settings.RegisterUserCallback(tr_imgui::SettingsTabCallback);
 }
 
 void PlayerTraceFeature::UnloadFeature()
@@ -363,9 +369,29 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 {
 	if (!spt_draw_trace.GetBool())
 		return;
-	activeDrawTick = clamp(activeDrawTick, 0, tr.numRecordedTicks - 1);
+
 	TrReadContextScope scope{tr};
-	tr.GetRenderingCache().RenderAll(mr, activeDrawTick);
+
+	int drawFlags =
+	    TR_DRAW_PLAYER_PATH | TR_DRAW_PLAYER_HULL | TR_DRAW_PORTALS | TR_DRAW_ENTS | TR_DRAW_ENT_COLLECT_RADIUS;
+
+	if (spt_trace_draw_path_cones.GetBool())
+		drawFlags |= TR_DRAW_PLAYER_PATH_CONES;
+	if (spt_trace_draw_contact_points.GetBool())
+		drawFlags |= TR_DRAW_PLAYER_CONTACT_POINTS;
+	if (spt_trace_draw_portal_collision_entities.GetBool())
+		drawFlags |= TR_DRAW_PORTAL_COLLISION_ENTITIES;
+
+	TrDrawParams params{
+	    .drawFlags = (TrDrawFlags)drawFlags,
+	    .camType = (TrPlayerCameraDrawType)clamp(spt_trace_draw_cam_style.GetInt(),
+	                                             0,
+	                                             TrPlayerCameraDrawType::TR_PCDT_COUNT),
+	    .atTick = activeDrawTick,
+	    .drawIfTickOutsideRange = true,
+	};
+
+	tr.GetRenderingCache().RenderAll(mr, params);
 }
 
 #ifdef SPT_HUD_ENABLED
