@@ -4,6 +4,7 @@
 #include "edict.h"
 
 class CViewSetup;
+struct IDirect3DDevice9;
 
 extern Gallant::Signal0<void> AdjustAngles;
 extern Gallant::Signal0<void> AfterFramesSignal;
@@ -22,6 +23,7 @@ extern Gallant::Signal2<void*, void*> ProcessMovementPost_Signal;
 extern Gallant::Signal2<void*, void*> ProcessMovementPre_Signal;
 extern Gallant::Signal2<void*, CViewSetup*> RenderViewPre_Signal;
 extern Gallant::Signal2<void*, int> SetSignonStateSignal;
+extern Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentSignal;
 
 // Plugin callbacks
 extern Gallant::Signal1<bool> TickSignal;

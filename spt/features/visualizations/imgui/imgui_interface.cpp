@@ -31,6 +31,8 @@
 
 #define VPROF_BUDGETGROUP_IMGUI _T("SPT_ImGui")
 
+Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentSignal;
+
 IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 struct ImGuiHudCvar
@@ -801,11 +803,6 @@ protected:
 		if (!dx9Device)
 			return;
 
-		D3DDEVICE_CREATION_PARAMETERS params;
-		if (dx9Device->GetCreationParameters(&params) != D3D_OK)
-			return;
-		gameWnd = params.hFocusWindow;
-
 		AddVFTableHook(
 		    VFTableHook{
 		        *(void***)deviceWrapper,
@@ -814,6 +811,13 @@ protected:
 		        (void**)&ORIG_CShaderDeviceDx8__Present,
 		    },
 		    "shaderapidx9");
+
+		D3DDEVICE_CREATION_PARAMETERS params;
+		if (dx9Device->GetCreationParameters(&params) != D3D_OK)
+			return;
+		gameWnd = params.hFocusWindow;
+
+		ShaderDevicePresentSignal.Works = true;
 
 		if (!IMGUI_CHECKVERSION())
 			return;
@@ -903,6 +907,8 @@ protected:
 			loadState = LoadState::None;
 			SptImGuiGroup::Root.ClearCallbacksRecursive();
 			inImGuiUpdateSection = false;
+			ShaderDevicePresentSignal.Clear();
+			ShaderDevicePresentSignal.Works = false;
 			break;
 		}
 #pragma warning(pop)
@@ -965,6 +971,10 @@ IMPL_HOOK_THISCALL(SptImGuiFeature, void, CShaderDeviceDx8__Present, void*)
 			break;
 		}
 	}
+
+	Assert(ShaderDevicePresentSignal.Works);
+	ShaderDevicePresentSignal(dx9Device);
+
 	ORIG_CShaderDeviceDx8__Present(thisptr);
 }
 

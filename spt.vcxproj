@@ -1185,6 +1185,7 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClCompile Include="spt\features\aim.cpp" />
     <ClCompile Include="spt\features\autocomplete.cpp" />
     <ClCompile Include="spt\features\autojump.cpp" />
+    <ClCompile Include="spt\features\auto_render.cpp" />
     <ClCompile Include="spt\features\boog.cpp" />
     <ClCompile Include="spt\features\camera.cpp" />
     <ClCompile Include="spt\features\collision_group.cpp" />
