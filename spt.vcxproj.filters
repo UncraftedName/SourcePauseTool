@@ -472,8 +472,14 @@
     <ClCompile Include="thirdparty\imgui\imgui_stdlib.cpp">
       <Filter>thirdparty\imgui</Filter>
     </ClCompile>
-    <ClCompile Include="spt\features\auto_render.cpp">
-      <Filter>spt\features</Filter>
+    <ClCompile Include="spt\features\auto_render\ar_consumers.cpp">
+      <Filter>spt\features\auto_render</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\auto_render\ar_feature.cpp">
+      <Filter>spt\features\auto_render</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\auto_render\ar_consumer_mgr.cpp">
+      <Filter>spt\features\auto_render</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1125,6 +1131,12 @@
     <ClInclude Include="thirdparty\imgui\imgui_stdlib.h">
       <Filter>thirdparty\imgui</Filter>
     </ClInclude>
+    <ClInclude Include="spt\features\auto_render\ar_util.hpp">
+      <Filter>spt\features\auto_render</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\auto_render\ar_decls.hpp">
+      <Filter>spt\features\auto_render</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">
@@ -1243,6 +1255,9 @@
     </Filter>
     <Filter Include="thirdparty\imgui\ImGuiFileDialog">
       <UniqueIdentifier>{331164c2-d9cb-4cd9-b9c2-20d3c37aa0c3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="spt\features\auto_render">
+      <UniqueIdentifier>{96465be6-4535-4362-8b6e-4475120d65f3}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
