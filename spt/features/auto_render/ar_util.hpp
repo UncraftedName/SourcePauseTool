@@ -5,6 +5,8 @@
 #include "dbg.h"
 
 #include <vector>
+#include <format>
+
 #include <d3d9.h>
 #include <wrl/client.h>
 
@@ -97,4 +99,25 @@ inline void ArStretchToRenderTarget(IDirect3DDevice9* device,
 	HRESULT hr = device->StretchRect(src, nullptr, dest, nullptr, D3DTEXF_NONE);
 	if (FAILED(hr))
 		stat.Err("[" __FUNCTION__ "]: IDirect3DDevice9::StretchRect failed");
+}
+
+inline std::string ArLastErrorAsString()
+{
+	LPVOID lpMsgBuf = nullptr;
+	DWORD dw = GetLastError();
+
+	if (FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+	                   NULL,
+	                   GetLastError(),
+	                   MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
+	                   (LPTSTR)&lpMsgBuf,
+	                   0,
+	                   NULL)
+	    == 0)
+	{
+		return "FormatMessage failed";
+	}
+	std::string ret = std::format("({}) {}", dw, (LPCTSTR)lpMsgBuf);
+	LocalFree(lpMsgBuf);
+	return ret;
 }

@@ -69,12 +69,25 @@ protected:
 
 class ArFfmpegWriter : public ArLockableSurfaceConsumer
 {
+	HANDLE videoPipe = INVALID_HANDLE_VALUE;
+	HANDLE audioPipe = INVALID_HANDLE_VALUE;
+	HANDLE jobObject = NULL;
 	bool procValid = false;
-	PROCESS_INFORMATION ffmpegProc;
-	HANDLE hPipeWrite, hPipeRead;
+	PROCESS_INFORMATION ffmpegProc{};
+	std::optional<DWORD>& ffmpegReturnCode;
 
 public:
-	explicit ArFfmpegWriter(const std::string& ffmpegPath, std::string cmd, ser::StatusTracker& stat);
+	struct InitArgs
+	{
+		const char* ffmpegWorkingDir;
+		char* cmd;                 // fully formatted with no remaining substitutions
+		const char* videoPipeName; // can be null
+		const char* audioPipeName; // can be null
+		size_t width, height;      // used as an estimation for pipe buffer size
+		std::optional<DWORD>& ffmpegReturnCode;
+	};
+
+	explicit ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat);
 	virtual ~ArFfmpegWriter();
 
 	virtual void Finish();

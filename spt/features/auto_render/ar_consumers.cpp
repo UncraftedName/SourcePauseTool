@@ -1,6 +1,7 @@
 #include "stdafx.hpp"
 
 #include "ar_decls.hpp"
+#include "ar_util.hpp"
 
 void ArLockableSurfaceConsumer::LockAndConsume(IDirect3DSurface9* offScreenSurface,
                                                size_t seq,
@@ -116,45 +117,62 @@ void ArTgaWriter::Consume(D3DLOCKED_RECT rect, const D3DSURFACE_DESC& desc, size
 	hasWritten = true;
 }
 
-ArFfmpegWriter::ArFfmpegWriter(const std::string& ffmpegPath, std::string cmd, ser::StatusTracker& stat)
+ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat) : ffmpegReturnCode(args.ffmpegReturnCode)
 {
-	SECURITY_ATTRIBUTES sa{
-	    .nLength = sizeof(sa),
-	    .lpSecurityDescriptor = nullptr,
-	    .bInheritHandle = TRUE,
-	};
-	if (!CreatePipe(&hPipeRead, &hPipeWrite, &sa, 0))
+	std::error_code ec;
+	std::filesystem::create_directories(args.ffmpegWorkingDir, ec);
+	if (ec)
 	{
-		stat.Err("[" __FUNCTION__ "]: CreatePipe failed");
-		return;
-	}
-	if (!SetHandleInformation(hPipeWrite, HANDLE_FLAG_INHERIT, 0))
-	{
-		stat.Err("[" __FUNCTION__ "]: SetHandleInformation failed");
+		stat.Err("[" __FUNCTION__ "]: failed to create working dir");
 		return;
 	}
 
-	// TODO pipe output from ffmpeg to somewhere
-	STARTUPINFO si{
+	struct
+	{
+		HANDLE& handle;
+		const char* name;
+	} pipeInfos[2]{
+	    {videoPipe, args.videoPipeName},
+	    {audioPipe, args.audioPipeName},
+	};
+
+	for (auto& pipeInfo : pipeInfos)
+	{
+		if (!pipeInfo.name)
+			continue;
+		// TODO make overlapped to allow for abort
+		pipeInfo.handle = CreateNamedPipeA(args.videoPipeName,
+		                                   PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE,
+		                                   PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
+		                                   1,
+		                                   args.width * args.height * 4,
+		                                   0,
+		                                   0,
+		                                   nullptr);
+		if (pipeInfo.handle == INVALID_HANDLE_VALUE)
+		{
+			stat.Err(std::format("[{}]: CreateNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+			return;
+		}
+	}
+
+	STARTUPINFOA si = {
 	    .cb = sizeof(si),
-	    .dwFlags = STARTF_USESTDHANDLES,
-	    .hStdInput = hPipeRead,
 	};
 
-	if (!CreateProcessA(ffmpegPath.c_str(),
-	                    cmd.data(),
+	// TODO turn into W version
+	if (!CreateProcessA(nullptr,
+	                    args.cmd,
 	                    nullptr,
 	                    nullptr,
-	                    TRUE, // inherit handles
+	                    FALSE,
 	                    CREATE_NO_WINDOW,
 	                    nullptr,
-	                    nullptr,
+	                    args.ffmpegWorkingDir,
 	                    &si,
 	                    &ffmpegProc))
 	{
-		CloseHandle(hPipeRead);
-		CloseHandle(hPipeWrite);
-		stat.Err("[" __FUNCTION__ "]: CreateProcess failed");
+		stat.Err(std::format("[{}]: CreateProcess failed: {}", __FUNCTION__, ArLastErrorAsString()));
 		return;
 	}
 
@@ -171,35 +189,41 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
 		stat.Err("[" __FUNCTION__ "]: unexpected surface format");
 		return;
 	}
-	size_t nRowBytes = desc.Width * 4; // assume we're copying the whole frame
-	const uint8_t* src = static_cast<const uint8_t*>(rect.pBits);
-
-	// TODO copy entire frame?
-	for (UINT y = 0; y < desc.Height; ++y)
+	BOOL connected = ConnectNamedPipe(videoPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+	if (!connected)
 	{
-		DWORD written;
-		if (!WriteFile(hPipeWrite, src, nRowBytes, &written, nullptr) || written != nRowBytes)
-		{
-			stat.Err("[" __FUNCTION__ "]: WriteFile for pipe failed");
-			return;
-		}
-		src += rect.Pitch;
+		stat.Err(std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		return;
 	}
+	DWORD nToWrite = desc.Width * desc.Height * 4;
+	DWORD nWritten;
+	if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
+		stat.Err(std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
 }
 
 void ArFfmpegWriter::StopFfmpeg()
 {
-	if (!procValid)
-		return;
+	std::reference_wrapper<HANDLE> namedPipes[2] = {videoPipe, audioPipe};
+	for (HANDLE& namedPipe : namedPipes)
+	{
+		if (namedPipe == INVALID_HANDLE_VALUE)
+			continue;
+		FlushFileBuffers(namedPipe);
+		DisconnectNamedPipe(namedPipe);
+		CloseHandle(namedPipe);
+		namedPipe = INVALID_HANDLE_VALUE;
+	}
 
-	CloseHandle(hPipeWrite);
-	CloseHandle(hPipeRead);
-
-	WaitForSingleObject(ffmpegProc.hProcess, INFINITE);
-	CloseHandle(ffmpegProc.hProcess);
-	CloseHandle(ffmpegProc.hThread);
-
-	procValid = false;
+	if (procValid)
+	{
+		WaitForSingleObject(ffmpegProc.hProcess, INFINITE);
+		ffmpegReturnCode = -1;
+		if (!GetExitCodeProcess(ffmpegProc.hProcess, &ffmpegReturnCode.value()))
+			ffmpegReturnCode.reset();
+		CloseHandle(ffmpegProc.hProcess);
+		CloseHandle(ffmpegProc.hThread);
+		procValid = false;
+	}
 }
 
 void ArFfmpegWriter::Finish()

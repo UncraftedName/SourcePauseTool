@@ -197,14 +197,16 @@ namespace SptImGuiGroup
 
 	// quality of life and/or purely visual stuff
 	inline Tab QoL{ICON_CI_SMILEY " QoL", &Root};
-	inline Section QoL_Demo{"Demo utils", &QoL};
-	inline Section QoL_MultiInstance{"Multiple game instances", &QoL};
-	inline Section QoL_Noclip{"Noclip", &QoL}; // QoL instead of in cheats cuz noclip is cheating anyways :)
-	inline Section QoL_NoSleep{"No sleep", &QoL};
-	inline Section QoL_Visual{"Visual fixes", &QoL};
-	inline Section QoL_ConNotify{"Console notify", &QoL};
-	inline Section QoL_FastLoads{"Fast loads", &QoL};
-	inline Section QoL_Timer{"Timer", &QoL};
+	inline Tab QoL_AutoRender(ICON_CI_DEVICE_CAMERA_VIDEO " Autorender", &QoL);
+	inline Tab QoL_Misc("Misc.", &QoL);
+	inline Section QoL_Demo{"Demo utils", &QoL_Misc};
+	inline Section QoL_MultiInstance{"Multiple game instances", &QoL_Misc};
+	inline Section QoL_Noclip{"Noclip", &QoL_Misc}; // QoL instead of in cheats cuz noclip is cheating anyways :)
+	inline Section QoL_NoSleep{"No sleep", &QoL_Misc};
+	inline Section QoL_Visual{"Visual fixes", &QoL_Misc};
+	inline Section QoL_ConNotify{"Console notify", &QoL_Misc};
+	inline Section QoL_FastLoads{"Fast loads", &QoL_Misc};
+	inline Section QoL_Timer{"Timer", &QoL_Misc};
 
 	// cheats - stuff that changes gameplay or cannot be done via normal means
 	inline Tab Cheats{ICON_CI_SHIELD " Cheats", &Root};
