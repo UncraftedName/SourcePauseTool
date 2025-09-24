@@ -469,6 +469,9 @@
     <ClCompile Include="thirdparty\imgui\ImGuiFileDialog\ImGuiFileDialog.cpp">
       <Filter>thirdparty\imgui\ImGuiFileDialog</Filter>
     </ClCompile>
+    <ClCompile Include="thirdparty\imgui\imgui_stdlib.cpp">
+      <Filter>thirdparty\imgui</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -1115,6 +1118,9 @@
     </ClInclude>
     <ClInclude Include="thirdparty\imgui\ImGuiFileDialog\ImGuiFileDialogConfig.h">
       <Filter>thirdparty\imgui\ImGuiFileDialog</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\imgui\imgui_stdlib.h">
+      <Filter>thirdparty\imgui</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

@@ -1477,6 +1477,16 @@ del "$(OutDir)spt-version.obj"</Command>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug BMS|Win32'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release 2013|Win32'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="thirdparty\imgui\imgui_stdlib.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug 2013|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release OE|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release BMS|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug OE|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug BMS|Win32'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release 2013|Win32'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="thirdparty\imgui\imgui_tables.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug 2013|Win32'">NotUsing</PrecompiledHeader>
@@ -1709,6 +1719,7 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClInclude Include="thirdparty\imgui\imgui_impl_dx9.h" />
     <ClInclude Include="thirdparty\imgui\imgui_impl_win32.h" />
     <ClInclude Include="thirdparty\imgui\imgui_internal.h" />
+    <ClInclude Include="thirdparty\imgui\imgui_stdlib.h" />
     <ClInclude Include="thirdparty\imgui\imstb_rectpack.h" />
     <ClInclude Include="thirdparty\imgui\imstb_textedit.h" />
     <ClInclude Include="thirdparty\imgui\imstb_truetype.h" />
