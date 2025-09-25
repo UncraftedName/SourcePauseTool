@@ -121,3 +121,15 @@ inline std::string ArLastErrorAsString()
 	LocalFree(lpMsgBuf);
 	return ret;
 }
+
+inline std::wstring ArUtf8ToUtf16(const char* utf8)
+{
+	DWORD wlen = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
+	std::wstring wstr;
+	if (wlen != 0)
+	{
+		wstr.resize(wlen - 1);
+		MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wstr.data(), wlen);
+	}
+	return wstr;
+}

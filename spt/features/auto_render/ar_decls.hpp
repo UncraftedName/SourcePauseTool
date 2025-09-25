@@ -79,11 +79,11 @@ class ArFfmpegWriter : public ArLockableSurfaceConsumer
 public:
 	struct InitArgs
 	{
-		const char* ffmpegWorkingDir;
-		char* cmd;                 // fully formatted with no remaining substitutions
-		const char* videoPipeName; // can be null
-		const char* audioPipeName; // can be null
-		size_t width, height;      // used as an estimation for pipe buffer size
+		const std::wstring ffmpegWorkingDir;
+		std::wstring cmd;                 // fully formatted with no remaining substitutions
+		const std::wstring videoPipeName; // can be null
+		const std::wstring audioPipeName; // can be null
+		size_t width, height;             // used as an estimation for pipe buffer size
 		std::optional<DWORD>& ffmpegReturnCode;
 	};
 

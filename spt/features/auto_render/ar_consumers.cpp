@@ -130,10 +130,10 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat) : ffmpe
 	struct
 	{
 		HANDLE& handle;
-		const char* name;
+		const wchar* name;
 	} pipeInfos[2]{
-	    {videoPipe, args.videoPipeName},
-	    {audioPipe, args.audioPipeName},
+	    {videoPipe, args.videoPipeName.c_str()},
+	    {audioPipe, args.audioPipeName.c_str()},
 	};
 
 	for (auto& pipeInfo : pipeInfos)
@@ -141,7 +141,7 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat) : ffmpe
 		if (!pipeInfo.name)
 			continue;
 		// TODO make overlapped to allow for abort
-		pipeInfo.handle = CreateNamedPipeA(args.videoPipeName,
+		pipeInfo.handle = CreateNamedPipeW(pipeInfo.name,
 		                                   PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE,
 		                                   PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
 		                                   1,
@@ -156,19 +156,18 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat) : ffmpe
 		}
 	}
 
-	STARTUPINFOA si = {
+	STARTUPINFOW si = {
 	    .cb = sizeof(si),
 	};
 
-	// TODO turn into W version
-	if (!CreateProcessA(nullptr,
-	                    args.cmd,
+	if (!CreateProcessW(nullptr,
+	                    args.cmd.data(),
 	                    nullptr,
 	                    nullptr,
 	                    FALSE,
 	                    CREATE_NO_WINDOW,
 	                    nullptr,
-	                    args.ffmpegWorkingDir,
+	                    args.ffmpegWorkingDir.c_str(),
 	                    &si,
 	                    &ffmpegProc))
 	{
