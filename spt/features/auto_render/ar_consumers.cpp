@@ -178,11 +178,18 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat) : ffmpe
 	procValid = true;
 }
 
+// TODO misspelling -pixel_format hangs somewhere...
 void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
                              const D3DSURFACE_DESC& desc,
                              ar_frame_idx idx,
                              ser::StatusTracker& stat)
 {
+	DWORD exitCode;
+	if (!!GetExitCodeProcess(ffmpegProc.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
+	{
+		stat.Err("[" __FUNCTION__ "]: the process has stopped prematurely");
+		return;
+	}
 	if (desc.Format != D3DFMT_A8R8G8B8)
 	{
 		stat.Err("[" __FUNCTION__ "]: unexpected surface format");
@@ -194,10 +201,33 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
 		stat.Err(std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
 		return;
 	}
-	DWORD nToWrite = desc.Width * desc.Height * 4;
-	DWORD nWritten;
-	if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
-		stat.Err(std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+
+	if ((DWORD)rect.Pitch == desc.Width * 4)
+	{
+		// write full frame
+		DWORD nToWrite = desc.Width * desc.Height * 4;
+		DWORD nWritten;
+		if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
+			stat.Err(
+			    std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+	}
+	else
+	{
+		// write row by row
+		DWORD nToWrite = rect.Pitch;
+		DWORD nWritten;
+		for (DWORD i = 0; i < desc.Height; i++)
+		{
+			if (!WriteFile(videoPipe, (std::byte*)rect.pBits + rect.Pitch * i, nToWrite, &nWritten, nullptr)
+			    || nWritten != nToWrite)
+			{
+				stat.Err(std::format("[{}]: WriteFile for pipe failed: {}",
+				                     __FUNCTION__,
+				                     ArLastErrorAsString()));
+				return;
+			}
+		}
+	}
 }
 
 void ArFfmpegWriter::StopFfmpeg()

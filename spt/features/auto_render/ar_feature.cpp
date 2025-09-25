@@ -423,6 +423,8 @@ void AutoRenderFeature::ImGuiTabCallback()
 		        .ffmpegReturnCode = result->returnCode,
 		    },
 		    .result = std::move(result),
+		    .syncMode = persist.syncMode,
+		    .nFramesInFlight = (size_t)persist.nFramesInFlight,
 		});
 		// TODO do I have to lock for this? Can I just use an atomic
 		std::lock_guard lk(jobMtx);
@@ -655,7 +657,7 @@ bool ArPlaceholders::FindFFmpeg()
 std::string ArPlaceholders::CreateDefaultCmdLine()
 {
 	return std::format(
-	    "\"{}\" -report -f rawvideo -pixel_format bgr0 -video_size {}x{} -framerate {} -i \"{}\" -y -c:v libx264 -preset veryfast -crf 18 \"{}\\my_video.mp4\"",
+	    "\"{}\" -report -f rawvideo -pixel_format bgr0 -video_size {}x{} -framerate {} -i \"{}\" -y -c:v libx264 -pix_fmt yuv420p -preset veryfast -crf 18 \"{}\\my_video.mp4\"",
 	    ArPlaceholders::EXE_PATH.UnformattedKey(),
 	    ArPlaceholders::VID_WIDTH.UnformattedKey(),
 	    ArPlaceholders::VID_HEIGHT.UnformattedKey(),
