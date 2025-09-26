@@ -28,6 +28,7 @@ namespace ser
 		Status status;
 
 	public:
+		// only the first non-empty error message is set
 		void Err(std::string s)
 		{
 			status.ok = false;
@@ -55,6 +56,17 @@ namespace ser
 		bool Ok() const
 		{
 			return status.ok;
+		}
+
+		// appends the warnings from another status
+		void Concat(ser::StatusTracker&& other)
+		{
+			status.ok &= other.status.ok;
+			if (status.errMsg.empty())
+				status.errMsg.swap(other.status.errMsg);
+			status.warnings.insert(status.warnings.end(),
+			                       std::make_move_iterator(other.status.warnings.begin()),
+			                       std::make_move_iterator(other.status.warnings.end()));
 		}
 	};
 

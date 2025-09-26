@@ -84,10 +84,9 @@ public:
 		const std::wstring videoPipeName; // can be null
 		const std::wstring audioPipeName; // can be null
 		size_t width, height;             // used as an estimation for pipe buffer size
-		std::optional<DWORD>& ffmpegReturnCode;
 	};
 
-	explicit ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat);
+	explicit ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& ffmpegReturnCode, ser::StatusTracker& stat);
 	virtual ~ArFfmpegWriter();
 
 	virtual void Finish();

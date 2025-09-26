@@ -1,6 +1,6 @@
 #include "stdafx.hpp"
 
-#include "ar_decls.hpp"
+#include "ar_jobs.hpp"
 #include "ar_util.hpp"
 
 void ArLockableSurfaceConsumer::LockAndConsume(IDirect3DSurface9* offScreenSurface,
@@ -117,7 +117,8 @@ void ArTgaWriter::Consume(D3DLOCKED_RECT rect, const D3DSURFACE_DESC& desc, size
 	hasWritten = true;
 }
 
-ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, ser::StatusTracker& stat) : ffmpegReturnCode(args.ffmpegReturnCode)
+ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnCode, ser::StatusTracker& stat)
+    : ffmpegReturnCode(procReturnCode)
 {
 	std::error_code ec;
 	std::filesystem::create_directories(args.ffmpegWorkingDir, ec);

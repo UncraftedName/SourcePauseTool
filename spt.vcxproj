@@ -1582,7 +1582,8 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClInclude Include="spt\features\afterticks.hpp" />
     <ClInclude Include="spt\features\aim.hpp" />
     <ClInclude Include="spt\features\autojump.hpp" />
-    <ClInclude Include="spt\features\auto_render\ar_decls.hpp" />
+    <ClInclude Include="spt\features\auto_render\ar_jobs.hpp" />
+    <ClInclude Include="spt\features\auto_render\ar_feature.hpp" />
     <ClInclude Include="spt\features\auto_render\ar_util.hpp" />
     <ClInclude Include="spt\features\create_collide.hpp" />
     <ClInclude Include="spt\features\cvar.hpp" />
