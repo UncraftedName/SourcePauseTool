@@ -40,83 +40,6 @@ void ArLockableSurfaceConsumer::LockAndConsume(IDirect3DSurface9* offScreenSurfa
 	}
 }
 
-void tga_write(const char* path,
-               uint32_t width,
-               uint32_t height,
-               uint8_t* dataBGRA,
-               uint8_t dataChannels,
-               uint8_t fileChannels,
-               ser::StatusTracker& stat)
-{
-	FILE* f = fopen(path, "wb");
-	if (!f)
-	{
-		stat.Err(std::format("[{}]: failed to open file '{}' for writing", __FUNCTION__, path));
-		return;
-	}
-
-	// TGA header: http://www.paulbourke.net/dataformats/tga/
-	// clang-format off
-	uint8_t header[18] = { 0,0,2,0,0,0,0,0,0,0,0,0, (uint8_t)(width%256), (uint8_t)(width/256), (uint8_t)(height%256), (uint8_t)(height/256), (uint8_t)(fileChannels*8), 0x20 };
-	// clang-format on
-	fwrite(header, 1, 18, f);
-
-	std::unique_ptr<uint8_t[]> data = std::make_unique_for_overwrite<uint8_t[]>(width * height * fileChannels);
-	size_t x = 0;
-
-	for (uint32_t i = 0; i < width * height; i++)
-		for (uint32_t b = 0; b < fileChannels; b++)
-			data.get()[x++] = dataBGRA[(i * dataChannels) + (b % fileChannels)];
-
-	fwrite(data.get(), 1, width * height * fileChannels, f);
-	fclose(f);
-}
-
-void ArTgaWriter::Consume(D3DLOCKED_RECT rect, const D3DSURFACE_DESC& desc, size_t seq, ser::StatusTracker& stat)
-{
-	if (desc.Format != D3DFMT_A8R8G8B8)
-	{
-		stat.Err(std::format("[{}]: unsupported surface format {}, only D3DFMT_A8R8G8B8 is supported",
-		                     __FUNCTION__,
-		                     (int)desc.Format));
-		return;
-	}
-
-	if (singleFrame && hasWritten)
-	{
-		stat.Err(std::format("[{}]: expected only 1 frame but got more", __FUNCTION__));
-		return;
-	}
-
-	std::string formattedPath;
-	try
-	{
-		formattedPath = std::vformat(fmt, std::make_format_args(seq));
-	}
-	catch (const std::format_error& e)
-	{
-		stat.Err(std::format("[{}]: invalid format string: {}", __FUNCTION__, e.what()));
-		return;
-	}
-	if (!singleFrame && formattedPath == fmt)
-	{
-		stat.Err(std::format(
-		    "[{}]: format string does not contain any formatting specifiers for the frame number, use e.g. '{}'",
-		    __FUNCTION__,
-		    "my_frames_{:04d}.tga"));
-		return;
-	}
-
-	tga_write(formattedPath.c_str(), desc.Width, desc.Height, (uint8_t*)rect.pBits, 4, 3, stat);
-	if (!stat.Ok())
-		return;
-
-	if (openAfterWrite)
-		ShellExecute(nullptr, nullptr, formattedPath.c_str(), nullptr, nullptr, SW_SHOW);
-
-	hasWritten = true;
-}
-
 ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnCode, ser::StatusTracker& stat)
     : ffmpegReturnCode(procReturnCode)
 {
@@ -132,9 +55,10 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 	{
 		HANDLE& handle;
 		const wchar* name;
+		size_t initSize;
 	} pipeInfos[2]{
-	    {videoPipe, args.videoPipeName.c_str()},
-	    {audioPipe, args.audioPipeName.c_str()},
+	    {videoPipe, args.videoPipeName.c_str(), args.width * args.height * 4 * 20},
+	    {audioPipe, args.audioPipeName.c_str(), (size_t)(44100.f / args.framerate * sizeof(short) * 2)},
 	};
 
 	for (auto& pipeInfo : pipeInfos)
@@ -146,7 +70,7 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 		                                   PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE,
 		                                   PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
 		                                   1,
-		                                   args.width * args.height * 4,
+		                                   pipeInfo.initSize,
 		                                   0,
 		                                   0,
 		                                   nullptr);
@@ -185,12 +109,12 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
                              ar_frame_idx idx,
                              ser::StatusTracker& stat)
 {
-	DWORD exitCode;
+	/*DWORD exitCode;
 	if (!!GetExitCodeProcess(ffmpegProc.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
 	{
 		stat.Err("[" __FUNCTION__ "]: the process has stopped prematurely");
 		return;
-	}
+	}*/
 	if (desc.Format != D3DFMT_A8R8G8B8)
 	{
 		stat.Err("[" __FUNCTION__ "]: unexpected surface format");
@@ -208,7 +132,7 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
 		// write full frame
 		DWORD nToWrite = desc.Width * desc.Height * 4;
 		DWORD nWritten;
-		if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
+  		if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
 			stat.Err(
 			    std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
 	}
@@ -254,6 +178,20 @@ void ArFfmpegWriter::StopFfmpeg()
 		CloseHandle(ffmpegProc.hThread);
 		procValid = false;
 	}
+}
+
+void ArFfmpegWriter::ConsumeAudio(const short* lrPcmSamples, size_t nSamples, ser::StatusTracker& stat)
+{
+	BOOL connected = ConnectNamedPipe(audioPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+	if (!connected)
+	{
+		stat.Err(std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		return;
+	}
+	DWORD nToWrite = nSamples * sizeof(*lrPcmSamples);
+	DWORD nWritten;
+	if (!WriteFile(audioPipe, lrPcmSamples, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
+		stat.Err(std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
 }
 
 void ArFfmpegWriter::Finish()

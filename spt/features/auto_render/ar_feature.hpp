@@ -42,6 +42,7 @@ protected:
 	virtual void UnloadFeature() override;
 
 private:
+	char* cl_movieinfo_moviename = nullptr;
 	static inline std::atomic<bool> imGuiCallbackActive = false;
 	static inline std::atomic<bool> queuedKillSignal = false;
 

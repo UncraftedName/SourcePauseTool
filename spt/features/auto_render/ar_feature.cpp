@@ -146,6 +146,19 @@ void AutoRenderFeature::LoadFeature()
 	if (!ShaderDevicePresentSignal.Works || !SptImGui::Loaded())
 		return;
 
+	// find cl_movieinfo struct
+	if (!g_pCVar)
+		return;
+	const ConCommand* endmovieCmd = g_pCVar->FindCommand("endmovie");
+	if (!endmovieCmd)
+		return;
+	const byte* cbFunc = *(byte**)((byte*)endmovieCmd + sizeof(ConCommandBase));
+	if (!cbFunc)
+		return;
+	if (cbFunc[0] != 0x80 || cbFunc[1] != 0x3d || cbFunc[6] != 0x00) // cmp byte ptr [cl_movieinfo.moviename], 0
+		return;
+	cl_movieinfo_moviename = *(char**)(cbFunc + 2);
+
 	// fill in default placeholders
 
 	// TODO test with portal in a non-ascii folder
@@ -274,11 +287,12 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
 					                                               stat);
 					break;
 				case AR_SYNC_THREADED:
-					mgr = std::make_unique<ArAsyncConsumerManager>(device,
-					                                               D3DFMT_A8R8G8B8,
-					                                               deferredJobCopy->nFramesInFlight,
-					                                               std::move(consumer),
-					                                               stat);
+					mgr = std::make_unique<ArThreadedConsumerManager>(device,
+					                                                  D3DFMT_A8R8G8B8,
+					                                                  deferredJobCopy
+					                                                      ->nFramesInFlight,
+					                                                  std::move(consumer),
+					                                                  stat);
 					break;
 				default:
 					Assert(0);
@@ -295,6 +309,9 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
 				frameSubmitted = false;
 				ArPlaceholders::ResetPipeNames();
 			}
+
+			// TODO save cvars, maybe wait until next frame or something to submit first frame?
+			strcpy(cl_movieinfo_moviename, "spt_autorender");
 
 			deferredJobCopy.reset();
 		}
@@ -394,6 +411,7 @@ void AutoRenderFeature::ImGuiTabCallback()
 		        .audioPipeName = ArUtf8ToUtf16(ArPlaceholders::AUDIO_PIPE_NAME.GetValue()->c_str()),
 		        .width = (size_t)atoi(ArPlaceholders::VID_WIDTH.GetValue()->c_str()),
 		        .height = (size_t)atoi(ArPlaceholders::VID_HEIGHT.GetValue()->c_str()),
+		        .framerate = persist.fpsVal,
 		    },
 		    std::make_unique<ArAppResult>(),
 		    std::nullopt, // TODO - maxFrames
@@ -622,9 +640,12 @@ bool ArPlaceholders::FindFFmpeg()
 std::string ArPlaceholders::CreateDefaultCmdLine()
 {
 	return std::format(
-	    "\"{0}\" -report "
-	    "-f rawvideo -pixel_format bgr0 -video_size {1}x{2} -framerate {3} -i \"{4}\" "
+	    "\"{0}\" -report -nostdin "
 #if 0
+	    "-loglevel debug "
+#endif
+	    "-f rawvideo -pixel_format bgr0 -video_size {1}x{2} -framerate {3} -i \"{4}\" "
+#if 1
 	    "-f s16le -ar 44100 -ac 2 -i \"{5}\" "
 #endif
 	    "-y -c:v libx264 -pix_fmt yuv420p -crf 18 "
@@ -769,23 +790,35 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 {
 	ORIG_S_TransferStereo16(pOutput, pfront, lpaintedtime, endtime);
 
-	// try to replicate the game's logic here
+	auto runningJobCopy = runningMovieJob.load();
+	if (!runningJobCopy)
+		return;
 
-	short* snd_out;
-	int* snd_p = (int*)pfront;
-	int snd_linear_count;
+	int nPairs = endtime - lpaintedtime;
+	if (nPairs <= 0)
+		return;
 
-	constexpr int deviceSampleCount = 44100;
-	int samplePairCount = deviceSampleCount >> 1;
-	int sampleMask = samplePairCount - 1;
+	// const int* src = reinterpret_cast<const int*>(pfront + lpaintedtime);
 
-	while (lpaintedtime < endtime)
+	float masterVol = 0.5f; // TODO get volume cvar
+	int vol = static_cast<int>(masterVol * 256.0f);
+
+	// error will get picked up by the render thread
+	ser::StatusTracker stat;
+	short* outBuf = runningJobCopy->mgr->LockSoundBuf(nPairs * 2, stat);
+	if (!outBuf || !stat.Ok())
+		return;
+
+	/*std::filesystem::path tmp = "G:\\Games\\portal\\Portal Source\\spt_autorender\\test.wav";
+	std::ofstream f(tmp, std::ios::binary | std::ios::app);
+	std::vector<short> outBuf(nPairs * 2);*/
+
+	for (int i = 0; i < nPairs * 2; i++)
 	{
-		int lpos = lpaintedtime & sampleMask;
-		snd_out = (short*)pOutput + (lpos << 1);
-		snd_linear_count = std::min(samplePairCount - lpos, samplePairCount - lpos);
-		snd_linear_count <<= 1;
-		snd_p += snd_linear_count;
-		lpaintedtime += snd_linear_count >> 1;
+		int sample = (((int*)pfront)[i] * vol) >> 8;
+		outBuf[i] = static_cast<short>(clamp(sample, -32768, 32767));
 	}
+
+	runningJobCopy->mgr->UnlockSoundBuf(stat);
+	// f.write((const char*)outBuf.data(), outBuf.size() * sizeof(short));
 }

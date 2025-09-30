@@ -5,6 +5,8 @@
 
 #include <format>
 
+// TODO - write a comment with an explanation of how the audio pipe blocks after a few frames
+
 ArSynchronousConsumerManager::ArSynchronousConsumerManager(IDirect3DDevice9* device,
                                                            D3DFORMAT format,
                                                            std::unique_ptr<ArLockableSurfaceConsumer> consumer,
@@ -34,6 +36,19 @@ ArSynchronousConsumerManager::ArSynchronousConsumerManager(IDirect3DDevice9* dev
 	offScreenSurface = std::move(oss[0]);
 }
 
+short* ArSynchronousConsumerManager::LockSoundBuf(size_t nSamples, ser::StatusTracker& stat)
+{
+	consumeMtx.lock();
+	soundBuf.resize(nSamples);
+	return soundBuf.data();
+}
+
+void ArSynchronousConsumerManager::UnlockSoundBuf(ser::StatusTracker& stat)
+{
+	consumer->ConsumeAudio(soundBuf.data(), soundBuf.size(), stat);
+	consumeMtx.unlock();
+}
+
 void ArSynchronousConsumerManager::Finish(IDirect3DDevice9* device, ser::StatusTracker& stat)
 {
 	consumer->Finish();
@@ -56,6 +71,7 @@ void ArSynchronousConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_i
 		return;
 	}
 
+	std::lock_guard lk(consumeMtx);
 	consumer->LockAndConsume(offScreenSurface.Get(), frameNum, stat);
 }
 
@@ -97,6 +113,20 @@ ArAsyncConsumerManager::ArAsyncConsumerManager(IDirect3DDevice9* device,
 	}
 }
 
+short* ArAsyncConsumerManager::LockSoundBuf(size_t nSamples, ser::StatusTracker& stat)
+{
+	// for now this behaves the same as the synchronous manager - this could be improved if we used async pipes
+	consumeMtx.lock();
+	soundBuf.resize(nSamples);
+	return soundBuf.data();
+}
+
+void ArAsyncConsumerManager::UnlockSoundBuf(ser::StatusTracker& stat)
+{
+	consumer->ConsumeAudio(soundBuf.data(), soundBuf.size(), stat);
+	consumeMtx.unlock();
+}
+
 void ArAsyncConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx frameNum, ser::StatusTracker& stat)
 {
 	if (!stat.Ok())
@@ -108,7 +138,9 @@ void ArAsyncConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx fra
 	{
 		// this slot is full, we have to consume it before we can proceed
 		Assert(frameNum == nFramesProcessedByConsumer + slots.size());
+		consumeMtx.lock();
 		consumer->LockAndConsume(slot.offScreenSurf.Get(), nFramesProcessedByConsumer, stat);
+		consumeMtx.unlock();
 		if (!stat.Ok())
 			return;
 		slot.hasData = false;
@@ -153,7 +185,7 @@ void ArAsyncConsumerManager::Finish(IDirect3DDevice9* device, ser::StatusTracker
 
 ArThreadedConsumerManager::~ArThreadedConsumerManager()
 {
-	StopAndJoinWorkerThread();
+	StopAndJoinWorkers();
 }
 
 // copy of ArAsyncConsumerManager
@@ -162,7 +194,7 @@ ArThreadedConsumerManager::ArThreadedConsumerManager(IDirect3DDevice9* device,
                                                      ar_frame_idx nMaxFramesInFlight,
                                                      std::unique_ptr<ArLockableSurfaceConsumer> consumer,
                                                      ser::StatusTracker& stat)
-    : consumer(std::move(consumer)), slots(nMaxFramesInFlight)
+    : consumer(std::move(consumer)), videoSlots(nMaxFramesInFlight), audioSlots(nMaxFramesInFlight)
 {
 	if (nMaxFramesInFlight == 0)
 	{
@@ -189,25 +221,65 @@ ArThreadedConsumerManager::ArThreadedConsumerManager(IDirect3DDevice9* device,
 
 	for (ar_frame_idx i = 0; i < nMaxFramesInFlight; i++)
 	{
-		auto& slot = slots[i];
+		auto& slot = videoSlots[i];
 		slot.renderTarget = std::move(rts[i]);
 		slot.offScreenSurf = std::move(oss[i]);
 	}
 
-	consumerThread = std::thread(&ArThreadedConsumerManager::WorkerThreadFunc, this);
+	workers[AR_THRD_VIDEO].thread = std::thread(&ArThreadedConsumerManager::VideoThreadFunc, this);
+	workers[AR_THRD_AUDIO].thread = std::thread(&ArThreadedConsumerManager::AudioThreadFunc, this);
 }
 
-void ArThreadedConsumerManager::WorkerThreadFunc()
+short* ArThreadedConsumerManager::LockSoundBuf(size_t nSamples, ser::StatusTracker& stat)
+{
+	AudioSlot& slot = audioSlots[nAudioSlotsProduced % audioSlots.size()];
+
+	bool workerThreadErr = false;
+	{
+		std::unique_lock lock(mtx);
+		// wait for free slot or error
+		cv.wait(lock,
+		        [&slot, &workerThreadErr, this]()
+		        {
+			        workerThreadErr =
+			            !workers[AR_THRD_VIDEO].stat.Ok() || !workers[AR_THRD_AUDIO].stat.Ok();
+			        return !slot.hasData || workerThreadErr || finishSignal;
+		        });
+	}
+
+	// the actual errors are reported from the render thread
+	if (workerThreadErr)
+	{
+		stat.Err(std::format("[{}]: worker thread error", __FUNCTION__));
+		return nullptr;
+	}
+
+	slot.samples.resize(nSamples);
+	return slot.samples.data();
+}
+
+void ArThreadedConsumerManager::UnlockSoundBuf(ser::StatusTracker& stat)
+{
+	AudioSlot& slot = audioSlots[nAudioSlotsProduced % audioSlots.size()];
+	{
+		std::lock_guard lock(mtx);
+		slot.hasData = true;
+	}
+	cv.notify_all();
+	++nAudioSlotsProduced;
+}
+
+void ArThreadedConsumerManager::VideoThreadFunc()
 {
 	for (bool running = true; running;)
 	{
-		Slot& slot = slots[nFramesProcessedByConsumer % slots.size()];
+		VideoSlot& slot = videoSlots[nFramesProcessedByConsumer % videoSlots.size()];
 
 		{
 			std::unique_lock lock(mtx);
 			cv.wait(lock, [&slot, this]() { return slot.hasData || finishSignal; });
 
-			// process the rest of the images in the queue before exiting
+			// process the rest of the slots
 			if (finishSignal && !slot.hasData)
 				return;
 		}
@@ -226,50 +298,106 @@ void ArThreadedConsumerManager::WorkerThreadFunc()
 			else
 			{
 				// have to set this behind the mutex
-				consumerStat.Err(std::format("[{}]: {}", __FUNCTION__, stat.GetStatus().errMsg));
+				workers[AR_THRD_VIDEO].stat.Concat(std::move(stat));
 				running = false;
 			}
 		}
-		cv.notify_one(); // error or next slot is free
+		cv.notify_all(); // error or next slot is free
 	}
 }
 
-void ArThreadedConsumerManager::StopAndJoinWorkerThread()
+// exactly the same as the video thread
+void ArThreadedConsumerManager::AudioThreadFunc()
 {
-	if (!consumerThread.joinable()) // it's valid to call this even if the thread stops before join
-		return;
+	for (bool running = true; running;)
+	{
+		AudioSlot& slot = audioSlots[nAudioSlotsProcessedByConsumer % audioSlots.size()];
+
+		{
+			std::unique_lock lock(mtx);
+			cv.wait(lock, [&slot, this]() { return slot.hasData || finishSignal; });
+
+			// process the rest of the slots
+			if (finishSignal && !slot.hasData)
+				return;
+		}
+
+		ser::StatusTracker stat;
+		consumer->ConsumeAudio(slot.samples.data(), slot.samples.size(), stat);
+
+		{
+			std::lock_guard lock(mtx);
+
+			if (stat.Ok())
+			{
+				slot.hasData = false;
+				++nAudioSlotsProcessedByConsumer;
+			}
+			else
+			{
+				// have to set this behind the mutex
+				workers[AR_THRD_AUDIO].stat.Concat(std::move(stat));
+				running = false;
+			}
+		}
+		cv.notify_all(); // error or next slot is free
+	}
+}
+
+void ArThreadedConsumerManager::StopAndJoinWorkers()
+{
 	mtx.lock();
 	finishSignal = true;
 	mtx.unlock();
-	cv.notify_one();
-	consumerThread.join();
+	cv.notify_all();
+	for (auto& worker : workers)
+		if (worker.thread.joinable())
+			worker.thread.join();
 }
 
 void ArThreadedConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx frameNum, ser::StatusTracker& stat)
 {
-	Slot& slot = slots[frameNum % slots.size()];
+	VideoSlot& slot = videoSlots[frameNum % videoSlots.size()];
+
+	bool notTimedOut = true;
+	bool workerThreadErr = false;
 
 	{
 		std::unique_lock lock(mtx);
-		bool notTimeOut = cv.wait_for(lock,
-		                              std::chrono::seconds(10),
-		                              [&slot, this]() { return !slot.hasData || !consumerStat.Ok(); });
+#if 0
+		notTimedOut = cv.wait_for(lock,
+		                          std::chrono::seconds(10),
+		                          [&slot, &workerThreadErr, this]()
+		                          {
+			                          workerThreadErr = !workers[AR_THRD_VIDEO].stat.Ok()
+			                                            || !workers[AR_THRD_AUDIO].stat.Ok();
+			                          return !slot.hasData || workerThreadErr;
+		                          });
+#else
+		cv.wait(lock,
+		        [&slot, &workerThreadErr, this]()
+		        {
+			        workerThreadErr =
+			            !workers[AR_THRD_VIDEO].stat.Ok() || !workers[AR_THRD_AUDIO].stat.Ok();
+			        return !slot.hasData || workerThreadErr;
+		        });
+#endif
+		finishSignal |= workerThreadErr; // stop audio producer
+	}
 
-		if (!consumerStat.Ok())
-		{
-			stat.Err(std::format("[{}]: error from worker thread: {}",
-			                     __FUNCTION__,
-			                     consumerStat.GetStatus().errMsg));
-			return;
-		}
+	if (workerThreadErr)
+	{
+		StopAndJoinWorkers();
+		stat.Concat(std::move(workers[AR_THRD_VIDEO].stat));
+		stat.Concat(std::move(workers[AR_THRD_VIDEO].stat));
+		return;
+	}
 
-		if (!notTimeOut)
-		{
-			stat.Err("[" __FUNCTION__ "]: worker thread timed out");
-			finishSignal = true;
-			cv.notify_one();
-			return;
-		}
+	if (!notTimedOut)
+	{
+		stat.Err("[" __FUNCTION__ "]: worker thread timed out");
+		StopAndJoinWorkers();
+		return;
 	}
 
 	// queue the next frame asynchronously
@@ -292,20 +420,16 @@ void ArThreadedConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx 
 		else
 			finishSignal = true;
 	}
-	cv.notify_one(); // error or slot has data
+	cv.notify_all(); // error or slot has data
 }
 
 void ArThreadedConsumerManager::Finish(IDirect3DDevice9* device, ser::StatusTracker& stat)
 {
-	StopAndJoinWorkerThread();
+	StopAndJoinWorkers();
 
 	// put this behind the mutex to guarantee memory ordering, maybe unnecessary?
 	std::lock_guard lock(mtx);
-	if (!consumerStat.Ok())
-	{
-		stat.Err(
-		    std::format("[{}]: error from worker thread: {}", __FUNCTION__, consumerStat.GetStatus().errMsg));
-	}
-
+	stat.Concat(std::move(workers[AR_THRD_VIDEO].stat));
+	stat.Concat(std::move(workers[AR_THRD_AUDIO].stat));
 	consumer->Finish();
 }

@@ -67,6 +67,7 @@ namespace ser
 			status.warnings.insert(status.warnings.end(),
 			                       std::make_move_iterator(other.status.warnings.begin()),
 			                       std::make_move_iterator(other.status.warnings.end()));
+			other.status.warnings.clear();
 		}
 	};
 
