@@ -108,8 +108,9 @@ public:
 	AR_DEFINE_PLACEHOLDER(VID_HEIGHT,
 	                      "Input video height in pixels (set to whatever the game is currently running at)");
 	AR_DEFINE_PLACEHOLDER(FRAMERATE, "Input framerate");
-	AR_DEFINE_PLACEHOLDER(VIDEO_PIPE_NAME, "Name of the video pipe that the raw frames will be fed to");
-	AR_DEFINE_PLACEHOLDER(AUDIO_PIPE_NAME, "Name of the audio pipe that the stereo PCM will be fed to");
+	// AR_DEFINE_PLACEHOLDER(VIDEO_PIPE_NAME, "Name of the video pipe that the raw frames will be fed to");
+	// AR_DEFINE_PLACEHOLDER(AUDIO_PIPE_NAME, "Name of the audio pipe that the stereo PCM will be fed to");
+	AR_DEFINE_PLACEHOLDER(PIPE_NAME, "Name of the pipe that the data will be fed to");
 	AR_DEFINE_PLACEHOLDER(RENDER_WORKING_DIR, "Working directory of the rendering application");
 	AR_DEFINE_PLACEHOLDER(GAME_WORKING_DIR, "Working directory of the game");
 	AR_DEFINE_PLACEHOLDER(MOD_DIR, "Mod directory");
@@ -407,8 +408,9 @@ void AutoRenderFeature::ImGuiTabCallback()
 		    ArFfmpegWriter::InitArgs{
 		        .ffmpegWorkingDir = ArUtf8ToUtf16(ArPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str()),
 		        .cmd = ArUtf8ToUtf16(persist.cmdLineFormatted.c_str()),
-		        .videoPipeName = ArUtf8ToUtf16(ArPlaceholders::VIDEO_PIPE_NAME.GetValue()->c_str()),
-		        .audioPipeName = ArUtf8ToUtf16(ArPlaceholders::AUDIO_PIPE_NAME.GetValue()->c_str()),
+		        // .videoPipeName = ArUtf8ToUtf16(ArPlaceholders::VIDEO_PIPE_NAME.GetValue()->c_str()),
+		        // .audioPipeName = ArUtf8ToUtf16(ArPlaceholders::AUDIO_PIPE_NAME.GetValue()->c_str()),
+		        .pipeName = ArUtf8ToUtf16(ArPlaceholders::PIPE_NAME.GetValue()->c_str()),
 		        .width = (size_t)atoi(ArPlaceholders::VID_WIDTH.GetValue()->c_str()),
 		        .height = (size_t)atoi(ArPlaceholders::VID_HEIGHT.GetValue()->c_str()),
 		        .framerate = persist.fpsVal,
@@ -639,6 +641,7 @@ bool ArPlaceholders::FindFFmpeg()
 // TODO add option to export without audio hook
 std::string ArPlaceholders::CreateDefaultCmdLine()
 {
+#if 0
 	return std::format(
 	    "\"{0}\" -report -nostdin "
 #if 0
@@ -659,6 +662,18 @@ std::string ArPlaceholders::CreateDefaultCmdLine()
 	    ArPlaceholders::AUDIO_PIPE_NAME.UnformattedKey(),
 	    ArPlaceholders::RENDER_WORKING_DIR.UnformattedKey(),
 	    ArPlaceholders::DATE_TIME.UnformattedKey());
+#else
+	return std::format(
+	    "\"{0}\" -report -nostdin "
+	    "-f nut  -i \"{1}\" "
+	    "-y -c:v libx264 -pix_fmt yuv420p -crf 18 "
+	    "-c:a aac -b:a 192k "
+	    "-shortest -preset veryfast \"{2}\\{3}.mp4\"",
+	    ArPlaceholders::EXE_PATH.UnformattedKey(),
+	    ArPlaceholders::PIPE_NAME.UnformattedKey(),
+	    ArPlaceholders::RENDER_WORKING_DIR.UnformattedKey(),
+	    ArPlaceholders::DATE_TIME.UnformattedKey());
+#endif
 }
 
 void ArPlaceholders::FormatCmdLine(const std::string& unformatted,
@@ -753,19 +768,22 @@ void ArPlaceholders::RegenerateUuid()
 
 void ArPlaceholders::ResetPipeNames()
 {
-	const char* videoPipeName = R"(\\.\pipe\spt_autorender_video)";
-	const char* audioPipeName = R"(\\.\pipe\spt_autorender_audio)";
+	// const char* videoPipeName = R"(\\.\pipe\spt_autorender_video)";
+	// const char* audioPipeName = R"(\\.\pipe\spt_autorender_audio)";
+	const char* pipeName = R"(\\.\pipe\spt_autorender)";
 
 	if (appendUuidToPipes)
 	{
 		auto uuid = UUID.GetValue();
-		ArPlaceholders::VIDEO_PIPE_NAME.SetValue(std::format("{}_{}", videoPipeName, uuid->c_str()));
-		ArPlaceholders::AUDIO_PIPE_NAME.SetValue(std::format("{}_{}", audioPipeName, uuid->c_str()));
+		// ArPlaceholders::VIDEO_PIPE_NAME.SetValue(std::format("{}_{}", videoPipeName, uuid->c_str()));
+		// ArPlaceholders::AUDIO_PIPE_NAME.SetValue(std::format("{}_{}", audioPipeName, uuid->c_str()));
+		ArPlaceholders::PIPE_NAME.SetValue(std::format("{}_{}", pipeName, uuid->c_str()));
 	}
 	else
 	{
-		ArPlaceholders::VIDEO_PIPE_NAME.SetValue(videoPipeName);
-		ArPlaceholders::AUDIO_PIPE_NAME.SetValue(audioPipeName);
+		// ArPlaceholders::VIDEO_PIPE_NAME.SetValue(videoPipeName);
+		// ArPlaceholders::AUDIO_PIPE_NAME.SetValue(audioPipeName);
+		ArPlaceholders::PIPE_NAME.SetValue(pipeName);
 	}
 }
 
@@ -805,7 +823,7 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 
 	// error will get picked up by the render thread
 	ser::StatusTracker stat;
-	short* outBuf = runningJobCopy->mgr->LockSoundBuf(nPairs * 2, stat);
+	short* outBuf = runningJobCopy->mgr->LockSoundBuf(nPairs, stat);
 	if (!outBuf || !stat.Ok())
 		return;
 

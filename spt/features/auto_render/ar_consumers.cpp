@@ -51,7 +51,7 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 		return;
 	}
 
-	struct
+	/*struct
 	{
 		HANDLE& handle;
 		const wchar* name;
@@ -79,6 +79,20 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 			stat.Err(std::format("[{}]: CreateNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
 			return;
 		}
+	}*/
+
+	pipe = CreateNamedPipeW(args.pipeName.c_str(),
+	                        PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE,
+	                        PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
+	                        1,
+	                        args.width * args.height * 4 * 2,
+	                        0,
+	                        0,
+	                        nullptr);
+	if (pipe == INVALID_HANDLE_VALUE)
+	{
+		stat.Err(std::format("[{}]: CreateNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		return;
 	}
 
 	STARTUPINFOW si = {
@@ -101,6 +115,79 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 	}
 
 	procValid = true;
+
+	// TODO test at lower framerate values, check if audio gets desynced
+	// TODO round framerate to 0.001 in imgui
+
+	// TODO pass in placeholders to here
+
+	// you can get the fourcc codes from https://git.ffmpeg.org/gitweb/nut.git/blob/HEAD:/docs/nut4cc.txt
+
+	// video must be index 0, audio must be index 1
+	nut_stream_header_tt sh[3]{
+	    {
+	        .type = NUT_VIDEO_CLASS,
+	        .fourcc_len = 4,
+	        .fourcc = (uint8_t*)"BGR\0",
+	        .time_base{.num = 1000, .den = (int)(args.framerate * 1000)},
+	        .fixed_fps = 1,
+	        .width = (int)args.width,
+	        .height = (int)args.height,
+	        .sample_width = 1, // TODO can I just set both of these to 0?
+	        .sample_height = 1,
+	    },
+	    {
+	        .type = NUT_AUDIO_CLASS,
+	        .fourcc_len = 4,
+	        .fourcc = (uint8_t*)"PSD\x10",
+	        .time_base{.num = 1, .den = 44100},
+	        .samplerate_num = 44100,
+	        .samplerate_denom = 1,
+	        .channel_count = 2,
+	    },
+	    {
+	        .type = -1,
+	    },
+	};
+
+	nut_muxer_opts_tt opts{
+	    .output{.priv = this, .write = &ArFfmpegWriter::FfmpegWrite},
+	    .realtime_stream = 1,
+	    .max_distance = 32768,
+	};
+
+	context = nut_muxer_init(&opts, sh, nullptr);
+}
+
+int ArFfmpegWriter::FfmpegWrite(void* priv, size_t len, const uint8_t* buf)
+{
+	ArFfmpegWriter* thisptr = static_cast<ArFfmpegWriter*>(priv);
+
+	if (!thisptr->writerStat.Ok())
+		return 0;
+
+	if (!thisptr->pipeConnected)
+	{
+		BOOL connected =
+		    ConnectNamedPipe(thisptr->pipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+		if (!connected)
+		{
+			thisptr->writerStat.Err(
+			    std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+			return 0;
+		}
+		thisptr->pipeConnected = true;
+	}
+
+	DWORD nWritten;
+	if (!WriteFile(thisptr->pipe, buf, len, &nWritten, nullptr) || nWritten != len)
+	{
+		thisptr->writerStat.Err(
+		    std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		return nWritten;
+	}
+
+	return len;
 }
 
 // TODO misspelling -pixel_format hangs somewhere...
@@ -120,7 +207,8 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
 		stat.Err("[" __FUNCTION__ "]: unexpected surface format");
 		return;
 	}
-	BOOL connected = ConnectNamedPipe(videoPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+
+	/*BOOL connected = ConnectNamedPipe(videoPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
 	if (!connected)
 	{
 		stat.Err(std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
@@ -132,7 +220,7 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
 		// write full frame
 		DWORD nToWrite = desc.Width * desc.Height * 4;
 		DWORD nWritten;
-  		if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
+		if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
 			stat.Err(
 			    std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
 	}
@@ -152,12 +240,33 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
 				return;
 			}
 		}
+	}*/
+
+	if ((DWORD)rect.Pitch != desc.Width * 4)
+	{
+		stat.Err("[" __FUNCTION__ "]: unexpected surface pitch");
+		return;
 	}
+
+	nut_packet_tt pkt{
+	    .len = (int)(desc.Width * desc.Height * 4),
+	    .stream = 0,
+	    .pts = idx,
+	    .flags = NUT_FLAG_KEY,
+	    .next_pts = idx + 1,
+	};
+
+	// TODO check for error
+	std::lock_guard lk(nutLock);
+	if (context)
+		nut_write_frame_reorder(context, &pkt, (const uint8_t*)rect.pBits);
+	if (!writerStat.Ok())
+		stat.Concat(std::move(writerStat));
 }
 
 void ArFfmpegWriter::StopFfmpeg()
 {
-	std::reference_wrapper<HANDLE> namedPipes[2] = {videoPipe, audioPipe};
+	/*std::reference_wrapper<HANDLE> namedPipes[2] = {videoPipe, audioPipe};
 	for (HANDLE& namedPipe : namedPipes)
 	{
 		if (namedPipe == INVALID_HANDLE_VALUE)
@@ -166,7 +275,21 @@ void ArFfmpegWriter::StopFfmpeg()
 		DisconnectNamedPipe(namedPipe);
 		CloseHandle(namedPipe);
 		namedPipe = INVALID_HANDLE_VALUE;
+	}*/
+
+	{
+		std::lock_guard lk(nutLock);
+		nut_muxer_uninit_reorder(context);
+		context = nullptr;
 	}
+
+	if (pipeConnected)
+	{
+		FlushFileBuffers(pipe);
+		DisconnectNamedPipe(pipe);
+	}
+	CloseHandle(pipe);
+	pipe = INVALID_HANDLE_VALUE;
 
 	if (procValid)
 	{
@@ -180,9 +303,9 @@ void ArFfmpegWriter::StopFfmpeg()
 	}
 }
 
-void ArFfmpegWriter::ConsumeAudio(const short* lrPcmSamples, size_t nSamples, ser::StatusTracker& stat)
+void ArFfmpegWriter::ConsumeAudio(const short* lrPcmSamples, size_t nSamplePairs, ser::StatusTracker& stat)
 {
-	BOOL connected = ConnectNamedPipe(audioPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
+	/*BOOL connected = ConnectNamedPipe(audioPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
 	if (!connected)
 	{
 		stat.Err(std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
@@ -191,7 +314,21 @@ void ArFfmpegWriter::ConsumeAudio(const short* lrPcmSamples, size_t nSamples, se
 	DWORD nToWrite = nSamples * sizeof(*lrPcmSamples);
 	DWORD nWritten;
 	if (!WriteFile(audioPipe, lrPcmSamples, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
-		stat.Err(std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		stat.Err(std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));*/
+
+	nut_packet_tt pkt{
+	    .len = (int)(nSamplePairs * 2 * sizeof(*lrPcmSamples)),
+	    .stream = 1,
+	    .pts = (uint64_t)nAudioSamplePairsWritten,
+	    .flags = NUT_FLAG_KEY,
+	    .next_pts = nAudioSamplePairsWritten + nSamplePairs,
+	};
+	nAudioSamplePairsWritten += nSamplePairs;
+
+	// TODO check for error
+	std::lock_guard lk(nutLock);
+	if (context)
+		nut_write_frame_reorder(context, &pkt, (const uint8_t*)lrPcmSamples);
 }
 
 void ArFfmpegWriter::Finish()

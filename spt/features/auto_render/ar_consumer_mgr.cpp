@@ -36,16 +36,16 @@ ArSynchronousConsumerManager::ArSynchronousConsumerManager(IDirect3DDevice9* dev
 	offScreenSurface = std::move(oss[0]);
 }
 
-short* ArSynchronousConsumerManager::LockSoundBuf(size_t nSamples, ser::StatusTracker& stat)
+short* ArSynchronousConsumerManager::LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat)
 {
 	consumeMtx.lock();
-	soundBuf.resize(nSamples);
+	soundBuf.resize(nSamplePairs * 2);
 	return soundBuf.data();
 }
 
 void ArSynchronousConsumerManager::UnlockSoundBuf(ser::StatusTracker& stat)
 {
-	consumer->ConsumeAudio(soundBuf.data(), soundBuf.size(), stat);
+	consumer->ConsumeAudio(soundBuf.data(), soundBuf.size() / 2, stat);
 	consumeMtx.unlock();
 }
 
@@ -113,17 +113,17 @@ ArAsyncConsumerManager::ArAsyncConsumerManager(IDirect3DDevice9* device,
 	}
 }
 
-short* ArAsyncConsumerManager::LockSoundBuf(size_t nSamples, ser::StatusTracker& stat)
+short* ArAsyncConsumerManager::LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat)
 {
 	// for now this behaves the same as the synchronous manager - this could be improved if we used async pipes
 	consumeMtx.lock();
-	soundBuf.resize(nSamples);
+	soundBuf.resize(nSamplePairs * 2);
 	return soundBuf.data();
 }
 
 void ArAsyncConsumerManager::UnlockSoundBuf(ser::StatusTracker& stat)
 {
-	consumer->ConsumeAudio(soundBuf.data(), soundBuf.size(), stat);
+	consumer->ConsumeAudio(soundBuf.data(), soundBuf.size() / 2, stat);
 	consumeMtx.unlock();
 }
 
@@ -230,7 +230,7 @@ ArThreadedConsumerManager::ArThreadedConsumerManager(IDirect3DDevice9* device,
 	workers[AR_THRD_AUDIO].thread = std::thread(&ArThreadedConsumerManager::AudioThreadFunc, this);
 }
 
-short* ArThreadedConsumerManager::LockSoundBuf(size_t nSamples, ser::StatusTracker& stat)
+short* ArThreadedConsumerManager::LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat)
 {
 	AudioSlot& slot = audioSlots[nAudioSlotsProduced % audioSlots.size()];
 
@@ -254,7 +254,7 @@ short* ArThreadedConsumerManager::LockSoundBuf(size_t nSamples, ser::StatusTrack
 		return nullptr;
 	}
 
-	slot.samples.resize(nSamples);
+	slot.samples.resize(nSamplePairs * 2);
 	return slot.samples.data();
 }
 
@@ -323,7 +323,7 @@ void ArThreadedConsumerManager::AudioThreadFunc()
 		}
 
 		ser::StatusTracker stat;
-		consumer->ConsumeAudio(slot.samples.data(), slot.samples.size(), stat);
+		consumer->ConsumeAudio(slot.samples.data(), slot.samples.size() / 2, stat);
 
 		{
 			std::lock_guard lock(mtx);

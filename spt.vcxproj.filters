@@ -481,6 +481,18 @@
     <ClCompile Include="spt\features\auto_render\ar_consumer_mgr.cpp">
       <Filter>spt\features\auto_render</Filter>
     </ClCompile>
+    <ClCompile Include="thirdparty\imgui\imgui_stdlib.cpp">
+      <Filter>thirdparty\imgui</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\libnut\muxer.c">
+      <Filter>thirdparty\libnut</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\libnut\framecode.c">
+      <Filter>thirdparty\libnut</Filter>
+    </ClCompile>
+    <ClCompile Include="thirdparty\libnut\reorder.c">
+      <Filter>thirdparty\libnut</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -1140,6 +1152,12 @@
     <ClInclude Include="spt\features\auto_render\ar_feature.hpp">
       <Filter>spt\features\auto_render</Filter>
     </ClInclude>
+    <ClInclude Include="thirdparty\libnut\priv.h">
+      <Filter>thirdparty\libnut</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\libnut\libnut.h">
+      <Filter>thirdparty\libnut</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">
@@ -1262,6 +1280,9 @@
     <Filter Include="spt\features\auto_render">
       <UniqueIdentifier>{96465be6-4535-4362-8b6e-4475120d65f3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="thirdparty\libnut">
+      <UniqueIdentifier>{9fd8f8d3-fa94-4d62-b81d-f35a78bce784}</UniqueIdentifier>
+    </Filter>
   </ItemGroup>
   <ItemGroup>
     <Text Include="thirdparty\example.txt">
@@ -1292,6 +1313,9 @@
     </None>
     <None Include="spt\flatbuffers_schemas\gen\mesh.fbs">
       <Filter>spt\flatbuffers_schemas\gen</Filter>
+    </None>
+    <None Include="thirdparty\libnut\README">
+      <Filter>thirdparty\libnut</Filter>
     </None>
   </ItemGroup>
 </Project>

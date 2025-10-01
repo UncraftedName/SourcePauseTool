@@ -4,6 +4,11 @@
 #include "spt\utils\signals.hpp"
 #include "spt\utils\serialize.hpp"
 
+extern "C"
+{
+#include "thirdparty/libnut/libnut.h"
+}
+
 #include <filesystem>
 
 #include <d3d9.h>
@@ -41,6 +46,13 @@ protected:
 
 class ArFfmpegWriter : public ArLockableSurfaceConsumer
 {
+	bool pipeConnected = false;
+	HANDLE pipe = INVALID_HANDLE_VALUE;
+	nut_context_tt* context = nullptr;
+	int64_t nAudioSamplePairsWritten = 0;
+	std::mutex nutLock;
+	ser::StatusTracker writerStat;
+
 	HANDLE videoPipe = INVALID_HANDLE_VALUE;
 	HANDLE audioPipe = INVALID_HANDLE_VALUE;
 	HANDLE jobObject = NULL;
@@ -52,17 +64,18 @@ public:
 	struct InitArgs
 	{
 		const std::wstring ffmpegWorkingDir;
-		std::wstring cmd;                 // fully formatted with no remaining substitutions
-		const std::wstring videoPipeName; // can be null
-		const std::wstring audioPipeName; // can be null
-		size_t width, height;             // used as an estimation for pipe buffer size
+		std::wstring cmd; // fully formatted with no remaining substitutions
+		// const std::wstring videoPipeName; // can be null
+		// const std::wstring audioPipeName; // can be null
+		const std::wstring pipeName;
+		size_t width, height;
 		float framerate;
 	};
 
 	explicit ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& ffmpegReturnCode, ser::StatusTracker& stat);
 	virtual ~ArFfmpegWriter();
 
-	virtual void ConsumeAudio(const short* lrPcmSamples, size_t nSamples, ser::StatusTracker& stat) override;
+	virtual void ConsumeAudio(const short* lrPcmSamples, size_t nSamplePairs, ser::StatusTracker& stat) override;
 	virtual void Finish();
 
 protected:
@@ -72,6 +85,7 @@ protected:
 	                     ser::StatusTracker& stat) override;
 
 private:
+	static int FfmpegWrite(void* priv, size_t len, const uint8_t* buf);
 	void StopFfmpeg();
 };
 
@@ -92,7 +106,7 @@ public:
 	ArSyncManager(ArSyncManager&&) = delete;
 	virtual ~ArSyncManager() {};
 
-	virtual short* LockSoundBuf(size_t nSamples, ser::StatusTracker& stat) = 0;
+	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) = 0;
 	virtual void UnlockSoundBuf(ser::StatusTracker& stat) = 0;
 
 protected:
@@ -130,7 +144,7 @@ public:
 	                                      std::unique_ptr<ArLockableSurfaceConsumer> consumer,
 	                                      ser::StatusTracker& stat);
 
-	virtual short* LockSoundBuf(size_t nSamples, ser::StatusTracker& stat) override;
+	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) override;
 	virtual void UnlockSoundBuf(ser::StatusTracker& stat) override;
 	virtual void Finish(IDirect3DDevice9* device, ser::StatusTracker& stat) override;
 };
@@ -160,7 +174,7 @@ public:
 	                                ar_frame_idx nMaxFramesInFlight,
 	                                std::unique_ptr<ArLockableSurfaceConsumer> consumer,
 	                                ser::StatusTracker& stat);
-	virtual short* LockSoundBuf(size_t nSamples, ser::StatusTracker& stat) override;
+	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) override;
 	virtual void UnlockSoundBuf(ser::StatusTracker& stat) override;
 
 	virtual void Finish(IDirect3DDevice9* device, ser::StatusTracker& stat) override;
@@ -222,7 +236,7 @@ public:
 	                                   ar_frame_idx nMaxFramesInFlight,
 	                                   std::unique_ptr<ArLockableSurfaceConsumer> consumer,
 	                                   ser::StatusTracker& stat);
-	virtual short* LockSoundBuf(size_t nSamples, ser::StatusTracker& stat) override;
+	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) override;
 	virtual void UnlockSoundBuf(ser::StatusTracker& stat) override;
 
 	virtual void Finish(IDirect3DDevice9* device, ser::StatusTracker& stat) override;
