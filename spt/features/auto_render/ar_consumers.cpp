@@ -129,7 +129,7 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 	        .type = NUT_VIDEO_CLASS,
 	        .fourcc_len = 4,
 	        .fourcc = (uint8_t*)"BGR\0",
-	        .time_base{.num = 1000, .den = (int)(args.framerate * 1000)},
+	        .time_base{.num = 100000, .den = (int)(args.framerate * 100000)},
 	        .fixed_fps = 1,
 	        .width = (int)args.width,
 	        .height = (int)args.height,

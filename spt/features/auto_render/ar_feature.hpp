@@ -9,6 +9,36 @@
 struct ArRunningJob;
 struct IDirect3DDevice9;
 
+// RAII class that saves & restores the value of a cvars
+class ArCvarStorage
+{
+	ConVar* cvar;
+	std::string oldVal;
+
+public:
+	ArCvarStorage(ConVar* cvar, const char* newVal) : cvar(cvar), oldVal(cvar->GetString())
+	{
+		if (cvar)
+			cvar->SetValue(newVal);
+	};
+
+	ArCvarStorage(const char* cvarName, const char* newVal)
+	    : ArCvarStorage(g_pCVar ? g_pCVar->FindVar(cvarName) : nullptr, newVal) {};
+
+	ArCvarStorage(ArCvarStorage&) = delete;
+
+	ArCvarStorage(ArCvarStorage&& o) : cvar(o.cvar), oldVal(std::move(o.oldVal))
+	{
+		o.cvar = nullptr;
+	}
+
+	~ArCvarStorage()
+	{
+		if (cvar)
+			cvar->SetValue(oldVal.c_str());
+	};
+};
+
 enum ArSyncMode : int
 {
 	AR_SYNC_FULL,
@@ -31,18 +61,26 @@ struct ArDeferredMovieJob
 	std::optional<ar_frame_idx> maxNFrames;
 	ArSyncMode syncMode;
 	size_t nFramesInFlight; // only used if asyncMode != AR_SYNC_FULL
+	std::vector<ArCvarStorage> cvarStorage;
+	float volume;
+	bool captureAudio;
 };
 
 class AutoRenderFeature : public FeatureWrapper<AutoRenderFeature>
 {
 public:
+	// available during or after LoadFeature
+	bool SupportsAudioCapture();
+	std::vector<ArCvarStorage> MakeDefaultCvarStorage(float hostFrameRateVal);
+
 protected:
+	virtual bool ShouldLoadFeature() override;
 	virtual void InitHooks() override;
 	virtual void LoadFeature() override;
 	virtual void UnloadFeature() override;
 
 private:
-	char* cl_movieinfo_moviename = nullptr;
+	inline static ConVar* snd_lockpartial = nullptr;
 	static inline std::atomic<bool> imGuiCallbackActive = false;
 	static inline std::atomic<bool> queuedKillSignal = false;
 
@@ -54,16 +92,12 @@ private:
 	void OnShaderDevicePresentSignal(IDirect3DDevice9* device);
 	void ImGuiTabCallback();
 
-	struct portable_samplepair_t
-	{
-		int left;
-		int right;
-	};
+	DECL_STATIC_HOOK_THISCALL(void, CAudioDirectSound__TransferSamples, void*, int end);
 
 	DECL_STATIC_HOOK_CDECL(void,
 	                       S_TransferStereo16,
 	                       void* pOutput,
-	                       const portable_samplepair_t* pfront,
+	                       const void* pfront,
 	                       int lpaintedtime,
 	                       int endtime);
 

@@ -8,10 +8,13 @@
 
 #include "thirdparty/imgui/imgui_stdlib.h"
 
+#undef clamp
+
 #include <variant>
 #include <chrono>
 #include <mutex>
 
+// TODO remove this dependency
 #include <Rpc.h>
 #pragma comment(lib, "Rpcrt4")
 
@@ -19,14 +22,29 @@ struct ArRunningJob
 {
 	using clock = std::chrono::high_resolution_clock;
 
-	clock::time_point startTime;
+	clock::time_point lastMeasuredTime;
+	std::atomic<clock::duration> elapsedTime;
+	std::atomic<bool> lastStatePaused; // TODO - just rename this to consoleOpen
+
 	std::unique_ptr<ArAppResult> result;
 	std::optional<ar_frame_idx> maxConsumeFrames;
 	std::unique_ptr<ArSyncManager> mgr;
+	std::vector<ArCvarStorage> cvarStorage;
+	float volume;
+	bool captureAudio;
+
+	void IncrementElapsedTime(bool paused)
+	{
+		auto newLastMeasuredTime = clock::now();
+		if (!paused || !lastStatePaused)
+			elapsedTime.store(elapsedTime.load() + newLastMeasuredTime - lastMeasuredTime);
+		lastStatePaused.store(paused);
+		lastMeasuredTime = newLastMeasuredTime;
+	}
 
 	auto GetElapsedTime() const
 	{
-		return clock::now() - startTime;
+		return elapsedTime.load();
 	}
 };
 
@@ -35,7 +53,8 @@ namespace patterns
 	PATTERNS(S_TransferStereo16,
 	         "portal1-5135",
 	         "53 55 56 57 E8 ?? ?? ?? ?? D8 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 0D ?? ?? ?? ??");
-}
+	PATTERNS(CAudioDirectSound__TransferSamples, "portal1-5135", "83 EC 08 56 8B F1 80 7E ?? 00 57");
+} // namespace patterns
 
 class ArPlaceholder
 {
@@ -108,8 +127,7 @@ public:
 	AR_DEFINE_PLACEHOLDER(VID_HEIGHT,
 	                      "Input video height in pixels (set to whatever the game is currently running at)");
 	AR_DEFINE_PLACEHOLDER(FRAMERATE, "Input framerate");
-	// AR_DEFINE_PLACEHOLDER(VIDEO_PIPE_NAME, "Name of the video pipe that the raw frames will be fed to");
-	// AR_DEFINE_PLACEHOLDER(AUDIO_PIPE_NAME, "Name of the audio pipe that the stereo PCM will be fed to");
+	// AR_DEFINE_PLACEHOLDER(AUDIO_SAMPLERATE, "Device sample rate");
 	AR_DEFINE_PLACEHOLDER(PIPE_NAME, "Name of the pipe that the data will be fed to");
 	AR_DEFINE_PLACEHOLDER(RENDER_WORKING_DIR, "Working directory of the rendering application");
 	AR_DEFINE_PLACEHOLDER(GAME_WORKING_DIR, "Working directory of the game");
@@ -137,28 +155,24 @@ public:
 	static void SetDatetime();
 };
 
+bool AutoRenderFeature::ShouldLoadFeature()
+{
+	return !!g_pCVar;
+}
+
 void AutoRenderFeature::InitHooks()
 {
 	HOOK_FUNCTION(engine, S_TransferStereo16);
+	HOOK_FUNCTION(engine, CAudioDirectSound__TransferSamples);
+
+	// setup before LoadFeature()
+	snd_lockpartial = g_pCVar->FindVar("snd_lockpartial");
 }
 
 void AutoRenderFeature::LoadFeature()
 {
 	if (!ShaderDevicePresentSignal.Works || !SptImGui::Loaded())
 		return;
-
-	// find cl_movieinfo struct
-	if (!g_pCVar)
-		return;
-	const ConCommand* endmovieCmd = g_pCVar->FindCommand("endmovie");
-	if (!endmovieCmd)
-		return;
-	const byte* cbFunc = *(byte**)((byte*)endmovieCmd + sizeof(ConCommandBase));
-	if (!cbFunc)
-		return;
-	if (cbFunc[0] != 0x80 || cbFunc[1] != 0x3d || cbFunc[6] != 0x00) // cmp byte ptr [cl_movieinfo.moviename], 0
-		return;
-	cl_movieinfo_moviename = *(char**)(cbFunc + 2);
 
 	// fill in default placeholders
 
@@ -172,16 +186,12 @@ void AutoRenderFeature::LoadFeature()
 	ArPlaceholders::RENDER_WORKING_DIR.SetValue((workingDir / "spt_autorender").string());
 	ArPlaceholders::EXE_PATH.SetValue("C:\\YOUR_MOM\\ffmpeg.exe");
 	ArPlaceholders::FRAMERATE.SetValue("60");
+	// ArPlaceholders::AUDIO_SAMPLERATE.SetValue("44100"); // hardcoded
 
 	ArPlaceholders::RegenerateUuid();
 	ArPlaceholders::ResetPipeNames();
 
 	ShaderDevicePresentSignal.Connect(this, &AutoRenderFeature::OnShaderDevicePresentSignal);
-	/*InitCommand(spt_ar_screenshot);
-	InitCommand(spt_ar_profile);
-	InitCommand(spt_ar_stop_all);
-	InitCommand(spt_ar_startmovie);
-	InitCommand(spt_ar_startmovie_ffmpeg);*/
 
 	SptImGuiGroup::QoL_AutoRender.RegisterUserCallback([this]() { ImGuiTabCallback(); });
 }
@@ -189,6 +199,24 @@ void AutoRenderFeature::LoadFeature()
 void AutoRenderFeature::UnloadFeature()
 {
 	runningMovieJob.store(nullptr);
+}
+
+bool AutoRenderFeature::SupportsAudioCapture()
+{
+	return !!snd_lockpartial && ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16;
+}
+
+std::vector<ArCvarStorage> AutoRenderFeature::MakeDefaultCvarStorage(float hostFrameRateVal)
+{
+	std::vector<ArCvarStorage> ret;
+	ret.emplace_back("sv_cheats", "1");
+	ret.emplace_back("volume", "0");
+	ret.emplace_back("host_framerate", std::to_string(hostFrameRateVal).c_str()); // TODO substitute
+	ret.emplace_back("gl_clear", "1");                                            // TODO make this optional
+	ret.emplace_back("spt_focus_nosleep", "1");
+	ret.emplace_back("spt_disable_tone_map_reset", "1");
+	ret.emplace_back("spt_override_tpose", "17");
+	return ret;
 }
 
 void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
@@ -214,6 +242,7 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
 
 	bool frameSubmitted = false;
 	auto runningJobCopy = runningMovieJob.load();
+	bool jobPaused = false;
 	// this only runs up to 2 loops
 	while (deferredJobCopy || (runningJobCopy && !frameSubmitted))
 	{
@@ -231,11 +260,16 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
 			bool kill =
 			    deferredJobCopy || queuedKillSignal.exchange(false) || !runningJobCopy->result->stat.Ok();
 
+			jobPaused = interfaces::engine_tool->IsConsoleVisible();
 			if (!kill)
 			{
-				runningJobCopy->mgr->OnDevicePresent(device, runningJobCopy->result->stat);
-				frameSubmitted = true;
-				kill = !runningJobCopy->result->stat.Ok();
+				// audio hook won't be called if console is visible, so don't submit frames
+				if (!jobPaused)
+				{
+					runningJobCopy->mgr->OnDevicePresent(device, runningJobCopy->result->stat);
+					frameSubmitted = true; // TODO bad name
+					kill = !runningJobCopy->result->stat.Ok();
+				}
 			}
 			if (!kill && runningJobCopy->maxConsumeFrames.has_value())
 			{
@@ -243,6 +277,7 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
 				kill = runningJobCopy->mgr->GetNumConsumedFrames()
 				       >= runningJobCopy->maxConsumeFrames.value();
 			}
+			runningJobCopy->IncrementElapsedTime(jobPaused);
 			if (kill)
 			{
 				ser::StatusTracker finishStat;
@@ -255,6 +290,10 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
 				// TODO a bit botched innit?
 				runningJobCopy.reset();
 				runningMovieJob.store(nullptr);
+			}
+			else if (jobPaused)
+			{
+				break; // TODO add to while loop condition
 			}
 		}
 
@@ -303,16 +342,20 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
 			if (stat.Ok())
 			{
 				runningJobCopy = std::make_shared<ArRunningJob>(startTime,
+				                                                ArRunningJob::clock::duration(),
+				                                                false,
 				                                                std::move(deferredJobCopy->result),
 				                                                deferredJobCopy->maxNFrames,
-				                                                std::move(mgr));
+				                                                std::move(mgr),
+				                                                std::move(deferredJobCopy->cvarStorage),
+				                                                deferredJobCopy->volume,
+				                                                deferredJobCopy->captureAudio);
 				runningMovieJob.store(runningJobCopy);
 				frameSubmitted = false;
 				ArPlaceholders::ResetPipeNames();
 			}
 
 			// TODO save cvars, maybe wait until next frame or something to submit first frame?
-			strcpy(cl_movieinfo_moviename, "spt_autorender");
 
 			deferredJobCopy.reset();
 		}
@@ -334,6 +377,9 @@ void AutoRenderFeature::ImGuiTabCallback()
 		std::vector<std::string> unrecognizedPlaceholders;
 
 		float fpsVal = std::stoi(*ArPlaceholders::FRAMERATE.GetValue());
+		float playbackSpeed = 1.f;
+		float volume = .5f;
+		bool captureAudio = true;
 
 	} static persist;
 
@@ -352,18 +398,21 @@ void AutoRenderFeature::ImGuiTabCallback()
 
 		if (jobRunning)
 		{
-			ar_frame_idx nConsumedFrames = runningJobCopy->mgr->GetNumConsumedFrames();
-			std::optional<ar_frame_idx> nMaxFrames = runningJobCopy->maxConsumeFrames;
-			ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Status: RUNNING"); // TODO add paused state
+			if (runningJobCopy->lastStatePaused)
+				ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Status: PAUSED (console is open)");
+			else
+				ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Status: RUNNING");
 			auto elapsedMs =
 			    std::chrono::round<std::chrono::milliseconds>(runningJobCopy->GetElapsedTime());
 			ImGui::Text("Elapsed time: %s", std::format("{:%T}", elapsedMs).c_str());
+			ar_frame_idx nConsumedFrames = runningJobCopy->mgr->GetNumConsumedFrames();
 			if (nConsumedFrames > 0)
 			{
 				ImGui::SameLine();
 				ImGui::Text("(%.3fms/frame)", (float)elapsedMs.count() / nConsumedFrames);
 			}
 
+			std::optional<ar_frame_idx> nMaxFrames = runningJobCopy->maxConsumeFrames;
 			if (nMaxFrames)
 				ImGui::Text("Consumed %u/%u frames", nConsumedFrames, nMaxFrames.value());
 			else
@@ -404,12 +453,10 @@ void AutoRenderFeature::ImGuiTabCallback()
 			                              &persist.unrecognizedPlaceholders);
 		}
 
-		deferredMovieJob.exchange(std::make_shared<ArDeferredMovieJob>(
+		deferredMovieJob.store(std::make_shared<ArDeferredMovieJob>(
 		    ArFfmpegWriter::InitArgs{
 		        .ffmpegWorkingDir = ArUtf8ToUtf16(ArPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str()),
 		        .cmd = ArUtf8ToUtf16(persist.cmdLineFormatted.c_str()),
-		        // .videoPipeName = ArUtf8ToUtf16(ArPlaceholders::VIDEO_PIPE_NAME.GetValue()->c_str()),
-		        // .audioPipeName = ArUtf8ToUtf16(ArPlaceholders::AUDIO_PIPE_NAME.GetValue()->c_str()),
 		        .pipeName = ArUtf8ToUtf16(ArPlaceholders::PIPE_NAME.GetValue()->c_str()),
 		        .width = (size_t)atoi(ArPlaceholders::VID_WIDTH.GetValue()->c_str()),
 		        .height = (size_t)atoi(ArPlaceholders::VID_HEIGHT.GetValue()->c_str()),
@@ -418,7 +465,10 @@ void AutoRenderFeature::ImGuiTabCallback()
 		    std::make_unique<ArAppResult>(),
 		    std::nullopt, // TODO - maxFrames
 		    persist.syncMode,
-		    (size_t)persist.nFramesInFlight));
+		    (size_t)persist.nFramesInFlight,
+		    MakeDefaultCvarStorage(persist.fpsVal / persist.playbackSpeed),
+		    persist.volume,
+		    persist.captureAudio));
 	}
 	ImGui::EndDisabled();
 
@@ -494,9 +544,25 @@ void AutoRenderFeature::ImGuiTabCallback()
 
 	if (ImGui::InputFloat("Framerate", &persist.fpsVal))
 	{
-		persist.fpsVal = clamp(persist.fpsVal, 0.001f, 100'000);
+		persist.fpsVal = std::clamp(persist.fpsVal, 1.f, 500.f);
 		ArPlaceholders::FRAMERATE.SetValue(std::to_string(persist.fpsVal));
 	}
+
+	if (ImGui::InputFloat("Playback speed", &persist.playbackSpeed))
+		persist.playbackSpeed = std::clamp(persist.playbackSpeed, 0.001f, 1000.f);
+
+	// audio
+
+	bool hasSupport = spt_auto_render_feat.SupportsAudioCapture();
+	persist.captureAudio &= hasSupport;
+	ImGui::BeginDisabled(!hasSupport);
+	ImGui::Checkbox("Capture audio", &persist.captureAudio);
+	ImGui::BeginDisabled(!persist.captureAudio);
+	ImGui::SliderFloat("Volume", &persist.volume, 0.f, 1.f, nullptr, ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SameLine();
+	SptImGui::HelpMarker("This behaves pretty much the same as the normal game volume, but is independent of it.");
+	ImGui::EndDisabled();
+	ImGui::EndDisabled();
 
 	// TODO - option for different videohook
 	// TODO - option for rendering demos or number of frames
@@ -641,31 +707,9 @@ bool ArPlaceholders::FindFFmpeg()
 // TODO add option to export without audio hook
 std::string ArPlaceholders::CreateDefaultCmdLine()
 {
-#if 0
 	return std::format(
 	    "\"{0}\" -report -nostdin "
-#if 0
-	    "-loglevel debug "
-#endif
-	    "-f rawvideo -pixel_format bgr0 -video_size {1}x{2} -framerate {3} -i \"{4}\" "
-#if 1
-	    "-f s16le -ar 44100 -ac 2 -i \"{5}\" "
-#endif
-	    "-y -c:v libx264 -pix_fmt yuv420p -crf 18 "
-	    "-c:a aac -b:a 192k "
-	    "-shortest -preset veryfast \"{6}\\{7}.mp4\"",
-	    ArPlaceholders::EXE_PATH.UnformattedKey(),
-	    ArPlaceholders::VID_WIDTH.UnformattedKey(),
-	    ArPlaceholders::VID_HEIGHT.UnformattedKey(),
-	    ArPlaceholders::FRAMERATE.UnformattedKey(),
-	    ArPlaceholders::VIDEO_PIPE_NAME.UnformattedKey(),
-	    ArPlaceholders::AUDIO_PIPE_NAME.UnformattedKey(),
-	    ArPlaceholders::RENDER_WORKING_DIR.UnformattedKey(),
-	    ArPlaceholders::DATE_TIME.UnformattedKey());
-#else
-	return std::format(
-	    "\"{0}\" -report -nostdin "
-	    "-f nut  -i \"{1}\" "
+	    "-f nut -i \"{1}\" "
 	    "-y -c:v libx264 -pix_fmt yuv420p -crf 18 "
 	    "-c:a aac -b:a 192k "
 	    "-shortest -preset veryfast \"{2}\\{3}.mp4\"",
@@ -673,7 +717,6 @@ std::string ArPlaceholders::CreateDefaultCmdLine()
 	    ArPlaceholders::PIPE_NAME.UnformattedKey(),
 	    ArPlaceholders::RENDER_WORKING_DIR.UnformattedKey(),
 	    ArPlaceholders::DATE_TIME.UnformattedKey());
-#endif
 }
 
 void ArPlaceholders::FormatCmdLine(const std::string& unformatted,
@@ -797,29 +840,54 @@ void ArPlaceholders::SetDatetime()
 	ArPlaceholders::DATE_TIME.SetValue(std::format("{0:%F}_{0:%H}-{0:%M}-{0:%S}", localNow));
 }
 
+IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, void*, int end)
+{
+	bool recordingAudio = !!runningMovieJob.load();
+
+	if (recordingAudio)
+	{
+		// force the code in the game to call S_TransferStereo16
+
+		struct CAudioDeviceBase
+		{
+			void* vt;
+			bool m_bSurround;
+		};
+
+		CAudioDeviceBase* audioDev = (CAudioDeviceBase*)thisptr;
+
+		ArCvarStorage lockPartial(snd_lockpartial, "0");
+		bool oldSurroundVal = audioDev->m_bSurround;
+		audioDev->m_bSurround = false;
+		ORIG_CAudioDirectSound__TransferSamples(thisptr, end);
+		audioDev->m_bSurround = oldSurroundVal;
+	}
+	else
+	{
+		ORIG_CAudioDirectSound__TransferSamples(thisptr, end);
+	}
+}
+
 // TODO add handling for when we don't have an audio hook
 IMPL_HOOK_CDECL(AutoRenderFeature,
                 void,
                 S_TransferStereo16,
                 void* pOutput,
-                const portable_samplepair_t* pfront,
+                const void* pfront,
                 int lpaintedtime,
                 int endtime)
 {
 	ORIG_S_TransferStereo16(pOutput, pfront, lpaintedtime, endtime);
 
-	auto runningJobCopy = runningMovieJob.load();
-	if (!runningJobCopy)
-		return;
-
 	int nPairs = endtime - lpaintedtime;
 	if (nPairs <= 0)
 		return;
 
-	// const int* src = reinterpret_cast<const int*>(pfront + lpaintedtime);
+	auto runningJobCopy = runningMovieJob.load();
+	if (!runningJobCopy || (runningJobCopy && runningJobCopy->lastStatePaused))
+		return;
 
-	float masterVol = 0.5f; // TODO get volume cvar
-	int vol = static_cast<int>(masterVol * 256.0f);
+	// TODO we can record while the console is open!
 
 	// error will get picked up by the render thread
 	ser::StatusTracker stat;
@@ -827,16 +895,12 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	if (!outBuf || !stat.Ok())
 		return;
 
-	/*std::filesystem::path tmp = "G:\\Games\\portal\\Portal Source\\spt_autorender\\test.wav";
-	std::ofstream f(tmp, std::ios::binary | std::ios::app);
-	std::vector<short> outBuf(nPairs * 2);*/
-
+	float vol = runningJobCopy->volume;
 	for (int i = 0; i < nPairs * 2; i++)
 	{
-		int sample = (((int*)pfront)[i] * vol) >> 8;
-		outBuf[i] = static_cast<short>(clamp(sample, -32768, 32767));
+		float sample = ((int*)pfront)[i] * vol;
+		outBuf[i] = static_cast<short>(std::clamp(sample, -32768.f, 32767.f));
 	}
 
 	runningJobCopy->mgr->UnlockSoundBuf(stat);
-	// f.write((const char*)outBuf.data(), outBuf.size() * sizeof(short));
 }
