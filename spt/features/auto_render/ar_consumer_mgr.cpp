@@ -49,7 +49,7 @@ void ArSynchronousConsumerManager::UnlockSoundBuf(ser::StatusTracker& stat)
 	consumeMtx.unlock();
 }
 
-void ArSynchronousConsumerManager::Finish(IDirect3DDevice9* device, ser::StatusTracker& stat)
+void ArSynchronousConsumerManager::Finish(ser::StatusTracker& stat)
 {
 	consumer->Finish();
 }
@@ -73,114 +73,6 @@ void ArSynchronousConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_i
 
 	std::lock_guard lk(consumeMtx);
 	consumer->LockAndConsume(offScreenSurface.Get(), frameNum, stat);
-}
-
-ArAsyncConsumerManager::ArAsyncConsumerManager(IDirect3DDevice9* device,
-                                               D3DFORMAT format,
-                                               ar_frame_idx nMaxFramesInFlight,
-                                               std::unique_ptr<ArLockableSurfaceConsumer> consumer,
-                                               ser::StatusTracker& stat)
-    : consumer(std::move(consumer)), slots(nMaxFramesInFlight)
-{
-	if (nMaxFramesInFlight == 0)
-	{
-		stat.Err(std::format("[{}]: nMaxFramesInFlight must be > 0", __FUNCTION__));
-		return;
-	}
-
-	auto [_, desc] = ArGetBackBufferInfo(device, stat);
-	if (!stat.Ok())
-		return;
-	if (format != desc.Format)
-	{
-		stat.Err(std::format("[{}]: back buffer has format {}, expected {}",
-		                     __FUNCTION__,
-		                     (int)desc.Format,
-		                     (int)format));
-		return;
-	}
-
-	auto rts = ArCreateRenderTargets(device, format, nMaxFramesInFlight, desc.Width, desc.Height, stat);
-	auto oss = ArCreateOffscreenSurfaces(device, format, nMaxFramesInFlight, desc.Width, desc.Height, stat);
-	if (!stat.Ok())
-		return;
-
-	for (ar_frame_idx i = 0; i < nMaxFramesInFlight; i++)
-	{
-		auto& slot = slots[i];
-		slot.renderTarget = std::move(rts[i]);
-		slot.offScreenSurf = std::move(oss[i]);
-	}
-}
-
-short* ArAsyncConsumerManager::LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat)
-{
-	// for now this behaves the same as the synchronous manager - this could be improved if we used async pipes
-	consumeMtx.lock();
-	soundBuf.resize(nSamplePairs * 2);
-	return soundBuf.data();
-}
-
-void ArAsyncConsumerManager::UnlockSoundBuf(ser::StatusTracker& stat)
-{
-	consumer->ConsumeAudio(soundBuf.data(), soundBuf.size() / 2, stat);
-	consumeMtx.unlock();
-}
-
-void ArAsyncConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx frameNum, ser::StatusTracker& stat)
-{
-	if (!stat.Ok())
-		return;
-
-	auto& slot = slots[frameNum % slots.size()];
-
-	if (slot.hasData)
-	{
-		// this slot is full, we have to consume it before we can proceed
-		Assert(frameNum == nFramesProcessedByConsumer + slots.size());
-		consumeMtx.lock();
-		consumer->LockAndConsume(slot.offScreenSurf.Get(), nFramesProcessedByConsumer, stat);
-		consumeMtx.unlock();
-		if (!stat.Ok())
-			return;
-		slot.hasData = false;
-		nFramesProcessedByConsumer++;
-	}
-
-	// queue the next frame asynchronously
-
-	auto [backBuf, desc] = ArGetBackBufferInfo(device, stat);
-	if (!stat.Ok())
-		return;
-
-	ArStretchToRenderTarget(device, backBuf.Get(), slot.renderTarget.Get(), stat);
-	if (!stat.Ok())
-		return;
-
-	HRESULT hr = device->GetRenderTargetData(slot.renderTarget.Get(), slot.offScreenSurf.Get());
-	if (FAILED(hr))
-	{
-		stat.Err("[" __FUNCTION__ "]: IDirect3DDevice9::GetRenderTargetData failed");
-		return;
-	}
-
-	slot.hasData = true;
-}
-
-void ArAsyncConsumerManager::Finish(IDirect3DDevice9* device, ser::StatusTracker& stat)
-{
-	for (ar_frame_idx i = nFramesProcessedByConsumer; i < GetNumConsumedFrames(); i++)
-	{
-		auto& slot = slots[i % slots.size()];
-		if (slot.hasData)
-		{
-			consumer->LockAndConsume(slot.offScreenSurf.Get(), i, stat);
-			if (!stat.Ok())
-				return;
-			slot.hasData = false;
-		}
-	}
-	consumer->Finish();
 }
 
 ArThreadedConsumerManager::~ArThreadedConsumerManager()
@@ -423,7 +315,7 @@ void ArThreadedConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx 
 	cv.notify_all(); // error or slot has data
 }
 
-void ArThreadedConsumerManager::Finish(IDirect3DDevice9* device, ser::StatusTracker& stat)
+void ArThreadedConsumerManager::Finish(ser::StatusTracker& stat)
 {
 	StopAndJoinWorkers();
 

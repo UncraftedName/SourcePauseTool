@@ -40,9 +40,20 @@ void ArLockableSurfaceConsumer::LockAndConsume(IDirect3DSurface9* offScreenSurfa
 	}
 }
 
-ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnCode, ser::StatusTracker& stat)
-    : ffmpegReturnCode(procReturnCode)
+#define AR_DO_NUTLIB_CALL(func_with_args, stat_) \
+	do \
+	{ \
+		std::unique_lock nutLibLk(nutLibMtx); \
+		nutLibUData.stat = &stat_; \
+		func_with_args; \
+		nutLibUData.stat = nullptr; \
+	} while (0)
+
+ArFfmpegWriter::ArFfmpegWriter(const InitArgs& args, std::optional<DWORD>& procReturnCode, ser::StatusTracker& stat)
+    : captureAudio(args.captureAudio), ffmpegReturnCode(procReturnCode)
 {
+	// create working dir
+
 	std::error_code ec;
 	std::filesystem::create_directories(args.ffmpegWorkingDir, ec);
 	if (ec)
@@ -51,56 +62,45 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 		return;
 	}
 
-	/*struct
-	{
-		HANDLE& handle;
-		const wchar* name;
-		size_t initSize;
-	} pipeInfos[2]{
-	    {videoPipe, args.videoPipeName.c_str(), args.width * args.height * 4 * 20},
-	    {audioPipe, args.audioPipeName.c_str(), (size_t)(44100.f / args.framerate * sizeof(short) * 2)},
-	};
+	// create pipe
 
-	for (auto& pipeInfo : pipeInfos)
-	{
-		if (!pipeInfo.name)
-			continue;
-		// TODO make overlapped to allow for abort
-		pipeInfo.handle = CreateNamedPipeW(pipeInfo.name,
-		                                   PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE,
-		                                   PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
-		                                   1,
-		                                   pipeInfo.initSize,
-		                                   0,
-		                                   0,
-		                                   nullptr);
-		if (pipeInfo.handle == INVALID_HANDLE_VALUE)
-		{
-			stat.Err(std::format("[{}]: CreateNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
-			return;
-		}
-	}*/
-
-	pipe = CreateNamedPipeW(args.pipeName.c_str(),
-	                        PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE,
-	                        PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
-	                        1,
-	                        args.width * args.height * 4 * 2,
-	                        0,
-	                        0,
-	                        nullptr);
-	if (pipe == INVALID_HANDLE_VALUE)
+	hPipe = CreateNamedPipeW(args.pipeName.c_str(),
+	                         PIPE_ACCESS_OUTBOUND | FILE_FLAG_FIRST_PIPE_INSTANCE | FILE_FLAG_OVERLAPPED,
+	                         PIPE_TYPE_BYTE | PIPE_WAIT | PIPE_ACCEPT_REMOTE_CLIENTS,
+	                         1,
+	                         args.width * args.height * 4 * 3, // set pipe size to 3 frames
+	                         0,
+	                         0,
+	                         nullptr);
+	if (hPipe == INVALID_HANDLE_VALUE)
 	{
 		stat.Err(std::format("[{}]: CreateNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		hPipe.reset();
 		return;
 	}
+
+	// create overlapped events
+
+	for (auto& ov : overlappedArr)
+	{
+		ov.hEvent = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+		if (ov.hEvent == NULL)
+		{
+			stat.Err(std::format("[{}]: CreateEventW failed: {}", __FUNCTION__, ArLastErrorAsString()));
+			return;
+		}
+	}
+
+	// init process
 
 	STARTUPINFOW si = {
 	    .cb = sizeof(si),
 	};
 
+	auto cmdCopy = args.cmd; // cmdLine must be modifyable, make a copy
+	ffmpegProc.emplace();
 	if (!CreateProcessW(nullptr,
-	                    args.cmd.data(),
+	                    cmdCopy.data(),
 	                    nullptr,
 	                    nullptr,
 	                    FALSE,
@@ -108,86 +108,143 @@ ArFfmpegWriter::ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& procReturnC
 	                    nullptr,
 	                    args.ffmpegWorkingDir.c_str(),
 	                    &si,
-	                    &ffmpegProc))
+	                    &ffmpegProc.value()))
 	{
 		stat.Err(std::format("[{}]: CreateProcess failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		ffmpegProc.reset();
 		return;
 	}
-
-	procValid = true;
 
 	// TODO test at lower framerate values, check if audio gets desynced
 	// TODO round framerate to 0.001 in imgui
 
-	// TODO pass in placeholders to here
-
 	// you can get the fourcc codes from https://git.ffmpeg.org/gitweb/nut.git/blob/HEAD:/docs/nut4cc.txt
 
+	int i = 0;
+	std::array<nut_stream_header_tt, 3> sh;
+
 	// video must be index 0, audio must be index 1
-	nut_stream_header_tt sh[3]{
-	    {
-	        .type = NUT_VIDEO_CLASS,
-	        .fourcc_len = 4,
-	        .fourcc = (uint8_t*)"BGR\0",
-	        .time_base{.num = 100000, .den = (int)(args.framerate * 100000)},
-	        .fixed_fps = 1,
-	        .width = (int)args.width,
-	        .height = (int)args.height,
-	        .sample_width = 1, // TODO can I just set both of these to 0?
-	        .sample_height = 1,
-	    },
-	    {
-	        .type = NUT_AUDIO_CLASS,
-	        .fourcc_len = 4,
-	        .fourcc = (uint8_t*)"PSD\x10",
-	        .time_base{.num = 1, .den = 44100},
-	        .samplerate_num = 44100,
-	        .samplerate_denom = 1,
-	        .channel_count = 2,
-	    },
-	    {
-	        .type = -1,
-	    },
+
+	sh[i++] = nut_stream_header_tt{
+	    .type = NUT_VIDEO_CLASS,
+	    .fourcc_len = 4,
+	    .fourcc = (uint8_t*)"BGR\0",
+	    .time_base{.num = 100000, .den = (int)(args.framerate * 100000)},
+	    .fixed_fps = 1,
+	    .width = (int)args.width,
+	    .height = (int)args.height,
+	    .sample_width = 1, // TODO can I just set both of these to 0?
+	    .sample_height = 1,
 	};
 
+	if (args.captureAudio)
+	{
+		sh[i++] = nut_stream_header_tt{
+		    .type = NUT_AUDIO_CLASS,
+		    .fourcc_len = 4,
+		    .fourcc = (uint8_t*)"PSD\x10",
+		    .time_base{.num = 1, .den = 44100},
+		    .samplerate_num = 44100,
+		    .samplerate_denom = 1,
+		    .channel_count = 2,
+		};
+	}
+
+	sh[i++].type = -1;
+
 	nut_muxer_opts_tt opts{
-	    .output{.priv = this, .write = &ArFfmpegWriter::FfmpegWrite},
+	    .output{.priv = &nutLibUData, .write = &ArFfmpegWriter::FfmpegWrite},
 	    .realtime_stream = 1,
 	    .max_distance = 32768,
 	};
 
-	context = nut_muxer_init(&opts, sh, nullptr);
+	AR_DO_NUTLIB_CALL(context = nut_muxer_init(&opts, sh.data(), nullptr), stat);
 }
 
 int ArFfmpegWriter::FfmpegWrite(void* priv, size_t len, const uint8_t* buf)
 {
-	ArFfmpegWriter* thisptr = static_cast<ArFfmpegWriter*>(priv);
+	NutLibWriterUserData* uData = static_cast<NutLibWriterUserData*>(priv);
+	Assert(!!uData && !!uData->thisptr && !!uData->stat);
+	return uData->thisptr->FfmpegWriteImpl(len, buf, *uData->stat);
+}
 
-	if (!thisptr->writerStat.Ok())
+int ArFfmpegWriter::FfmpegWriteImpl(size_t len, const uint8_t* buf, ser::StatusTracker& stat)
+{
+	if (!stat.Ok())
 		return 0;
 
-	if (!thisptr->pipeConnected)
+	EnsurePipeConnected(stat);
+	if (!stat.Ok())
+		return 0;
+
+	// TODO implement async writes properly, uhhhhh can I????
+	// I guess just use one OVERLAPPED struct
+
+	// allow up to overlappedArr.size() async writes at a time
+	LPOVERLAPPED ov = &overlappedArr[overlappedWriteIdx % overlappedArr.size()];
+	/*if (overlappedWriteIdx >= overlappedArr.size())
 	{
-		BOOL connected =
-		    ConnectNamedPipe(thisptr->pipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
-		if (!connected)
+		// wait for previous write to finish
+		BOOL waitRet = WaitForSingleObject(ov->hEvent, INFINITE);
+		if (waitRet != WAIT_OBJECT_0)
 		{
-			thisptr->writerStat.Err(
-			    std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+			stat.Err(std::format("[{}]: WaitForSingleObject for async write failed: {}",
+			                     __FUNCTION__,
+			                     ArLastErrorAsString()));
 			return 0;
 		}
-		thisptr->pipeConnected = true;
+	}*/
+	overlappedWriteIdx++;
+	BOOL writeRet = WriteFile(hPipe.value(), buf, len, nullptr, ov);
+	if (!writeRet && GetLastError() != ERROR_IO_PENDING)
+	{
+		stat.Err(std::format("[{}]: WriteFile for async pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+		return 0;
 	}
 
-	DWORD nWritten;
-	if (!WriteFile(thisptr->pipe, buf, len, &nWritten, nullptr) || nWritten != len)
+	// TODO wait synchronously for the write to finish (data must remain valid for entire write)
+	BOOL waitRet = WaitForSingleObject(ov->hEvent, INFINITE);
+	if (waitRet != WAIT_OBJECT_0)
 	{
-		thisptr->writerStat.Err(
-		    std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
-		return nWritten;
+		stat.Err(std::format("[{}]: WaitForSingleObject for async write failed: {}",
+		                     __FUNCTION__,
+		                     ArLastErrorAsString()));
+		return 0;
 	}
 
 	return len;
+}
+
+void ArFfmpegWriter::EnsurePipeConnected(ser::StatusTracker& stat)
+{
+	if (pipeConnected)
+		return;
+
+	// connect synchronously
+
+	constexpr DWORD connectTimeout = 1000;
+
+	LPOVERLAPPED overlapped = &overlappedArr[0];
+	ConnectNamedPipe(hPipe.value(), overlapped);
+	DWORD err = GetLastError();
+	if (err == ERROR_IO_PENDING)
+	{
+		// if ffmpeg gets an unknown option it'll stop before it connects to the pipe
+		DWORD waitRet = WaitForSingleObject(overlapped->hEvent, connectTimeout);
+		if (waitRet == WAIT_TIMEOUT)
+			AR_STAT_FUNC_ERR_V(stat, "ConnectNamedPipe timed out after {}ms", connectTimeout);
+		if (waitRet != WAIT_OBJECT_0)
+			AR_STAT_FUNC_WIN_ERR(stat, "WaitForSingleObject for ConnectNamedPipe failed");
+	}
+	else if (err != ERROR_PIPE_CONNECTED)
+	{
+		AR_STAT_FUNC_WIN_ERR(stat, "ConnectNamedPipe failed");
+	}
+
+	for (auto& ov : overlappedArr)
+		SetEvent(ov.hEvent); // reset all events to signalled before writing
+
+	pipeConnected = stat.Ok();
 }
 
 // TODO misspelling -pixel_format hangs somewhere...
@@ -196,51 +253,16 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
                              ar_frame_idx idx,
                              ser::StatusTracker& stat)
 {
-	/*DWORD exitCode;
-	if (!!GetExitCodeProcess(ffmpegProc.hProcess, &exitCode) && exitCode != STILL_ACTIVE)
-	{
-		stat.Err("[" __FUNCTION__ "]: the process has stopped prematurely");
+	std::shared_lock destroyLk(destroyMtx);
+
+	if (!context)
 		return;
-	}*/
+
 	if (desc.Format != D3DFMT_A8R8G8B8)
 	{
-		stat.Err("[" __FUNCTION__ "]: unexpected surface format");
+		AR_STAT_FUNC_ERR(stat, "unexpected surface format");
 		return;
 	}
-
-	/*BOOL connected = ConnectNamedPipe(videoPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
-	if (!connected)
-	{
-		stat.Err(std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
-		return;
-	}
-
-	if ((DWORD)rect.Pitch == desc.Width * 4)
-	{
-		// write full frame
-		DWORD nToWrite = desc.Width * desc.Height * 4;
-		DWORD nWritten;
-		if (!WriteFile(videoPipe, rect.pBits, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
-			stat.Err(
-			    std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
-	}
-	else
-	{
-		// write row by row
-		DWORD nToWrite = rect.Pitch;
-		DWORD nWritten;
-		for (DWORD i = 0; i < desc.Height; i++)
-		{
-			if (!WriteFile(videoPipe, (std::byte*)rect.pBits + rect.Pitch * i, nToWrite, &nWritten, nullptr)
-			    || nWritten != nToWrite)
-			{
-				stat.Err(std::format("[{}]: WriteFile for pipe failed: {}",
-				                     __FUNCTION__,
-				                     ArLastErrorAsString()));
-				return;
-			}
-		}
-	}*/
 
 	if ((DWORD)rect.Pitch != desc.Width * 4)
 	{
@@ -256,65 +278,16 @@ void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
 	    .next_pts = idx + 1,
 	};
 
-	// TODO check for error
-	std::lock_guard lk(nutLock);
-	if (context)
-		nut_write_frame_reorder(context, &pkt, (const uint8_t*)rect.pBits);
-	if (!writerStat.Ok())
-		stat.Concat(std::move(writerStat));
-}
-
-void ArFfmpegWriter::StopFfmpeg()
-{
-	/*std::reference_wrapper<HANDLE> namedPipes[2] = {videoPipe, audioPipe};
-	for (HANDLE& namedPipe : namedPipes)
-	{
-		if (namedPipe == INVALID_HANDLE_VALUE)
-			continue;
-		FlushFileBuffers(namedPipe);
-		DisconnectNamedPipe(namedPipe);
-		CloseHandle(namedPipe);
-		namedPipe = INVALID_HANDLE_VALUE;
-	}*/
-
-	{
-		std::lock_guard lk(nutLock);
-		nut_muxer_uninit_reorder(context);
-		context = nullptr;
-	}
-
-	if (pipeConnected)
-	{
-		FlushFileBuffers(pipe);
-		DisconnectNamedPipe(pipe);
-	}
-	CloseHandle(pipe);
-	pipe = INVALID_HANDLE_VALUE;
-
-	if (procValid)
-	{
-		WaitForSingleObject(ffmpegProc.hProcess, INFINITE);
-		ffmpegReturnCode = -1;
-		if (!GetExitCodeProcess(ffmpegProc.hProcess, &ffmpegReturnCode.value()))
-			ffmpegReturnCode.reset();
-		CloseHandle(ffmpegProc.hProcess);
-		CloseHandle(ffmpegProc.hThread);
-		procValid = false;
-	}
+	AR_DO_NUTLIB_CALL(nut_write_frame_reorder(context, &pkt, (const uint8_t*)rect.pBits), stat);
 }
 
 void ArFfmpegWriter::ConsumeAudio(const short* lrPcmSamples, size_t nSamplePairs, ser::StatusTracker& stat)
 {
-	/*BOOL connected = ConnectNamedPipe(audioPipe, nullptr) ? TRUE : (GetLastError() == ERROR_PIPE_CONNECTED);
-	if (!connected)
-	{
-		stat.Err(std::format("[{}]: ConnectNamedPipe failed: {}", __FUNCTION__, ArLastErrorAsString()));
+	std::shared_lock destroyLk(destroyMtx);
+
+	Assert(captureAudio);
+	if (!captureAudio || !context)
 		return;
-	}
-	DWORD nToWrite = nSamples * sizeof(*lrPcmSamples);
-	DWORD nWritten;
-	if (!WriteFile(audioPipe, lrPcmSamples, nToWrite, &nWritten, nullptr) || nWritten != nToWrite)
-		stat.Err(std::format("[{}]: WriteFile for pipe failed: {}", __FUNCTION__, ArLastErrorAsString()));*/
 
 	nut_packet_tt pkt{
 	    .len = (int)(nSamplePairs * 2 * sizeof(*lrPcmSamples)),
@@ -325,10 +298,59 @@ void ArFfmpegWriter::ConsumeAudio(const short* lrPcmSamples, size_t nSamplePairs
 	};
 	nAudioSamplePairsWritten += nSamplePairs;
 
-	// TODO check for error
-	std::lock_guard lk(nutLock);
-	if (context)
-		nut_write_frame_reorder(context, &pkt, (const uint8_t*)lrPcmSamples);
+	AR_DO_NUTLIB_CALL(nut_write_frame_reorder(context, &pkt, (const uint8_t*)lrPcmSamples), stat);
+}
+
+void ArFfmpegWriter::StopFfmpeg()
+{
+	std::unique_lock destroyLk(destroyMtx);
+
+	// flush & kill nutlib
+
+	ser::StatusTracker tmpStat;
+	AR_DO_NUTLIB_CALL(nut_muxer_uninit_reorder(context), tmpStat);
+	context = nullptr;
+
+	// flush pipe
+
+	if (pipeConnected)
+		FlushFileBuffers(hPipe.value()); // this should be sufficient instead of waiting for all async write
+
+	for (auto& ov : overlappedArr)
+	{
+		if (ov.hEvent != NULL)
+		{
+			CloseHandle(ov.hEvent);
+			ov.hEvent = nullptr;
+		}
+	}
+
+	if (pipeConnected)
+	{
+		DisconnectNamedPipe(hPipe.value());
+		pipeConnected = false;
+	}
+
+	// kill pipe
+
+	if (hPipe.has_value())
+	{
+		CloseHandle(hPipe.value());
+		hPipe.reset();
+	}
+
+	// kill process
+
+	if (ffmpegProc.has_value())
+	{
+		WaitForSingleObject(ffmpegProc.value().hProcess, INFINITE);
+		ffmpegReturnCode = -1;
+		if (!GetExitCodeProcess(ffmpegProc.value().hProcess, &ffmpegReturnCode.value()))
+			ffmpegReturnCode.reset();
+		CloseHandle(ffmpegProc.value().hProcess);
+		CloseHandle(ffmpegProc.value().hThread);
+		ffmpegProc.reset();
+	}
 }
 
 void ArFfmpegWriter::Finish()

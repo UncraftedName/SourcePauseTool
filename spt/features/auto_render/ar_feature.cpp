@@ -6,47 +6,157 @@
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
 
-#include "thirdparty/imgui/imgui_stdlib.h"
-
 #undef clamp
 
 #include <variant>
 #include <chrono>
-#include <mutex>
+#include <shared_mutex>
 
-// TODO remove this dependency
-#include <Rpc.h>
-#pragma comment(lib, "Rpcrt4")
+// TODO go through everything and figure out what memory orderings to use
+
+// RAII class that saves & restores the value of a cvars
+class ArCvarStorage
+{
+	ConVar* cvar;
+	std::string oldVal;
+	bool doDevMsg;
+
+public:
+	ArCvarStorage(ConVar* cvar, const std::string& val, bool doDevMsg = true) : cvar(cvar), doDevMsg(doDevMsg)
+	{
+		if (cvar)
+		{
+			if (doDevMsg)
+				DevMsg("SPT: setting cvar '%s' to '%s'\n", cvar->GetName(), val.c_str());
+			oldVal = cvar->GetString();
+			cvar->SetValue(val.c_str());
+		}
+	}
+
+	ArCvarStorage(const ArCvarSetting& setting, bool doDevMsg = true)
+	    : ArCvarStorage(std::holds_alternative<ConVar*>(setting.cvar)
+	                        ? std::get<ConVar*>(setting.cvar)
+	                        : (g_pCVar ? g_pCVar->FindVar(std::get<std::string>(setting.cvar).c_str()) : nullptr),
+	                    setting.val,
+	                    doDevMsg)
+	{
+	}
+
+	ArCvarStorage(ArCvarStorage&) = delete;
+
+	ArCvarStorage(ArCvarStorage&& o) : cvar(o.cvar), oldVal(std::move(o.oldVal))
+	{
+		o.cvar = nullptr;
+	}
+
+	~ArCvarStorage()
+	{
+		if (cvar)
+		{
+			if (doDevMsg)
+				DevMsg("SPT: setting cvar '%s' back to '%s'\n", cvar->GetName(), oldVal.c_str());
+			cvar->SetValue(oldVal.c_str());
+		}
+	};
+};
+// TODO only 'spt_focus_nosleep' is set back to the default value
 
 struct ArRunningJob
 {
-	using clock = std::chrono::high_resolution_clock;
+	bool stopped = false; // to prevent calling mgr->Finish twice
+	ArRunningMovieJobStatus status;
+	std::shared_ptr<ArMovieJobResult> result = std::make_shared<ArMovieJobResult>();
 
-	clock::time_point lastMeasuredTime;
-	std::atomic<clock::duration> elapsedTime;
-	std::atomic<bool> lastStatePaused; // TODO - just rename this to consoleOpen
+	struct
+	{
+		std::mutex clockMtx;
+		std::optional<ar_elapsed_time_clock::time_point> lastMeasuredTime;
+		bool lastStatePaused = false;
+	} timingData;
 
-	std::unique_ptr<ArAppResult> result;
-	std::optional<ar_frame_idx> maxConsumeFrames;
 	std::unique_ptr<ArSyncManager> mgr;
 	std::vector<ArCvarStorage> cvarStorage;
-	float volume;
-	bool captureAudio;
+	float volume = -1.f;
+	bool captureAudio = false;
+	bool recordAfterImGuiCallbacks = false;
 
+	struct
+	{
+		/*
+		* Since video and audio are handled on separate threads, I handle pausing by incrementing
+		* an counter for both to specify how many frames to skip. This should minize the chances of
+		* a desync if the console is spammed open/closed a bunch of times.
+		*/
+		std::atomic<int> nFramesToSkip;
+		std::atomic<int> nAudioFramesToSkip;
+
+		// https://en.wikipedia.org/wiki/Compare-and-swap
+		// https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange.html
+		template<typename T>
+		static bool SubIfNonNegative(std::atomic<T>& a)
+		{
+			T old = a.load(std::memory_order_acquire);
+			while (old > 0)
+			{
+				if (a.compare_exchange_weak(old,
+				                            old - 1,
+				                            std::memory_order_acq_rel,
+				                            std::memory_order_acquire))
+					return true;
+			}
+			return false;
+		}
+	} pauseCounters;
+
+	// periodically call this to update the time without pauses
 	void IncrementElapsedTime(bool paused)
 	{
-		auto newLastMeasuredTime = clock::now();
-		if (!paused || !lastStatePaused)
-			elapsedTime.store(elapsedTime.load() + newLastMeasuredTime - lastMeasuredTime);
-		lastStatePaused.store(paused);
-		lastMeasuredTime = newLastMeasuredTime;
+		// the only thing that needs to be atomic is the user-accessible field, everything else can just be shoved behind a lock
+		auto& td = timingData;
+		std::unique_lock lk(td.clockMtx);
+		auto newLastMeasuredTime = ar_elapsed_time_clock::now();
+		if (!td.lastMeasuredTime.has_value())
+		{
+			td.lastMeasuredTime = status.startTime;
+		}
+		else if (!paused || !td.lastStatePaused)
+		{
+			status.unpausedElapsedTime.store(status.unpausedElapsedTime.load() + newLastMeasuredTime
+			                                 - td.lastMeasuredTime.value());
+		}
+		td.lastStatePaused = paused;
+		td.lastMeasuredTime = newLastMeasuredTime;
 	}
 
-	auto GetElapsedTime() const
+	auto GetElapsedTime(bool timePauses) const
 	{
-		return elapsedTime.load();
+		return timePauses ? ar_elapsed_time_clock::now() - status.startTime : status.unpausedElapsedTime.load();
 	}
 };
+
+struct AutoRenderFeature::Impl
+{
+	ConVar* snd_lockpartial = nullptr;
+
+	std::shared_mutex sharedRunningJobMtx; // starting & stopping the job is exclusive, submitting data is shared
+	std::atomic<std::shared_ptr<const ArDeferredMovieJob>> deferredMovieJob;
+	std::atomic<std::shared_ptr<ArRunningJob>> runningMovieJob;
+	std::atomic<std::shared_ptr<ArMovieJobResult>> lastAppResult;
+
+	void OnFrameSignal();
+	void OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device);
+	void OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device);
+	void OnShaderDevicePresentSignal(IDirect3DDevice9* device, bool postImGui);
+	void RunningJobFrame(IDirect3DDevice9* device, std::shared_ptr<ArRunningJob> runningJob, bool shouldKill);
+	void ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<const ArDeferredMovieJob> deferredJob);
+	void StoreMovieJobResult(ArRunningJob& runningJob);
+};
+
+/*
+* The C++ idiomatic way to do this would be with the PImpl paradigm, but that gets weird with
+* Feature::Move(). It's much easier to have a static global instead of a member field.
+*/
+std::unique_ptr<AutoRenderFeature::Impl> AutoRenderFeature::impl;
 
 namespace patterns
 {
@@ -56,108 +166,9 @@ namespace patterns
 	PATTERNS(CAudioDirectSound__TransferSamples, "portal1-5135", "83 EC 08 56 8B F1 80 7E ?? 00 57");
 } // namespace patterns
 
-class ArPlaceholder
-{
-	inline static std::vector<std::reference_wrapper<const ArPlaceholder>> allPlaceHolders;
-
-	explicit ArPlaceholder(const char* key, const char* helpText) : key(key), helpText(helpText)
-	{
-		allPlaceHolders.push_back(std::ref(*this));
-	}
-
-	ArPlaceholder(ArPlaceholder&) = delete;
-	ArPlaceholder(ArPlaceholder&&) = delete;
-
-	friend class ArPlaceholders;
-
-public:
-	static const auto& GetAll()
-	{
-		return allPlaceHolders;
-	}
-
-	inline static std::atomic<bool> cmdLineFormattedDirty = true;
-
-	const char* key;
-	const char* helpText;
-	std::atomic<std::shared_ptr<std::string>> val;
-
-	static std::string UnformattedStr(const std::string& s)
-	{
-		return std::format("{}{}{}", '{', s, '}');
-	}
-
-	std::string UnformattedKey() const
-	{
-		return UnformattedStr(key);
-	}
-
-	// if changed, sets the dirty flag for the formatted string
-	void SetValue(std::string newVal)
-	{
-		auto newValPtr = std::make_shared<std::string>(std::move(newVal));
-		auto oldVal = val.exchange(newValPtr);
-		if (!oldVal || *oldVal != *newValPtr)
-			cmdLineFormattedDirty.store(true);
-	}
-
-	// return value is const - you must set the value through SetVal to update the dirty flag
-	std::shared_ptr<const std::string> GetValue() const
-	{
-		auto ret = val.load();
-		if (ret)
-			return ret;
-		return ret ? ret : std::make_shared<std::string>("NONE");
-	}
-};
-
-// default placeholder values are set in LoadFeature
-class ArPlaceholders
-{
-public:
-#define AR_DEFINE_PLACEHOLDER(name, helpText) \
-	inline static ArPlaceholder name \
-	{ \
-		#name, helpText \
-	}
-
-	AR_DEFINE_PLACEHOLDER(EXE_PATH, "Path to the ffmpeg executable (or an executable of your choice)");
-	AR_DEFINE_PLACEHOLDER(VID_WIDTH,
-	                      "Input video width in pixels (set to whatever the game is currently running at)");
-	AR_DEFINE_PLACEHOLDER(VID_HEIGHT,
-	                      "Input video height in pixels (set to whatever the game is currently running at)");
-	AR_DEFINE_PLACEHOLDER(FRAMERATE, "Input framerate");
-	// AR_DEFINE_PLACEHOLDER(AUDIO_SAMPLERATE, "Device sample rate");
-	AR_DEFINE_PLACEHOLDER(PIPE_NAME, "Name of the pipe that the data will be fed to");
-	AR_DEFINE_PLACEHOLDER(RENDER_WORKING_DIR, "Working directory of the rendering application");
-	AR_DEFINE_PLACEHOLDER(GAME_WORKING_DIR, "Working directory of the game");
-	AR_DEFINE_PLACEHOLDER(MOD_DIR, "Mod directory");
-	AR_DEFINE_PLACEHOLDER(UUID, "Unique UUID for each video");
-	AR_DEFINE_PLACEHOLDER(DATE_TIME, "Date and time formatted as YYYY-MM-DD_HH-MM-SS");
-	// TODO these options require special handling and need to be conditionally enabled
-	/*AR_DEFINE_PLACEHOLDER(MAP_NAME, "The name of the loaded map on the first frame of recording");
-	AR_DEFINE_PLACEHOLDER(MAP_SEQ, "The map index start at 0 on the first frame of recording");
-	AR_DEFINE_PLACEHOLDER(DEMO_SEQ, "The demo index starting at 0 (only applicable if rendering demos)");
-	AR_DEFINE_PLACEHOLDER(DEMO_FILENAME, "The demo file name (only applicable if rendering demos)");*/
-
-#undef AR_DEFINE_PLACEHOLDER
-
-	static inline std::atomic<std::chrono::system_clock::time_point> lastSetDateTime;
-	static inline int appendUuidToPipes = 1; // explicit int for ImGui
-
-	static bool FindFFmpeg();
-	static void RegenerateUuid();
-	static void ResetPipeNames();
-	static std::string CreateDefaultCmdLine();
-	static void FormatCmdLine(const std::string& unformatted,
-	                          std::string& formatted,
-	                          std::vector<std::string>* unrecognizedPlaceholders);
-	static void SetDatetime();
-};
-
 bool AutoRenderFeature::ShouldLoadFeature()
 {
-	return !!g_pCVar;
+	return !!g_pCVar && !!interfaces::_engine_client;
 }
 
 void AutoRenderFeature::InitHooks()
@@ -166,12 +177,13 @@ void AutoRenderFeature::InitHooks()
 	HOOK_FUNCTION(engine, CAudioDirectSound__TransferSamples);
 
 	// setup before LoadFeature()
-	snd_lockpartial = g_pCVar->FindVar("snd_lockpartial");
+	impl = std::make_unique<Impl>();
+	impl->snd_lockpartial = g_pCVar->FindVar("snd_lockpartial");
 }
 
 void AutoRenderFeature::LoadFeature()
 {
-	if (!ShaderDevicePresentSignal.Works || !SptImGui::Loaded())
+	if (!Works())
 		return;
 
 	// fill in default placeholders
@@ -179,36 +191,44 @@ void AutoRenderFeature::LoadFeature()
 	// TODO test with portal in a non-ascii folder
 	std::filesystem::path modDir = interfaces::_engine_client->GetGameDirectory();
 	modDir = std::filesystem::canonical(modDir);
-	ArPlaceholders::MOD_DIR.SetValue(modDir.string());
+	ArGlobalPlaceholders::MOD_DIR.SetValue(modDir.string());
 	std::error_code ec;
 	std::filesystem::path workingDir = std::filesystem::current_path(ec);
-	ArPlaceholders::GAME_WORKING_DIR.SetValue((ec ? modDir : workingDir).string());
-	ArPlaceholders::RENDER_WORKING_DIR.SetValue((workingDir / "spt_autorender").string());
-	ArPlaceholders::EXE_PATH.SetValue("C:\\YOUR_MOM\\ffmpeg.exe");
-	ArPlaceholders::FRAMERATE.SetValue("60");
-	// ArPlaceholders::AUDIO_SAMPLERATE.SetValue("44100"); // hardcoded
+	ArGlobalPlaceholders::GAME_WORKING_DIR.SetValue((ec ? modDir : workingDir).string());
+	ArGlobalPlaceholders::RENDER_WORKING_DIR.SetValue((workingDir / "spt_autorender").string());
+	ArGlobalPlaceholders::EXE_PATH.SetValue("C:\\YOUR_MOM\\ffmpeg.exe");
+	ArGlobalPlaceholders::FRAMERATE.SetValue("60");
 
-	ArPlaceholders::RegenerateUuid();
-	ArPlaceholders::ResetPipeNames();
+	ArGlobalPlaceholders::UUID.Regenerate();
+	ArGlobalPlaceholders::PIPE_NAME.Regenerate();
 
-	ShaderDevicePresentSignal.Connect(this, &AutoRenderFeature::OnShaderDevicePresentSignal);
+	FrameSignal.Connect(impl.get(), &AutoRenderFeature::Impl::OnFrameSignal);
+	ShaderDevicePresentPreImGuiSignal.Connect(impl.get(),
+	                                          &AutoRenderFeature::Impl::OnShaderDevicePresentPreImGuiSignal);
+	ShaderDevicePresentPostImGuiSignal.Connect(impl.get(),
+	                                           &AutoRenderFeature::Impl::OnShaderDevicePresentPostImGuiSignal);
 
-	SptImGuiGroup::QoL_AutoRender.RegisterUserCallback([this]() { ImGuiTabCallback(); });
+	SptImGuiGroup::QoL_AutoRender.RegisterUserCallback(ImGuiTabCallback);
 }
 
 void AutoRenderFeature::UnloadFeature()
 {
-	runningMovieJob.store(nullptr);
+	impl.reset();
+}
+
+bool AutoRenderFeature::Works()
+{
+	return ShaderDevicePresentPreImGuiSignal.Works && ShaderDevicePresentPostImGuiSignal.Works && FrameSignal.Works;
 }
 
 bool AutoRenderFeature::SupportsAudioCapture()
 {
-	return !!snd_lockpartial && ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16;
+	return !!impl->snd_lockpartial && ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16;
 }
 
-std::vector<ArCvarStorage> AutoRenderFeature::MakeDefaultCvarStorage(float hostFrameRateVal)
+std::vector<ArCvarSetting> AutoRenderFeature::CreateDefaultCvarSettings(float hostFrameRateVal)
 {
-	std::vector<ArCvarStorage> ret;
+	std::vector<ArCvarSetting> ret;
 	ret.emplace_back("sv_cheats", "1");
 	ret.emplace_back("volume", "0");
 	ret.emplace_back("host_framerate", std::to_string(hostFrameRateVal).c_str()); // TODO substitute
@@ -219,632 +239,58 @@ std::vector<ArCvarStorage> AutoRenderFeature::MakeDefaultCvarStorage(float hostF
 	return ret;
 }
 
-void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device)
+void AutoRenderFeature::QueueMovieJob(std::unique_ptr<const ArDeferredMovieJob> deferred)
 {
-	// technically I don't think we should be calling Msg/Warning from the render thread :/
-
-	auto deferredJobCopy = deferredMovieJob.exchange(nullptr);
-
-	// TODO width/height may not be up to date if running from a ConCmd, maybe just an engine interface lol
-	if (imGuiCallbackActive.exchange(false) || deferredJobCopy)
-	{
-		// update back buffer placeholders
-		ser::StatusTracker stat;
-		auto [_, desc] = ArGetBackBufferInfo(device, stat);
-		if (!stat.Ok())
-		{
-			Warning("[%s]: %s\n", __FUNCTION__, stat.GetStatus().errMsg.c_str());
-			return;
-		}
-		ArPlaceholders::VID_WIDTH.SetValue(std::to_string(desc.Width));
-		ArPlaceholders::VID_HEIGHT.SetValue(std::to_string(desc.Height));
-	}
-
-	bool frameSubmitted = false;
-	auto runningJobCopy = runningMovieJob.load();
-	bool jobPaused = false;
-	// this only runs up to 2 loops
-	while (deferredJobCopy || (runningJobCopy && !frameSubmitted))
-	{
-		// submit frame to running job
-		if (runningJobCopy)
-		{
-			/*
-			* Kill the current job if:
-			* - there's a new job to queue
-			* - ImGui or ConCmd requested the job to stop
-			* - the job failed
-			* - the job had an error while consuming a new frame
-			* - the job consumed enough frames
-			*/
-			bool kill =
-			    deferredJobCopy || queuedKillSignal.exchange(false) || !runningJobCopy->result->stat.Ok();
-
-			jobPaused = interfaces::engine_tool->IsConsoleVisible();
-			if (!kill)
-			{
-				// audio hook won't be called if console is visible, so don't submit frames
-				if (!jobPaused)
-				{
-					runningJobCopy->mgr->OnDevicePresent(device, runningJobCopy->result->stat);
-					frameSubmitted = true; // TODO bad name
-					kill = !runningJobCopy->result->stat.Ok();
-				}
-			}
-			if (!kill && runningJobCopy->maxConsumeFrames.has_value())
-			{
-				Assert(runningJobCopy->maxConsumeFrames.value() >= 1);
-				kill = runningJobCopy->mgr->GetNumConsumedFrames()
-				       >= runningJobCopy->maxConsumeFrames.value();
-			}
-			runningJobCopy->IncrementElapsedTime(jobPaused);
-			if (kill)
-			{
-				ser::StatusTracker finishStat;
-				runningJobCopy->mgr->Finish(device, finishStat);
-				runningJobCopy->result->stat.Concat(std::move(finishStat));
-
-				runningJobCopy->result->nFramesConsumed = runningJobCopy->mgr->GetNumConsumedFrames();
-				runningJobCopy->result->duration = runningJobCopy->GetElapsedTime();
-				lastAppResult.exchange(std::move(runningJobCopy->result));
-				// TODO a bit botched innit?
-				runningJobCopy.reset();
-				runningMovieJob.store(nullptr);
-			}
-			else if (jobPaused)
-			{
-				break; // TODO add to while loop condition
-			}
-		}
-
-		// mY bOdy Is a mAChInE tHaT tUrnS deFeRreD jObS iNtO rUnNinG jObS
-		if (deferredJobCopy)
-		{
-			Assert(!runningMovieJob.load());
-			auto startTime = ArRunningJob::clock::now();
-			auto& stat = deferredJobCopy->result->stat;
-			std::unique_ptr<ArLockableSurfaceConsumer> consumer =
-			    std::make_unique<ArFfmpegWriter>(deferredJobCopy->procArgs,
-			                                     deferredJobCopy->result->returnCode,
-			                                     stat);
-
-			std::unique_ptr<ArSyncManager> mgr;
-			if (stat.Ok())
-			{
-				switch (deferredJobCopy->syncMode)
-				{
-				case AR_SYNC_FULL:
-					mgr = std::make_unique<ArSynchronousConsumerManager>(device,
-					                                                     D3DFMT_A8R8G8B8,
-					                                                     std::move(consumer),
-					                                                     stat);
-					break;
-				case AR_SYNC_ASYNC:
-					mgr = std::make_unique<ArAsyncConsumerManager>(device,
-					                                               D3DFMT_A8R8G8B8,
-					                                               deferredJobCopy->nFramesInFlight,
-					                                               std::move(consumer),
-					                                               stat);
-					break;
-				case AR_SYNC_THREADED:
-					mgr = std::make_unique<ArThreadedConsumerManager>(device,
-					                                                  D3DFMT_A8R8G8B8,
-					                                                  deferredJobCopy
-					                                                      ->nFramesInFlight,
-					                                                  std::move(consumer),
-					                                                  stat);
-					break;
-				default:
-					Assert(0);
-				}
-			}
-
-			if (stat.Ok())
-			{
-				runningJobCopy = std::make_shared<ArRunningJob>(startTime,
-				                                                ArRunningJob::clock::duration(),
-				                                                false,
-				                                                std::move(deferredJobCopy->result),
-				                                                deferredJobCopy->maxNFrames,
-				                                                std::move(mgr),
-				                                                std::move(deferredJobCopy->cvarStorage),
-				                                                deferredJobCopy->volume,
-				                                                deferredJobCopy->captureAudio);
-				runningMovieJob.store(runningJobCopy);
-				frameSubmitted = false;
-				ArPlaceholders::ResetPipeNames();
-			}
-
-			// TODO save cvars, maybe wait until next frame or something to submit first frame?
-
-			deferredJobCopy.reset();
-		}
-	}
+	impl->deferredMovieJob.store(std::move(deferred));
 }
 
-void AutoRenderFeature::ImGuiTabCallback()
+std::shared_ptr<const ArRunningMovieJobStatus> AutoRenderFeature::GetRunningJobStatus() const
 {
-	// gotta keep most static settings up here since the button to start rendering is at the very top :p
-	struct
-	{
-		std::optional<bool> lastFfmpegSearchSuccess;
-		bool resetCmdLine = true;
-		ArSyncMode syncMode = AR_SYNC_THREADED;
-		int nFramesInFlight = 3;
-
-		std::string cmdLineUnformatted;
-		std::string cmdLineFormatted;
-		std::vector<std::string> unrecognizedPlaceholders;
-
-		float fpsVal = std::stoi(*ArPlaceholders::FRAMERATE.GetValue());
-		float playbackSpeed = 1.f;
-		float volume = .5f;
-		bool captureAudio = true;
-
-	} static persist;
-
-	imGuiCallbackActive = true; // let render thread know that it can update stuff for imgui
-
-	// start/stop controls
-
-	bool jobRunning;
-
-	{
-		// TODO: report number of demos, output file name, ms/frame
-
-		auto runningJobCopy = runningMovieJob.load();
-		jobRunning = !!runningJobCopy;
-		auto lastResult = lastAppResult.load();
-
-		if (jobRunning)
-		{
-			if (runningJobCopy->lastStatePaused)
-				ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Status: PAUSED (console is open)");
-			else
-				ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Status: RUNNING");
-			auto elapsedMs =
-			    std::chrono::round<std::chrono::milliseconds>(runningJobCopy->GetElapsedTime());
-			ImGui::Text("Elapsed time: %s", std::format("{:%T}", elapsedMs).c_str());
-			ar_frame_idx nConsumedFrames = runningJobCopy->mgr->GetNumConsumedFrames();
-			if (nConsumedFrames > 0)
-			{
-				ImGui::SameLine();
-				ImGui::Text("(%.3fms/frame)", (float)elapsedMs.count() / nConsumedFrames);
-			}
-
-			std::optional<ar_frame_idx> nMaxFrames = runningJobCopy->maxConsumeFrames;
-			if (nMaxFrames)
-				ImGui::Text("Consumed %u/%u frames", nConsumedFrames, nMaxFrames.value());
-			else
-				ImGui::Text("Consumed %u frames", nConsumedFrames);
-		}
-		else
-		{
-			ImGui::Text("Status: %s", lastResult ? "DONE" : "NOT STARTED");
-		}
-
-		if (lastResult)
-		{
-			SptImGui::BeginBordered();
-			if (lastResult->returnCode.has_value())
-				ImGui::Text("Last return code: %d", (int)lastResult->returnCode.value());
-			if (!lastResult->stat.Ok())
-				ImGui::Text("Error: %s", lastResult->stat.GetStatus().errMsg.c_str());
-			auto elapsedMs = std::chrono::round<std::chrono::milliseconds>(lastResult->duration);
-			ImGui::Text("Ran in: %s", std::format("{:%T}", elapsedMs).c_str());
-			ImGui::Text("Consumed %u frames", lastResult->nFramesConsumed);
-			if (lastResult->nFramesConsumed > 0)
-			{
-				ImGui::SameLine();
-				ImGui::Text("(%.3fms/frame)", (float)elapsedMs.count() / lastResult->nFramesConsumed);
-			}
-			SptImGui::EndBordered();
-		}
-	}
-
-	ImGui::BeginDisabled(jobRunning);
-	if (ImGui::Button("Start rendering"))
-	{
-		// TODO this is a duplicate from below
-		if (ArPlaceholder::cmdLineFormattedDirty.exchange(false))
-		{
-			ArPlaceholders::FormatCmdLine(persist.cmdLineUnformatted,
-			                              persist.cmdLineFormatted,
-			                              &persist.unrecognizedPlaceholders);
-		}
-
-		deferredMovieJob.store(std::make_shared<ArDeferredMovieJob>(
-		    ArFfmpegWriter::InitArgs{
-		        .ffmpegWorkingDir = ArUtf8ToUtf16(ArPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str()),
-		        .cmd = ArUtf8ToUtf16(persist.cmdLineFormatted.c_str()),
-		        .pipeName = ArUtf8ToUtf16(ArPlaceholders::PIPE_NAME.GetValue()->c_str()),
-		        .width = (size_t)atoi(ArPlaceholders::VID_WIDTH.GetValue()->c_str()),
-		        .height = (size_t)atoi(ArPlaceholders::VID_HEIGHT.GetValue()->c_str()),
-		        .framerate = persist.fpsVal,
-		    },
-		    std::make_unique<ArAppResult>(),
-		    std::nullopt, // TODO - maxFrames
-		    persist.syncMode,
-		    (size_t)persist.nFramesInFlight,
-		    MakeDefaultCvarStorage(persist.fpsVal / persist.playbackSpeed),
-		    persist.volume,
-		    persist.captureAudio));
-	}
-	ImGui::EndDisabled();
-
-	ImGui::SameLine();
-
-	ImGui::BeginDisabled(!jobRunning);
-	if (ImGui::Button("Stop rendering"))
-		queuedKillSignal.store(true);
-	ImGui::EndDisabled();
-
-	ImGui::SameLine();
-
-	if (ImGui::Button("Open log folder"))
-	{
-		std::wstring wWorkingDirStr = ArUtf8ToUtf16(ArPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str());
-		if (!wWorkingDirStr.empty())
-		{
-			std::filesystem::path workingDir = wWorkingDirStr;
-			std::error_code ec;
-			std::filesystem::create_directories(workingDir, ec);
-			ShellExecuteW(NULL, L"open", wWorkingDirStr.c_str(), NULL, NULL, SW_SHOWDEFAULT);
-		}
-	}
-
-	ImGui::BeginDisabled(jobRunning);
-
-	// ffmpeg path
-
-	if (!persist.lastFfmpegSearchSuccess.has_value())
-		persist.lastFfmpegSearchSuccess = ArPlaceholders::FindFFmpeg();
-
-	{
-		static std::string tmp;
-		tmp = *ArPlaceholders::EXE_PATH.GetValue();
-		if (ImGui::InputText("Exe path", &tmp))
-		{
-			ArPlaceholder::cmdLineFormattedDirty.store(true);
-			ArPlaceholders::EXE_PATH.SetValue(tmp);
-		}
-	}
-	ImGui::SameLine();
-	if (ImGui::Button("Auto-detect"))
-		persist.lastFfmpegSearchSuccess = ArPlaceholders::FindFFmpeg();
-	ImGui::SetItemTooltip("search for ffmpeg in the PATH");
-	ImGui::SameLine();
-	SptImGui::HelpMarker(
-	    "This is the application that all data will be pumped into.\n"
-	    "By default it's ffmpeg, but you can in theory use any application\n"
-	    "that accepts named pipes as input for raw video and audio streams.");
-
-	if (!persist.lastFfmpegSearchSuccess.value())
-	{
-		ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Warning: ffmpeg.exe not found,");
-		ImGui::SameLine();
-		ImGui::TextLinkOpenURL("download it", "https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-full.7z");
-		ImGui::SameLine();
-		ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "and add it to your PATH.");
-	}
-
-	// pipe name option(s)
-
-	const char* pipeNameOpts[] = {"Keep name consistent", "Append UUID (default)"};
-	if (ImGui::Combo("Pipe name", &ArPlaceholders::appendUuidToPipes, pipeNameOpts, ARRAYSIZE(pipeNameOpts)))
-		ArPlaceholders::ResetPipeNames();
-	ImGui::SameLine();
-	SptImGui::HelpMarker(
-	    "Advanced users only!\n"
-	    "By default, a random name is used for the video/audio pipes for every video.\n"
-	    "This allows rendering with multiple instances and minimizes bugs if this code fails to close ffmpeg correctly.\n"
-	    "This option is mostly for debugging.");
-
-	// framerate
-
-	if (ImGui::InputFloat("Framerate", &persist.fpsVal))
-	{
-		persist.fpsVal = std::clamp(persist.fpsVal, 1.f, 500.f);
-		ArPlaceholders::FRAMERATE.SetValue(std::to_string(persist.fpsVal));
-	}
-
-	if (ImGui::InputFloat("Playback speed", &persist.playbackSpeed))
-		persist.playbackSpeed = std::clamp(persist.playbackSpeed, 0.001f, 1000.f);
-
-	// audio
-
-	bool hasSupport = spt_auto_render_feat.SupportsAudioCapture();
-	persist.captureAudio &= hasSupport;
-	ImGui::BeginDisabled(!hasSupport);
-	ImGui::Checkbox("Capture audio", &persist.captureAudio);
-	ImGui::BeginDisabled(!persist.captureAudio);
-	ImGui::SliderFloat("Volume", &persist.volume, 0.f, 1.f, nullptr, ImGuiSliderFlags_AlwaysClamp);
-	ImGui::SameLine();
-	SptImGui::HelpMarker("This behaves pretty much the same as the normal game volume, but is independent of it.");
-	ImGui::EndDisabled();
-	ImGui::EndDisabled();
-
-	// TODO - option for different videohook
-	// TODO - option for rendering demos or number of frames
-
-	// async mode
-
-	ImGui::TextUnformatted("Sync mode:");
-	ImGui::SameLine();
-	ImGui::RadioButton("Synchronous", (int*)&persist.syncMode, AR_SYNC_FULL);
-	ImGui::SameLine();
-	ImGui::RadioButton("Async", (int*)&persist.syncMode, AR_SYNC_ASYNC);
-	ImGui::SameLine();
-	ImGui::RadioButton("Threaded", (int*)&persist.syncMode, AR_SYNC_THREADED);
-
-	ImGui::BeginDisabled(persist.syncMode == AR_SYNC_FULL);
-	ImGui::SliderInt("Number of frames in flight",
-	                 &persist.nFramesInFlight,
-	                 1,
-	                 3,
-	                 nullptr,
-	                 ImGuiSliderFlags_AlwaysClamp);
-	ImGui::EndDisabled();
-
-	ImGui::SameLine();
-	SptImGui::HelpMarker(
-	    "Determines how frames are submitted to the app:\n"
-	    " - Synchronous: frames are pumped in on the render thread\n"
-	    " - Async: frames are asynchronously requested from the GPU and pumped in a few frames later\n"
-	    " - Threaded: frames are asynchronously requested from the GPU and pumped in by a worker thread\n"
-	    "\n"
-	    "The default threaded setting should be the fastest - the other options exist as a slower fallback.");
-
-	// cmdline TODO: wrap
-
-	if (persist.resetCmdLine)
-	{
-		persist.cmdLineUnformatted = ArPlaceholders::CreateDefaultCmdLine();
-		persist.resetCmdLine = false;
-		ArPlaceholder::cmdLineFormattedDirty.store(true);
-	}
-
-	ImGui::TextUnformatted("Program to execute:");
-	if (ImGui::InputTextMultiline("##cmdline_unformatted",
-	                              &persist.cmdLineUnformatted,
-	                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16)))
-	{
-		ArPlaceholder::cmdLineFormattedDirty.store(true);
-	}
-
-	if (ImGui::Button("Reset to default"))
-	{
-		persist.cmdLineUnformatted = ArPlaceholders::CreateDefaultCmdLine();
-		ArPlaceholder::cmdLineFormattedDirty.store(true);
-	}
-
-	// placeholder info
-
-	ArPlaceholders::SetDatetime();
-
-	if (!persist.unrecognizedPlaceholders.empty())
-	{
-		std::string out = "Warning: unrecognized placeholders: ";
-		for (auto& s : persist.unrecognizedPlaceholders)
-		{
-			out += ArPlaceholder::UnformattedStr(s);
-			out += ", ";
-		}
-		ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "%.*s", out.size() - 2, out.c_str());
-	}
-
-	if (ImGui::TreeNode("Available placeholders"))
-	{
-		if (ImGui::BeginTable("##placeholders",
-		                      3,
-		                      ImGuiTableFlags_SizingFixedFit | ImGuiTableFlags_NoHostExtendX
-		                          | ImGuiTableFlags_BordersInner | ImGuiTableFlags_BordersOuter))
-		{
-			ImGui::TableSetupColumn("Key");
-			ImGui::TableSetupColumn("Value");
-			ImGui::TableSetupColumn("Description");
-			ImGui::TableHeadersRow();
-			for (const ArPlaceholder& pl : ArPlaceholder::GetAll())
-			{
-				ImGui::TableNextRow();
-				ImGui::TableNextColumn();
-				ImGui::TextUnformatted(pl.UnformattedKey().c_str());
-				ImGui::TableNextColumn();
-				auto val = pl.GetValue();
-				ImGui::TextUnformatted(val ? val->c_str() : "-");
-				ImGui::TableNextColumn();
-				ImGui::TextUnformatted(pl.helpText);
-			}
-			ImGui::EndTable();
-		}
-
-		ImGui::TreePop();
-	}
-
-	if (ImGui::TreeNode("Formatted command"))
-	{
-		// don't reformat the string if we're in a disabled block - that might confuse the user
-		if (!jobRunning && ArPlaceholder::cmdLineFormattedDirty.exchange(false))
-		{
-			ArPlaceholders::FormatCmdLine(persist.cmdLineUnformatted,
-			                              persist.cmdLineFormatted,
-			                              &persist.unrecognizedPlaceholders);
-		}
-
-		ImGui::InputTextMultiline("##cmdline_formated",
-		                          &persist.cmdLineFormatted,
-		                          ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
-		                          ImGuiInputTextFlags_ReadOnly);
-		ImGui::TreePop();
-	}
-
-	ImGui::EndDisabled();
+	auto runningJob = impl->runningMovieJob.load();
+	// aliasing ctor of std::shared_ptr
+	return runningJob ? std::shared_ptr<const ArRunningMovieJobStatus>(runningJob, &runningJob->status) : nullptr;
 }
 
-bool ArPlaceholders::FindFFmpeg()
+std::shared_ptr<const ArMovieJobResult> AutoRenderFeature::GetLastMovieJobResult() const
 {
-	wchar wExePath[MAX_PATH];
-	DWORD wlen = SearchPathW(nullptr, L"ffmpeg.exe", nullptr, MAX_PATH, wExePath, nullptr);
-	if (wlen >= MAX_PATH || wlen == 0)
-		return false;
-	char exePath[MAX_PATH];
-	BOOL usedDefault;
-	DWORD len = WideCharToMultiByte(CP_UTF8,
-	                                WC_ERR_INVALID_CHARS,
-	                                wExePath,
-	                                wlen,
-	                                exePath,
-	                                MAX_PATH,
-	                                nullptr,
-	                                &usedDefault);
-	if (len == 0 || len >= MAX_PATH || usedDefault)
-		return false;
-
-	EXE_PATH.SetValue(std::string(exePath, len));
-	return true;
+	return impl->lastAppResult.load();
 }
 
-// TODO add option to export without audio hook
-std::string ArPlaceholders::CreateDefaultCmdLine()
+bool AutoRenderFeature::PauseMovieJob(bool pauseState)
 {
-	return std::format(
-	    "\"{0}\" -report -nostdin "
-	    "-f nut -i \"{1}\" "
-	    "-y -c:v libx264 -pix_fmt yuv420p -crf 18 "
-	    "-c:a aac -b:a 192k "
-	    "-shortest -preset veryfast \"{2}\\{3}.mp4\"",
-	    ArPlaceholders::EXE_PATH.UnformattedKey(),
-	    ArPlaceholders::PIPE_NAME.UnformattedKey(),
-	    ArPlaceholders::RENDER_WORKING_DIR.UnformattedKey(),
-	    ArPlaceholders::DATE_TIME.UnformattedKey());
+	auto runningJob = impl->runningMovieJob.load();
+	if (runningJob)
+		runningJob->status.userPaused.store(pauseState);
+	return !!runningJob;
 }
 
-void ArPlaceholders::FormatCmdLine(const std::string& unformatted,
-                                   std::string& formatted,
-                                   std::vector<std::string>* unrecognizedPlaceholders)
+bool AutoRenderFeature::StopMovieJob()
 {
-	formatted.clear();
-	if (unrecognizedPlaceholders)
-		unrecognizedPlaceholders->clear();
+	std::lock_guard lk(impl->sharedRunningJobMtx);
 
-	bool inPlaceholder = false;
-	std::string placeholder;
+	bool killed = false;
+	auto runningJob = impl->runningMovieJob.load(std::memory_order_acquire);
 
-	for (char c : unformatted)
+	if (runningJob)
 	{
-		if (isspace(c))
-			c = ' ';
-		if (c == '{' && inPlaceholder)
-		{
-			// what we have so far is not a real placeholder - flush as raw string
-			formatted += '{';
-			formatted += placeholder;
-			placeholder.clear();
-			inPlaceholder = c == '{';
-		}
-		else if (c == '{' && !inPlaceholder)
-		{
-			inPlaceholder = true;
-		}
-		else if (c == '}' && inPlaceholder)
-		{
-			// actual placeholder - check if it matches anything we have
-			auto& allPlaceHolders = ArPlaceholder::GetAll();
-			auto it = std::ranges::find(allPlaceHolders, placeholder, [](auto& p) { return p.get().key; });
-			auto placeHolderVal = it == allPlaceHolders.cend() ? nullptr : it->get().GetValue();
+		// Finish() may take a while, so record how long that takes
+		runningJob->IncrementElapsedTime(false);
+		runningJob->mgr->Finish(runningJob->result->stat);
+		runningJob->IncrementElapsedTime(false);
 
-			if (placeHolderVal)
-			{
-				formatted += *placeHolderVal;
-			}
-			else
-			{
-				formatted += '{';
-				formatted += placeholder;
-				formatted += '}';
-				/*
-				* If we didn't find a match by key - this is not a valid placeholder. If it has a
-				* key but no value, we expect for it to be substituted later.
-				*/
-				if (it == allPlaceHolders.cend() && unrecognizedPlaceholders)
-					unrecognizedPlaceholders->push_back(std::move(placeholder));
-			}
-			placeholder.clear();
-			inPlaceholder = false;
-		}
-		else if (inPlaceholder)
-		{
-			placeholder += c;
-		}
-		else
-		{
-			formatted += c;
-		}
+		impl->StoreMovieJobResult(*runningJob);
+		impl->runningMovieJob.store(nullptr, std::memory_order_release);
+		killed = true;
 	}
 
-	if (inPlaceholder)
-	{
-		// flush as raw string
-		formatted += '{';
-		formatted += placeholder;
-	}
-}
-
-void ArPlaceholders::RegenerateUuid()
-{
-	::UUID uuid;
-	bool err = UuidCreate(&uuid) != RPC_S_OK;
-	char* uuidStr = nullptr;
-	if (!err)
-		err = UuidToStringA(&uuid, (RPC_CSTR*)&uuidStr) != RPC_S_OK;
-	if (err)
-	{
-		// randomly chosen UUID by way of dice
-		UUID.SetValue("00000000-0000-0000-0000-000000000000");
-	}
-	else
-	{
-		UUID.SetValue(uuidStr);
-		RpcStringFreeA((RPC_CSTR*)&uuidStr);
-	}
-}
-
-void ArPlaceholders::ResetPipeNames()
-{
-	// const char* videoPipeName = R"(\\.\pipe\spt_autorender_video)";
-	// const char* audioPipeName = R"(\\.\pipe\spt_autorender_audio)";
-	const char* pipeName = R"(\\.\pipe\spt_autorender)";
-
-	if (appendUuidToPipes)
-	{
-		auto uuid = UUID.GetValue();
-		// ArPlaceholders::VIDEO_PIPE_NAME.SetValue(std::format("{}_{}", videoPipeName, uuid->c_str()));
-		// ArPlaceholders::AUDIO_PIPE_NAME.SetValue(std::format("{}_{}", audioPipeName, uuid->c_str()));
-		ArPlaceholders::PIPE_NAME.SetValue(std::format("{}_{}", pipeName, uuid->c_str()));
-	}
-	else
-	{
-		// ArPlaceholders::VIDEO_PIPE_NAME.SetValue(videoPipeName);
-		// ArPlaceholders::AUDIO_PIPE_NAME.SetValue(audioPipeName);
-		ArPlaceholders::PIPE_NAME.SetValue(pipeName);
-	}
-}
-
-void ArPlaceholders::SetDatetime()
-{
-	auto now = std::chrono::round<std::chrono::seconds>(std::chrono::system_clock::now());
-	if (lastSetDateTime.exchange(now) == now)
-		return;
-	lastSetDateTime = now; // store as default (UTC)
-	auto localNow = std::chrono::zoned_time{std::chrono::current_zone(), now};
-	ArPlaceholders::DATE_TIME.SetValue(std::format("{0:%F}_{0:%H}-{0:%M}-{0:%S}", localNow));
+	return killed;
 }
 
 IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, void*, int end)
 {
-	bool recordingAudio = !!runningMovieJob.load();
+	auto runningMovieJob = impl->runningMovieJob.load();
 
-	if (recordingAudio)
+	if (!!runningMovieJob && runningMovieJob->captureAudio)
 	{
 		// force the code in the game to call S_TransferStereo16
 
@@ -856,7 +302,7 @@ IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, 
 
 		CAudioDeviceBase* audioDev = (CAudioDeviceBase*)thisptr;
 
-		ArCvarStorage lockPartial(snd_lockpartial, "0");
+		ArCvarStorage lockPartial(impl->snd_lockpartial, "0", false);
 		bool oldSurroundVal = audioDev->m_bSurround;
 		audioDev->m_bSurround = false;
 		ORIG_CAudioDirectSound__TransferSamples(thisptr, end);
@@ -868,7 +314,6 @@ IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, 
 	}
 }
 
-// TODO add handling for when we don't have an audio hook
 IMPL_HOOK_CDECL(AutoRenderFeature,
                 void,
                 S_TransferStereo16,
@@ -883,24 +328,213 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	if (nPairs <= 0)
 		return;
 
-	auto runningJobCopy = runningMovieJob.load();
-	if (!runningJobCopy || (runningJobCopy && runningJobCopy->lastStatePaused))
+	std::shared_lock lk(impl->sharedRunningJobMtx);
+
+	auto runningJob = impl->runningMovieJob.load();
+	if (!runningJob)
 		return;
 
-	// TODO we can record while the console is open!
+	bool paused = runningJob->pauseCounters.SubIfNonNegative(runningJob->pauseCounters.nAudioFramesToSkip);
+
+	if (paused)
+		return;
 
 	// error will get picked up by the render thread
 	ser::StatusTracker stat;
-	short* outBuf = runningJobCopy->mgr->LockSoundBuf(nPairs, stat);
+	short* outBuf = runningJob->mgr->LockSoundBuf(nPairs, stat);
 	if (!outBuf || !stat.Ok())
 		return;
 
-	float vol = runningJobCopy->volume;
+	float vol = runningJob->volume;
 	for (int i = 0; i < nPairs * 2; i++)
 	{
 		float sample = ((int*)pfront)[i] * vol;
 		outBuf[i] = static_cast<short>(std::clamp(sample, -32768.f, 32767.f));
 	}
 
-	runningJobCopy->mgr->UnlockSoundBuf(stat);
+	runningJob->mgr->UnlockSoundBuf(stat);
+}
+
+void AutoRenderFeature::Impl::OnFrameSignal()
+{
+	ArGlobalPlaceholders::DATE_TIME.Update();
+
+	// update width/height placeholders
+	int width, height;
+	interfaces::_engine_client->GetScreenSize(width, height);
+	ArGlobalPlaceholders::VID_WIDTH.SetValue(std::to_string(width));
+	ArGlobalPlaceholders::VID_HEIGHT.SetValue(std::to_string(height));
+
+	// handle pausing
+
+	auto runningJob = runningMovieJob.load();
+	if (runningJob)
+	{
+		bool consoleOpen = interfaces::_engine_client->Con_IsVisible();
+		bool paused =
+		    runningJob->status.userPaused || (runningJob->status.recordWhenConsoleIsOpen != consoleOpen);
+		if (paused)
+		{
+			runningJob->pauseCounters.nFramesToSkip.fetch_add(1, std::memory_order_release);
+			runningJob->pauseCounters.nAudioFramesToSkip.fetch_add(1, std::memory_order_release);
+		}
+	}
+}
+
+void AutoRenderFeature::Impl::OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device)
+{
+	OnShaderDevicePresentSignal(device, false);
+}
+
+void AutoRenderFeature::Impl::OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device)
+{
+	OnShaderDevicePresentSignal(device, true);
+}
+
+void AutoRenderFeature::Impl::OnShaderDevicePresentSignal(IDirect3DDevice9* device, bool postImGui)
+{
+	auto deferredJob = deferredMovieJob.exchange(nullptr);
+	auto runningJob = runningMovieJob.load();
+	if (runningJob && (runningJob->recordAfterImGuiCallbacks == postImGui))
+		RunningJobFrame(device, std::move(runningJob), !!deferredJob);
+	if (deferredJob)
+	{
+		ProcessDeferredJob(device, std::move(deferredJob));
+
+		/*
+		* In my mind, ideally we would submit a frame as soon as we turn a deferred job into a
+		* running one, but I think not doing so is really the way to go. If we submit now:
+		* - the audio will be delayed by one frame
+		* - we would have to handle calling RunningJobFrame in the post ImGui callback but 
+		*   the user not wanting ImGui to show up in their video
+		*/
+	}
+}
+
+void AutoRenderFeature::Impl::RunningJobFrame(IDirect3DDevice9* device,
+                                              std::shared_ptr<ArRunningJob> runningJob,
+                                              bool shouldKill)
+{
+	if (!runningJob)
+		return;
+
+	{
+		std::shared_lock lk(sharedRunningJobMtx);
+
+		/*
+		* Kill the current job if:
+		* - there's a new job to queue
+		* - the job failed
+		* - the job had an error while consuming a new frame
+		* - the job consumed enough frames
+		*/
+		bool paused = runningJob->pauseCounters.SubIfNonNegative(runningJob->pauseCounters.nFramesToSkip);
+		if (!paused)
+		{
+			if (!shouldKill)
+			{
+				runningJob->mgr->OnDevicePresent(device, runningJob->result->stat);
+				shouldKill |= !runningJob->result->stat.Ok();
+			}
+			if (!shouldKill)
+			{
+				auto maxConsumeFrames = runningJob->status.maxConsumeFrames;
+				if (maxConsumeFrames.has_value())
+				{
+					Assert(maxConsumeFrames.value() >= 1);
+					shouldKill |=
+					    runningJob->mgr->GetNumConsumedFrames() >= maxConsumeFrames.value();
+				}
+			}
+		}
+		runningJob->IncrementElapsedTime(paused);
+	}
+
+	if (shouldKill)
+		spt_auto_render_feat.StopMovieJob();
+}
+
+void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
+                                                 std::shared_ptr<const ArDeferredMovieJob> deferredJob)
+{
+	if (!deferredJob)
+		return;
+
+	// mY bOdy Is a mAChInE tHaT tUrnS deFeRreD jObS iNtO rUnNinG jObS
+
+	auto startTime = ar_elapsed_time_clock::now();
+
+	// init the running job object
+
+	std::shared_ptr<ArRunningJob> newRunningJob = std::make_shared<ArRunningJob>();
+	newRunningJob->status.startTime = startTime;
+	newRunningJob->status.recordWhenConsoleIsOpen = deferredJob->recordWhenConsoleIsOpen;
+	newRunningJob->status.maxConsumeFrames = deferredJob->maxConsumeFrames;
+	newRunningJob->volume = deferredJob->volume;
+	newRunningJob->captureAudio =
+	    deferredJob->ffmpegArgs.captureAudio && spt_auto_render_feat.SupportsAudioCapture();
+	newRunningJob->recordAfterImGuiCallbacks = deferredJob->recordAfterImGuiCallbacks;
+
+	// create consumer (init pipe, ffmpeg process, nutlib, etc.)
+
+	auto& stat = newRunningJob->result->stat;
+
+	std::unique_ptr<ArLockableSurfaceConsumer> consumer =
+	    std::make_unique<ArFfmpegWriter>(deferredJob->ffmpegArgs, newRunningJob->result->returnCode, stat);
+
+	if (stat.Ok())
+	{
+		// init consumer manager (create render targets, start up threads, etc.)
+		switch (deferredJob->syncMode)
+		{
+		case AR_SYNC_FULL:
+			newRunningJob->mgr = std::make_unique<ArSynchronousConsumerManager>(device,
+			                                                                    D3DFMT_A8R8G8B8,
+			                                                                    std::move(consumer),
+			                                                                    stat);
+			break;
+		case AR_SYNC_THREADED:
+			newRunningJob->mgr =
+			    std::make_unique<ArThreadedConsumerManager>(device,
+			                                                D3DFMT_A8R8G8B8,
+			                                                deferredJob->nFramesInFlight.value(),
+			                                                std::move(consumer),
+			                                                stat);
+			break;
+		default:
+			Assert(0);
+			stat.Err("unknown sync mode");
+		}
+	}
+
+	if (!stat.Ok())
+	{
+		StoreMovieJobResult(*newRunningJob);
+		return;
+	}
+
+	// kill old job and reset cvars
+
+	spt_auto_render_feat.StopMovieJob();
+
+	{
+		// load new cvars and swap out the running job object
+		std::lock_guard lk(sharedRunningJobMtx);
+		std::ranges::copy(deferredJob->cvars, std::back_inserter(newRunningJob->cvarStorage));
+		newRunningJob->IncrementElapsedTime(false);
+		runningMovieJob.store(newRunningJob);
+	}
+
+	ArGlobalPlaceholders::UUID.Regenerate();
+	ArGlobalPlaceholders::PIPE_NAME.Regenerate();
+}
+
+void AutoRenderFeature::Impl::StoreMovieJobResult(ArRunningJob& runningJob)
+{
+	// fill out runningJob->result and save it
+	auto& result = runningJob.result;
+	result->nFramesConsumed = runningJob.mgr ? runningJob.mgr->GetNumConsumedFrames() : 0;
+	result->elapsedTime = runningJob.GetElapsedTime(true);
+	result->unpausedElapsedTime = runningJob.GetElapsedTime(false);
+	impl->lastAppResult.store(std::move(result), std::memory_order_release);
 }

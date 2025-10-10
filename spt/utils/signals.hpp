@@ -23,7 +23,8 @@ extern Gallant::Signal2<void*, void*> ProcessMovementPost_Signal;
 extern Gallant::Signal2<void*, void*> ProcessMovementPre_Signal;
 extern Gallant::Signal2<void*, CViewSetup*> RenderViewPre_Signal;
 extern Gallant::Signal2<void*, int> SetSignonStateSignal;
-extern Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentSignal;
+extern Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentPreImGuiSignal;
+extern Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentPostImGuiSignal;
 
 // Plugin callbacks
 extern Gallant::Signal1<bool> TickSignal;

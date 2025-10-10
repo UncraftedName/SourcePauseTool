@@ -133,3 +133,12 @@ inline std::wstring ArUtf8ToUtf16(const char* utf8)
 	}
 	return wstr;
 }
+
+// TODO go through and put this everywhere
+
+#define AR_STAT_FUNC_ERR_V(stat_, fmt, ...) stat_.Err(std::format("[{}]: " fmt, __FUNCTION__, __VA_ARGS__))
+#define AR_STAT_FUNC_ERR(stat_, fmt) AR_STAT_FUNC_ERR_V(stat_, fmt, 0)
+
+#define AR_STAT_FUNC_WIN_ERR_V(stat_, fmt, ...) \
+	AR_STAT_FUNC_ERR_V(stat_, fmt ": {}", ArLastErrorAsString(), __VA_ARGS__)
+#define AR_STAT_FUNC_WIN_ERR(stat_, fmt) AR_STAT_FUNC_WIN_ERR_V(stat_, fmt, 0)

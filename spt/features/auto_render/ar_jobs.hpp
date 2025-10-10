@@ -10,6 +10,7 @@ extern "C"
 }
 
 #include <filesystem>
+#include <shared_mutex>
 
 #include <d3d9.h>
 #include <shellapi.h>
@@ -46,33 +47,43 @@ protected:
 
 class ArFfmpegWriter : public ArLockableSurfaceConsumer
 {
+	std::array<OVERLAPPED, 2> overlappedArr{
+	    OVERLAPPED{.hEvent = NULL},
+	    OVERLAPPED{.hEvent = NULL},
+	};
+	size_t overlappedWriteIdx = 0;
+
+	std::optional<PROCESS_INFORMATION> ffmpegProc;
+	std::optional<HANDLE> hPipe;
 	bool pipeConnected = false;
-	HANDLE pipe = INVALID_HANDLE_VALUE;
+
+	std::optional<DWORD>& ffmpegReturnCode;
+
+	struct NutLibWriterUserData
+	{
+		ArFfmpegWriter* thisptr;
+		ser::StatusTracker* stat;
+	} nutLibUData{this, nullptr};
+
+	std::shared_mutex destroyMtx;
+	std::mutex nutLibMtx;
+
 	nut_context_tt* context = nullptr;
 	int64_t nAudioSamplePairsWritten = 0;
-	std::mutex nutLock;
-	ser::StatusTracker writerStat;
-
-	HANDLE videoPipe = INVALID_HANDLE_VALUE;
-	HANDLE audioPipe = INVALID_HANDLE_VALUE;
-	HANDLE jobObject = NULL;
-	bool procValid = false;
-	PROCESS_INFORMATION ffmpegProc{};
-	std::optional<DWORD>& ffmpegReturnCode;
+	bool captureAudio = false;
 
 public:
 	struct InitArgs
 	{
-		const std::wstring ffmpegWorkingDir;
+		std::wstring ffmpegWorkingDir;
 		std::wstring cmd; // fully formatted with no remaining substitutions
-		// const std::wstring videoPipeName; // can be null
-		// const std::wstring audioPipeName; // can be null
-		const std::wstring pipeName;
+		std::wstring pipeName;
 		size_t width, height;
 		float framerate;
+		bool captureAudio;
 	};
 
-	explicit ArFfmpegWriter(InitArgs& args, std::optional<DWORD>& ffmpegReturnCode, ser::StatusTracker& stat);
+	explicit ArFfmpegWriter(const InitArgs& args, std::optional<DWORD>& ffmpegReturnCode, ser::StatusTracker& stat);
 	virtual ~ArFfmpegWriter();
 
 	virtual void ConsumeAudio(const short* lrPcmSamples, size_t nSamplePairs, ser::StatusTracker& stat) override;
@@ -86,6 +97,8 @@ protected:
 
 private:
 	static int FfmpegWrite(void* priv, size_t len, const uint8_t* buf);
+	int FfmpegWriteImpl(size_t len, const uint8_t* buf, ser::StatusTracker& stat);
+	void EnsurePipeConnected(ser::StatusTracker& stat);
 	void StopFfmpeg();
 };
 
@@ -113,7 +126,7 @@ protected:
 	virtual void NewFrame(IDirect3DDevice9* device, size_t frameNum, ser::StatusTracker& stat) = 0;
 
 public:
-	virtual void Finish(IDirect3DDevice9* device, ser::StatusTracker& stat) = 0;
+	virtual void Finish(ser::StatusTracker& stat) = 0;
 
 	void OnDevicePresent(IDirect3DDevice9* device, ser::StatusTracker& stat)
 	{
@@ -146,38 +159,7 @@ public:
 
 	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) override;
 	virtual void UnlockSoundBuf(ser::StatusTracker& stat) override;
-	virtual void Finish(IDirect3DDevice9* device, ser::StatusTracker& stat) override;
-};
-
-// keeps multiple slots of render target + offscreen surface pairs in flight, but still consumes on the render thread
-class ArAsyncConsumerManager : public ArSyncManager
-{
-	struct Slot
-	{
-		ComPtr<IDirect3DSurface9> renderTarget;
-		ComPtr<IDirect3DSurface9> offScreenSurf;
-		bool hasData = false;
-	};
-
-	std::recursive_mutex consumeMtx;
-	std::vector<short> soundBuf;
-	std::unique_ptr<ArLockableSurfaceConsumer> consumer;
-	std::vector<Slot> slots;
-	ar_frame_idx nFramesProcessedByConsumer = 0;
-
-protected:
-	virtual void NewFrame(IDirect3DDevice9* device, ar_frame_idx frameNum, ser::StatusTracker& stat) override;
-
-public:
-	explicit ArAsyncConsumerManager(IDirect3DDevice9* device,
-	                                D3DFORMAT format,
-	                                ar_frame_idx nMaxFramesInFlight,
-	                                std::unique_ptr<ArLockableSurfaceConsumer> consumer,
-	                                ser::StatusTracker& stat);
-	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) override;
-	virtual void UnlockSoundBuf(ser::StatusTracker& stat) override;
-
-	virtual void Finish(IDirect3DDevice9* device, ser::StatusTracker& stat) override;
+	virtual void Finish(ser::StatusTracker& stat) override;
 };
 
 // producer/consumer with the consumer on a separate thread
@@ -239,5 +221,5 @@ public:
 	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) override;
 	virtual void UnlockSoundBuf(ser::StatusTracker& stat) override;
 
-	virtual void Finish(IDirect3DDevice9* device, ser::StatusTracker& stat) override;
+	virtual void Finish(ser::StatusTracker& stat) override;
 };

@@ -493,6 +493,12 @@
     <ClCompile Include="thirdparty\libnut\reorder.c">
       <Filter>thirdparty\libnut</Filter>
     </ClCompile>
+    <ClCompile Include="spt\features\auto_render\ar_imgui.cpp">
+      <Filter>spt\features\auto_render</Filter>
+    </ClCompile>
+    <ClCompile Include="spt\features\auto_render\ar_placeholders.cpp">
+      <Filter>spt\features\auto_render</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -1157,6 +1163,9 @@
     </ClInclude>
     <ClInclude Include="thirdparty\libnut\libnut.h">
       <Filter>thirdparty\libnut</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\auto_render\ar_placeholders.hpp">
+      <Filter>spt\features\auto_render</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

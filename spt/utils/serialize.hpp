@@ -41,15 +41,12 @@ namespace ser
 			status.warnings.push_back(std::move(s));
 		}
 
-		const Status& GetStatus()
+		const Status& GetStatus() const
 		{
-			if (!status.ok && status.errMsg.empty())
-			{
-				AssertMsg(
-				    0,
-				    "SPT: the reader/writer or serialize/deserialize functions should log an error message on failure");
-				status.errMsg = "an unspecified error occured";
-			}
+			AssertMsg(
+			    status.ok || !status.errMsg.empty(),
+			    "SPT: the reader/writer or serialize/deserialize functions should log an error message on failure");
+
 			return status;
 		}
 

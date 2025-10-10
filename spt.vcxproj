@@ -1188,6 +1188,8 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClCompile Include="spt\features\auto_render\ar_consumers.cpp" />
     <ClCompile Include="spt\features\auto_render\ar_consumer_mgr.cpp" />
     <ClCompile Include="spt\features\auto_render\ar_feature.cpp" />
+    <ClCompile Include="spt\features\auto_render\ar_imgui.cpp" />
+    <ClCompile Include="spt\features\auto_render\ar_placeholders.cpp" />
     <ClCompile Include="spt\features\boog.cpp" />
     <ClCompile Include="spt\features\camera.cpp" />
     <ClCompile Include="spt\features\collision_group.cpp" />
@@ -1654,6 +1656,7 @@ del "$(OutDir)spt-version.obj"</Command>
     <ClInclude Include="spt\features\autojump.hpp" />
     <ClInclude Include="spt\features\auto_render\ar_jobs.hpp" />
     <ClInclude Include="spt\features\auto_render\ar_feature.hpp" />
+    <ClInclude Include="spt\features\auto_render\ar_placeholders.hpp" />
     <ClInclude Include="spt\features\auto_render\ar_util.hpp" />
     <ClInclude Include="spt\features\create_collide.hpp" />
     <ClInclude Include="spt\features\cvar.hpp" />

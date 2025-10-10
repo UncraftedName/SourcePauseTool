@@ -31,7 +31,8 @@
 
 #define VPROF_BUDGETGROUP_IMGUI _T("SPT_ImGui")
 
-Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentSignal;
+Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentPreImGuiSignal;
+Gallant::Signal1<IDirect3DDevice9*> ShaderDevicePresentPostImGuiSignal;
 
 IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
@@ -817,7 +818,8 @@ protected:
 			return;
 		gameWnd = params.hFocusWindow;
 
-		ShaderDevicePresentSignal.Works = true;
+		ShaderDevicePresentPreImGuiSignal.Works = true;
+		ShaderDevicePresentPostImGuiSignal.Works = true;
 
 		if (!IMGUI_CHECKVERSION())
 			return;
@@ -907,8 +909,10 @@ protected:
 			loadState = LoadState::None;
 			SptImGuiGroup::Root.ClearCallbacksRecursive();
 			inImGuiUpdateSection = false;
-			ShaderDevicePresentSignal.Clear();
-			ShaderDevicePresentSignal.Works = false;
+			ShaderDevicePresentPreImGuiSignal.Clear();
+			ShaderDevicePresentPreImGuiSignal.Works = false;
+			ShaderDevicePresentPostImGuiSignal.Clear();
+			ShaderDevicePresentPostImGuiSignal.Works = false;
 			break;
 		}
 #pragma warning(pop)
@@ -924,6 +928,9 @@ public:
 IMPL_HOOK_THISCALL(SptImGuiFeature, void, CShaderDeviceDx8__Present, void*)
 {
 	std::scoped_lock lk{CSourcePauseTool::unloadMutex, imguiMutex};
+
+	Assert(ShaderDevicePresentPreImGuiSignal.Works);
+	ShaderDevicePresentPreImGuiSignal(dx9Device);
 
 	if (loadState >= LoadState::FrameSignalCalledAtLeastOnce && !recreateDeviceObjects)
 	{
@@ -972,8 +979,8 @@ IMPL_HOOK_THISCALL(SptImGuiFeature, void, CShaderDeviceDx8__Present, void*)
 		}
 	}
 
-	Assert(ShaderDevicePresentSignal.Works);
-	ShaderDevicePresentSignal(dx9Device);
+	Assert(ShaderDevicePresentPostImGuiSignal.Works);
+	ShaderDevicePresentPostImGuiSignal(dx9Device);
 
 	ORIG_CShaderDeviceDx8__Present(thisptr);
 }
