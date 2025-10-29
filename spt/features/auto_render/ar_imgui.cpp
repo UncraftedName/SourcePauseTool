@@ -48,6 +48,7 @@ struct ArImGuiPersist
 	float volume = .5f;
 	bool captureAudio = true;
 	bool recordWhenConsoleIsOpen = false;
+	bool recordAfterImGuiCallbacks = false;
 
 	bool DrawCurJobStatus();          // returns true if there's an active job
 	bool DrawLastFinishedJobStatus(); // returns true if there's a last job
@@ -101,6 +102,9 @@ void AutoRenderFeature::ImGuiTabCallback()
 	persist.DrawFramerateOptions();
 	persist.DrawAudioOptions();
 	ImGui::Checkbox("Render when console is open", &persist.recordWhenConsoleIsOpen);
+	ImGui::Checkbox("Render after ImGui callbacks", &persist.recordAfterImGuiCallbacks);
+	ImGui::SameLine();
+	SptImGui::HelpMarker("If set, ImGui windows will show up in the recording");
 
 	// TODO - option for different videohook
 	// TODO - option for rendering demos or number of frames
@@ -213,10 +217,10 @@ bool ArImGuiPersist::DrawStartRenderButton()
 	    .maxConsumeFrames = std::nullopt, // TODO
 	    .syncMode = syncMode,
 	    .nFramesInFlight = (size_t)nFramesInFlight,
-	    .cvars = spt_auto_render_feat.CreateDefaultCvarSettings(fpsVal / playbackSpeed),
+	    .cvars = spt_auto_render_feat.CreateDefaultCvarSettings(fpsVal / playbackSpeed), // TODO
 	    .volume = volume,
-	    .recordWhenConsoleIsOpen = false,  // TODO
-	    .recordAfterImGuiCallbacks = true, // TODO
+	    .recordWhenConsoleIsOpen = recordWhenConsoleIsOpen,
+	    .recordAfterImGuiCallbacks = recordAfterImGuiCallbacks,
 	};
 
 	spt_auto_render_feat.QueueMovieJob(std::make_unique<ArDeferredMovieJob>(std::move(defferedMovieJob)));
