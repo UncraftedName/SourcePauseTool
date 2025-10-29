@@ -27,7 +27,7 @@ public:
 		if (cvar)
 		{
 			if (doDevMsg)
-				DevMsg("SPT: setting cvar '%s' to '%s'\n", cvar->GetName(), val.c_str());
+				DevMsg("SPT: setting cvar \"%s\" to \"%s\"\n", cvar->GetName(), val.c_str());
 			oldVal = cvar->GetString();
 			cvar->SetValue(val.c_str());
 		}
@@ -44,7 +44,7 @@ public:
 
 	ArCvarStorage(ArCvarStorage&) = delete;
 
-	ArCvarStorage(ArCvarStorage&& o) : cvar(o.cvar), oldVal(std::move(o.oldVal))
+	ArCvarStorage(ArCvarStorage&& o) : cvar(o.cvar), oldVal(std::move(o.oldVal)), doDevMsg(o.doDevMsg)
 	{
 		o.cvar = nullptr;
 	}
@@ -54,12 +54,11 @@ public:
 		if (cvar)
 		{
 			if (doDevMsg)
-				DevMsg("SPT: setting cvar '%s' back to '%s'\n", cvar->GetName(), oldVal.c_str());
+				DevMsg("SPT: setting cvar \"%s\" back to \"%s\"\n", cvar->GetName(), oldVal.c_str());
 			cvar->SetValue(oldVal.c_str());
 		}
 	};
 };
-// TODO only 'spt_focus_nosleep' is set back to the default value
 
 struct ArRunningJob
 {
