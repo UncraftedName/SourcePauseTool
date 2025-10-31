@@ -50,7 +50,7 @@ struct ArImGuiPersist
 	bool recordWhenConsoleIsOpen = false;
 	bool recordAfterImGuiCallbacks = false;
 
-	bool DrawCurJobStatus();          // returns true if there's an active job
+	bool DrawRunningJobStatus();      // returns true if there's an active job
 	bool DrawLastFinishedJobStatus(); // returns true if there's a last job
 
 	bool DrawStartRenderButton(); // returns true if rendering was started
@@ -75,7 +75,7 @@ void AutoRenderFeature::ImGuiTabCallback()
 
 	// job statuses
 
-	bool curJobRunning = persist.DrawCurJobStatus();
+	bool curJobRunning = persist.DrawRunningJobStatus();
 	[[maybe_unused]] bool lastJobExists = persist.DrawLastFinishedJobStatus();
 
 	// control buttons
@@ -128,47 +128,50 @@ void AutoRenderFeature::ImGuiTabCallback()
 	persist.DrawFormattedCmdLine();
 }
 
-bool ArImGuiPersist::DrawCurJobStatus()
+bool ArImGuiPersist::DrawRunningJobStatus()
 {
 	// TODO: report number of demos, output file name, ms/frame
 
-	auto runningJob = spt_auto_render_feat.GetRunningJobStatus();
+	auto runningStat = spt_auto_render_feat.GetRunningJobStatus();
 
-	if (runningJob)
+	if (runningStat)
 	{
 		const char* statusText;
-		if (runningJob->userPaused)
+		if (runningStat->userPaused)
 			statusText = "PAUSED (user request)";
-		else if (!runningJob->recordWhenConsoleIsOpen && interfaces::_engine_client->Con_IsVisible())
+		else if (!runningStat->recordWhenConsoleIsOpen && interfaces::_engine_client->Con_IsVisible())
 			statusText = "PAUSED (console is open)";
 		else
 			statusText = "RUNNING";
 		ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Status: %s", statusText);
-		auto elapsedTotal =
-		    std::chrono::round<std::chrono::milliseconds>(ar_elapsed_time_clock::now() - runningJob->startTime);
-		ImGui::Text("Elapsed time: %s", std::format("{:%T}", elapsedTotal).c_str());
-		// TODO - this should be a reference wrapper to the result which has the value or something
-		ar_frame_idx nConsumedFrames = runningJob->nFramesConsumed;
+
+		auto elapsedTotal = std::chrono::round<std::chrono::milliseconds>(ar_elapsed_time_clock::now()
+		                                                                  - runningStat->startTime);
+		ImGui::Text("Elapsed real time: %s", std::format("{:%T}", elapsedTotal).c_str());
+
+		ar_frame_idx nConsumedFrames = runningStat->nFramesConsumed.load(std::memory_order_acquire);
 		if (nConsumedFrames > 0)
 		{
 			ImGui::SameLine();
 			auto elapsedNoPauses = std::chrono::duration_cast<std::chrono::milliseconds>(
-			    runningJob->unpausedElapsedTime.load());
-			ImGui::Text("(%.3fms/frame)", elapsedNoPauses.count() / nConsumedFrames);
+			    runningStat->unpausedElapsedTime.load());
+			ImGui::Text("(%.3fms/frame)", (float)elapsedNoPauses.count() / nConsumedFrames);
 		}
 
-		std::optional<ar_frame_idx> nMaxFrames = runningJob->maxConsumeFrames;
+		std::optional<ar_frame_idx> nMaxFrames = runningStat->maxConsumeFrames;
 		if (nMaxFrames)
 			ImGui::Text("Consumed %u/%u frames", nConsumedFrames, nMaxFrames.value());
 		else
 			ImGui::Text("Consumed %u frames", nConsumedFrames);
+		ImGui::SameLine();
+		ImGui::Text("(movie of length %.3fs)", nConsumedFrames / runningStat->outputFramerate);
 	}
 	else
 	{
 		ImGui::Text("Status: %s", "NOT ACTIVE");
 	}
 
-	return !!runningJob;
+	return !!runningStat;
 }
 
 bool ArImGuiPersist::DrawLastFinishedJobStatus()
@@ -264,8 +267,8 @@ void ArImGuiPersist::DrawFfmpegPath()
 	ImGui::SameLine();
 	SptImGui::HelpMarker(
 	    "This is the application that all data will be pumped into.\n"
-	    "By default it's ffmpeg, but you can in theory use any application\n"
-	    "that accepts named pipes as input for raw video and audio streams.");
+	    "By default it's ffmpeg, but you can in theory pump it into\n"
+	    "a custom application that can process the .nut format.");
 
 	if (!lastFfmpegSearchSuccess.value())
 	{

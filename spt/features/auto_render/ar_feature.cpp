@@ -483,12 +483,13 @@ void AutoRenderFeature::Impl::RunningJobFrame(IDirect3DDevice9* device,
 			}
 			if (!shouldKill)
 			{
+				auto nConsumed =
+				    runningJob->status.nFramesConsumed.fetch_add(1, std::memory_order_release) + 1;
 				auto maxConsumeFrames = runningJob->status.maxConsumeFrames;
 				if (maxConsumeFrames.has_value())
 				{
 					Assert(maxConsumeFrames.value() >= 1);
-					shouldKill |=
-					    runningJob->mgr->GetNumConsumedFrames() >= maxConsumeFrames.value();
+					shouldKill |= nConsumed >= maxConsumeFrames.value();
 				}
 			}
 		}
@@ -515,6 +516,7 @@ void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
 	newRunningJob->status.startTime = startTime;
 	newRunningJob->status.recordWhenConsoleIsOpen = deferredJob->recordWhenConsoleIsOpen;
 	newRunningJob->status.maxConsumeFrames = deferredJob->maxConsumeFrames;
+	newRunningJob->status.outputFramerate = deferredJob->ffmpegArgs.framerate;
 	newRunningJob->volume = deferredJob->volume;
 	newRunningJob->captureAudio =
 	    deferredJob->ffmpegArgs.captureAudio && spt_auto_render_feat.SupportsAudioCapture();
@@ -586,8 +588,8 @@ void AutoRenderFeature::Impl::StoreMovieJobResult(ArRunningJob& runningJob)
 {
 	// fill out runningJob->result and save it
 	auto& result = runningJob.result;
-	result->nFramesConsumed = runningJob.mgr ? runningJob.mgr->GetNumConsumedFrames() : 0;
 	result->elapsedTime = runningJob.GetElapsedTime(true);
 	result->unpausedElapsedTime = runningJob.GetElapsedTime(false);
+	result->nFramesConsumed = runningJob.status.nFramesConsumed.load(std::memory_order_acquire);
 	impl->lastAppResult.store(std::move(result), std::memory_order_release);
 }

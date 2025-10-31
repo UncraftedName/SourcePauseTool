@@ -53,6 +53,7 @@ struct ArRunningMovieJobStatus
 {
 	std::atomic<ar_frame_idx> nFramesConsumed;
 	std::optional<ar_frame_idx> maxConsumeFrames;
+	float outputFramerate;
 	ar_elapsed_time_clock::time_point startTime;
 	std::atomic<ar_elapsed_time_clock::duration> unpausedElapsedTime;
 	std::atomic<bool> userPaused;

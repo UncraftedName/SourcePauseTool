@@ -79,7 +79,7 @@ public:
 		std::wstring cmd; // fully formatted with no remaining substitutions
 		std::wstring pipeName;
 		size_t width, height;
-		float framerate;
+		float framerate; // rounded to 0.001 fps
 		bool captureAudio;
 	};
 
@@ -131,11 +131,6 @@ public:
 	void OnDevicePresent(IDirect3DDevice9* device, ser::StatusTracker& stat)
 	{
 		NewFrame(device, nConsumedFrames++, stat);
-	}
-
-	auto GetNumConsumedFrames() const
-	{
-		return nConsumedFrames;
 	}
 };
 
