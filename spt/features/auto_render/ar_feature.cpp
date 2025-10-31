@@ -13,6 +13,13 @@
 #include <chrono>
 #include <shared_mutex>
 
+// if enabled, writes when frames/audio are consumed to a file
+#define AR_DEBUG_TIMING_INFO_FILE_NAME "ar_timing_info.txt"
+
+#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+#include <syncstream>
+#endif
+
 // TODO go through everything and figure out what memory orderings to use
 // TODO should cvar storage exec commands instead of setting cvars?
 
@@ -107,6 +114,11 @@ struct ArRunningJob
 			return false;
 		}
 	} pauseCounters;
+
+#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+	std::ofstream timingInfoFile{AR_DEBUG_TIMING_INFO_FILE_NAME};
+	int64_t nAudioSamplesConsumed = 0;
+#endif
 
 	// periodically call this to update the time without pauses
 	void IncrementElapsedTime(bool paused)
@@ -375,6 +387,16 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 
 	bool paused = runningJob->pauseCounters.SubIfNonNegative(runningJob->pauseCounters.nAudioFramesToSkip);
 
+#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+	std::osyncstream(runningJob->timingInfoFile)
+	    << std::format("[{}]: {} samples (total={}) (timestamp={:.3f}), paused={}\n",
+	                   __FUNCTION__,
+	                   nPairs,
+	                   runningJob->nAudioSamplesConsumed,
+	                   runningJob->nAudioSamplesConsumed / 44100.f,
+	                   paused);
+#endif
+
 	if (paused)
 		return;
 
@@ -392,6 +414,10 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	}
 
 	runningJob->mgr->UnlockSoundBuf(stat);
+
+#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+	runningJob->nAudioSamplesConsumed += nPairs;
+#endif
 }
 
 IMPL_HOOK_THISCALL(AutoRenderFeature, void, CVideoMode_Common__WriteMovieFrame, void*, void* movieInfo)
@@ -423,6 +449,14 @@ void AutoRenderFeature::Impl::OnFrameSignal()
 			runningJob->pauseCounters.nFramesToSkip.fetch_add(1, std::memory_order_release);
 			runningJob->pauseCounters.nAudioFramesToSkip.fetch_add(1, std::memory_order_release);
 		}
+#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+		std::osyncstream(runningJob->timingInfoFile)
+		    << std::format("[{}]: paused={} (framesToPause={}, audioFramesToPause={})\n",
+		                   __FUNCTION__,
+		                   paused,
+		                   runningJob->pauseCounters.nFramesToSkip.load(std::memory_order_acquire),
+		                   runningJob->pauseCounters.nAudioFramesToSkip.load(std::memory_order_acquire));
+#endif
 	}
 }
 
@@ -474,6 +508,17 @@ void AutoRenderFeature::Impl::RunningJobFrame(IDirect3DDevice9* device,
 		* - the job consumed enough frames
 		*/
 		bool paused = runningJob->pauseCounters.SubIfNonNegative(runningJob->pauseCounters.nFramesToSkip);
+
+#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+		auto _nConsumed = runningJob->status.nFramesConsumed.load(std::memory_order_acquire);
+		std::osyncstream(runningJob->timingInfoFile)
+		    << std::format("[{}]: frame {} (timestamp={:.3f}), paused={}\n",
+		                   __FUNCTION__,
+		                   _nConsumed,
+		                   _nConsumed / runningJob->status.outputFramerate,
+		                   paused);
+#endif
+
 		if (!paused)
 		{
 			if (!shouldKill)
