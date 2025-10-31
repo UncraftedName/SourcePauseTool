@@ -297,7 +297,7 @@ void ArImGuiPersist::DrawPipeNameOptions()
 
 void ArImGuiPersist::DrawFramerateOptions()
 {
-	if (ImGui::InputFloat("Framerate", &fpsVal))
+	if (ImGui::InputFloat("Output framerate", &fpsVal))
 	{
 		fpsVal = std::clamp(fpsVal, 1.f, 500.f);
 		ArGlobalPlaceholders::FRAMERATE.SetValue(std::to_string(fpsVal));

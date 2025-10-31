@@ -5,6 +5,7 @@
 #include "ar_feature.hpp"
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
+#include "spt/utils/game_detection.hpp"
 
 #undef clamp
 
@@ -13,6 +14,7 @@
 #include <shared_mutex>
 
 // TODO go through everything and figure out what memory orderings to use
+// TODO should cvar storage exec commands instead of setting cvars?
 
 // RAII class that saves & restores the value of a cvars
 class ArCvarStorage
@@ -62,7 +64,6 @@ public:
 
 struct ArRunningJob
 {
-	bool stopped = false; // to prevent calling mgr->Finish twice
 	ArRunningMovieJobStatus status;
 	std::shared_ptr<ArMovieJobResult> result = std::make_shared<ArMovieJobResult>();
 
@@ -149,6 +150,14 @@ struct AutoRenderFeature::Impl
 	void RunningJobFrame(IDirect3DDevice9* device, std::shared_ptr<ArRunningJob> runningJob, bool shouldKill);
 	void ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<const ArDeferredMovieJob> deferredJob);
 	void StoreMovieJobResult(ArRunningJob& runningJob);
+
+	struct MovieInfoPtrs
+	{
+		char* moviename = nullptr;
+		int* type = nullptr;
+
+		void Init();
+	} cl_movieinfo; // not stored as MovieInfo_t because the size of moviename changes between versions
 };
 
 /*
@@ -157,12 +166,16 @@ struct AutoRenderFeature::Impl
 */
 std::unique_ptr<AutoRenderFeature::Impl> AutoRenderFeature::impl;
 
+// TODO test on steampipe
 namespace patterns
 {
 	PATTERNS(S_TransferStereo16,
 	         "portal1-5135",
 	         "53 55 56 57 E8 ?? ?? ?? ?? D8 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 0D ?? ?? ?? ??");
 	PATTERNS(CAudioDirectSound__TransferSamples, "portal1-5135", "83 EC 08 56 8B F1 80 7E ?? 00 57");
+	PATTERNS(CVideoMode_Common__WriteMovieFrame,
+	         "portal1-5135",
+	         "80 3D ?? ?? ?? ?? 00 55 8B 6C 24 ?? 8B 85 ?? ?? ?? ??");
 } // namespace patterns
 
 bool AutoRenderFeature::ShouldLoadFeature()
@@ -170,14 +183,35 @@ bool AutoRenderFeature::ShouldLoadFeature()
 	return !!g_pCVar && !!interfaces::_engine_client;
 }
 
+void AutoRenderFeature::Impl::MovieInfoPtrs::Init()
+{
+	// find cl_movieinfo struct
+	if (!g_pCVar)
+		return;
+	const ConCommand* endmovieCmd = g_pCVar->FindCommand("endmovie");
+	if (!endmovieCmd)
+		return;
+	const byte* cbFunc = *(byte**)((byte*)endmovieCmd + sizeof(ConCommandBase));
+	if (!cbFunc)
+		return;
+	if (cbFunc[0] != 0x80 || cbFunc[1] != 0x3d || cbFunc[6] != 0x00) // cmp byte ptr [cl_movieinfo.moviename], 0
+		return;
+	moviename = *(char**)(cbFunc + 2);
+
+	int typeOff = utils::GetBuildNumber() <= 5135 ? 260 : 264;
+	type = (int*)(moviename + typeOff);
+}
+
 void AutoRenderFeature::InitHooks()
 {
 	HOOK_FUNCTION(engine, S_TransferStereo16);
 	HOOK_FUNCTION(engine, CAudioDirectSound__TransferSamples);
+	HOOK_FUNCTION(engine, CVideoMode_Common__WriteMovieFrame);
 
 	// setup before LoadFeature()
 	impl = std::make_unique<Impl>();
 	impl->snd_lockpartial = g_pCVar->FindVar("snd_lockpartial");
+	impl->cl_movieinfo.Init();
 }
 
 void AutoRenderFeature::LoadFeature()
@@ -222,7 +256,8 @@ bool AutoRenderFeature::Works()
 
 bool AutoRenderFeature::SupportsAudioCapture()
 {
-	return !!impl->snd_lockpartial && ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16;
+	return impl->snd_lockpartial && ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16
+	       && impl->cl_movieinfo.moviename && impl->cl_movieinfo.type;
 }
 
 std::vector<ArCvarSetting> AutoRenderFeature::CreateDefaultCvarSettings(float hostFrameRateVal)
@@ -232,6 +267,9 @@ std::vector<ArCvarSetting> AutoRenderFeature::CreateDefaultCvarSettings(float ho
 	ret.emplace_back("volume", "0");
 	ret.emplace_back("host_framerate", std::to_string(hostFrameRateVal).c_str()); // TODO substitute
 	ret.emplace_back("gl_clear", "1");                                            // TODO make this optional
+	// ret.emplace_back("snd_noextraupdate", "1");                                   // TODO do I need this?
+	// ret.emplace_back("snd_mixahead", "0");
+	ret.emplace_back("snd_surround", "2"); // TODO do I need to pair this with snd_lockpartial?
 	ret.emplace_back("spt_focus_nosleep", "1");
 	ret.emplace_back("spt_disable_tone_map_reset", "1");
 	ret.emplace_back("spt_override_tpose", "17");
@@ -268,7 +306,7 @@ bool AutoRenderFeature::StopMovieJob()
 	std::lock_guard lk(impl->sharedRunningJobMtx);
 
 	bool killed = false;
-	auto runningJob = impl->runningMovieJob.load(std::memory_order_acquire);
+	auto runningJob = impl->runningMovieJob.exchange(nullptr, std::memory_order_acquire);
 
 	if (runningJob)
 	{
@@ -278,13 +316,15 @@ bool AutoRenderFeature::StopMovieJob()
 		runningJob->IncrementElapsedTime(false);
 
 		impl->StoreMovieJobResult(*runningJob);
-		impl->runningMovieJob.store(nullptr, std::memory_order_release);
+		if (runningJob->captureAudio)
+			impl->cl_movieinfo.moviename[0] = '\0'; // TODO make this RAII?
 		killed = true;
 	}
 
 	return killed;
 }
 
+// TODO do I still need this hook? if not, then I don't need snd_lockpartial either
 IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, void*, int end)
 {
 	auto runningMovieJob = impl->runningMovieJob.load();
@@ -352,6 +392,12 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	}
 
 	runningJob->mgr->UnlockSoundBuf(stat);
+}
+
+IMPL_HOOK_THISCALL(AutoRenderFeature, void, CVideoMode_Common__WriteMovieFrame, void*, void* movieInfo)
+{
+	if (!impl->runningMovieJob.load(std::memory_order_acquire))
+		ORIG_CVideoMode_Common__WriteMovieFrame(thisptr, movieInfo);
 }
 
 void AutoRenderFeature::Impl::OnFrameSignal()
@@ -516,10 +562,18 @@ void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
 
 	spt_auto_render_feat.StopMovieJob();
 
+	// a small race condition here between StopMovieJob & lock(sharedRunningJobMtx), but whatever
+
 	{
-		// load new cvars and swap out the running job object
+		// load new cvars, set moviename and swap out the running job object
 		std::lock_guard lk(sharedRunningJobMtx);
 		std::ranges::copy(deferredJob->cvars, std::back_inserter(newRunningJob->cvarStorage));
+		if (newRunningJob->captureAudio)
+		{
+			// TODO document why the hell we need to do this
+			*impl->cl_movieinfo.type = 0;
+			strcpy(impl->cl_movieinfo.moviename, "spt_autorender");
+		}
 		newRunningJob->IncrementElapsedTime(false);
 		runningMovieJob.store(newRunningJob);
 	}

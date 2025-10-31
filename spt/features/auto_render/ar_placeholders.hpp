@@ -96,10 +96,10 @@ public:
 	}
 
 	// clang-format off
-	AR_GLOBAL_PLACEHOLDER(ArPhExePath, EXE_PATH, "Path to the ffmpeg executable (or an executable of your choice)");
-	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, VID_WIDTH, "Input video width in pixels (set to whatever the game is currently running at)");
-	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, VID_HEIGHT, "Input video height in pixels (set to whatever the game is currently running at)");
-	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, FRAMERATE, "Input framerate");
+	AR_GLOBAL_PLACEHOLDER(ArPhExePath, EXE_PATH, "Path to the rendering application");
+	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, VID_WIDTH, "Input video width in pixels");
+	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, VID_HEIGHT, "Input video height in pixels");
+	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, FRAMERATE, "Output framerate");
 	AR_GLOBAL_PLACEHOLDER(ArPhUuid, UUID, "Unique UUID for each video");
 	AR_GLOBAL_PLACEHOLDER(ArPhPipeName, PIPE_NAME, "Name of the pipe that the data will be fed to");
 	AR_GLOBAL_PLACEHOLDER(ArPhDatetime, DATE_TIME, "Date and time formatted as YYYY-MM-DD_HH-MM-SS");

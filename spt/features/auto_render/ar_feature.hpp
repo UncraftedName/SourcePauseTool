@@ -43,7 +43,7 @@ struct ArDeferredMovieJob
 	std::optional<size_t> nFramesInFlight; // only used if asyncMode != AR_SYNC_FULL, reasonable default is 3
 	std::vector<ArCvarSetting> cvars;
 	float volume;
-	bool recordWhenConsoleIsOpen;
+	bool recordWhenConsoleIsOpen; // TODO now that i'm using startmovie logic, remove this
 	bool recordAfterImGuiCallbacks; // do you want ImGui to show up in the video?
 };
 
@@ -87,6 +87,8 @@ struct ArMovieJobResult
 * Most of this data is shared between multiple threads, so it *should* be thread safe. However, it
 * is designed to be called from the main game thread (e.g. framesignal, concmd, imgui, etc.).
 */
+
+// TODO this doesn't even need to be a feature, just make it a singleton class
 class AutoRenderFeature : public FeatureWrapper<AutoRenderFeature>
 {
 public:
@@ -123,5 +125,7 @@ private:
 	                       const void* pfront,
 	                       int lpaintedtime,
 	                       int endtime);
+
+	DECL_STATIC_HOOK_THISCALL(void, CVideoMode_Common__WriteMovieFrame, void*, void* info);
 
 } inline spt_auto_render_feat;
