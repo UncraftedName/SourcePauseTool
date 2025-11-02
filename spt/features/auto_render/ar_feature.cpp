@@ -375,6 +375,8 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 {
 	ORIG_S_TransferStereo16(pOutput, pfront, lpaintedtime, endtime);
 
+#if 0
+
 	int nPairs = endtime - lpaintedtime;
 	if (nPairs <= 0)
 		return;
@@ -417,6 +419,61 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 
 #ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
 	runningJob->nAudioSamplesConsumed += nPairs;
+#endif
+
+#else
+
+	// NEW
+
+	std::shared_lock lk(impl->sharedRunningJobMtx);
+
+	auto runningJob = impl->runningMovieJob.load(std::memory_order_acquire);
+	if (!runningJob)
+		return;
+
+	// TODO handle paused state
+
+	int bufferSizeBytes = 0x4000 * 2;
+	int deviceSampleCount = bufferSizeBytes / 2;
+	int* snd_p = (int*)pfront;
+
+	int samplePairCount = deviceSampleCount / 2;
+	int sampleMask = samplePairCount - 1;
+	float vol = runningJob->volume;
+
+	while (lpaintedtime < endtime)
+	{
+		int lpos = lpaintedtime & sampleMask;
+		int snd_linear_count = std::min(samplePairCount - lpos, endtime - lpaintedtime);
+
+#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+		std::osyncstream(runningJob->timingInfoFile)
+		    << std::format("[{}]: {} samples (total={}) (timestamp={:.3f}), paused={}\n",
+		                   __FUNCTION__,
+		                   snd_linear_count,
+		                   runningJob->nAudioSamplesConsumed,
+		                   runningJob->nAudioSamplesConsumed / 44100.f,
+		                   false);
+		runningJob->nAudioSamplesConsumed += snd_linear_count;
+#endif
+
+		{
+			ser::StatusTracker stat;
+			short* outBuf = runningJob->mgr->LockSoundBuf(snd_linear_count, stat);
+			if (!outBuf || !stat.Ok())
+				return;
+			for (int i = 0; i < snd_linear_count * 2; i++)
+			{
+				float sample = ((int*)snd_p)[i] * vol;
+				outBuf[i] = static_cast<short>(std::clamp(sample, -32768.f, 32767.f));
+			}
+			runningJob->mgr->UnlockSoundBuf(stat);
+		}
+
+		snd_p += snd_linear_count * 2;
+		lpaintedtime += snd_linear_count;
+	}
+
 #endif
 }
 

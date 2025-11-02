@@ -40,6 +40,8 @@ void ArLockableSurfaceConsumer::LockAndConsume(IDirect3DSurface9* offScreenSurfa
 	}
 }
 
+// TODO add option for pipe timeout
+
 #define AR_DO_NUTLIB_CALL(func_with_args, stat_) \
 	do \
 	{ \
