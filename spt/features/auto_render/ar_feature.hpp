@@ -13,7 +13,7 @@ struct IDirect3DDevice9;
 
 struct ArCvarSetting
 {
-	std::variant<ConVar*, std::string> cvar; // if string, will be looked up
+	std::variant<std::string, ConVar*> cvar; // if string, will be looked up
 	std::string val;
 };
 
@@ -96,7 +96,6 @@ public:
 	// available during or after LoadFeature
 	bool Works();
 	bool SupportsAudioCapture();
-	std::vector<ArCvarSetting> CreateDefaultCvarSettings(float hostFrameRateVal);
 
 	// replaces any currently queued job
 	void QueueMovieJob(std::unique_ptr<const ArDeferredMovieJob> deferred);

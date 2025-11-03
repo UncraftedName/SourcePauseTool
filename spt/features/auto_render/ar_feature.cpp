@@ -272,22 +272,6 @@ bool AutoRenderFeature::SupportsAudioCapture()
 	       && impl->cl_movieinfo.moviename && impl->cl_movieinfo.type;
 }
 
-std::vector<ArCvarSetting> AutoRenderFeature::CreateDefaultCvarSettings(float hostFrameRateVal)
-{
-	std::vector<ArCvarSetting> ret;
-	ret.emplace_back("sv_cheats", "1");
-	ret.emplace_back("volume", "0");
-	ret.emplace_back("host_framerate", std::to_string(hostFrameRateVal).c_str()); // TODO substitute
-	ret.emplace_back("gl_clear", "1");                                            // TODO make this optional
-	// ret.emplace_back("snd_noextraupdate", "1");                                   // TODO do I need this?
-	// ret.emplace_back("snd_mixahead", "0");
-	ret.emplace_back("snd_surround", "2"); // TODO do I need to pair this with snd_lockpartial?
-	ret.emplace_back("spt_focus_nosleep", "1");
-	ret.emplace_back("spt_disable_tone_map_reset", "1");
-	ret.emplace_back("spt_override_tpose", "17");
-	return ret;
-}
-
 void AutoRenderFeature::QueueMovieJob(std::unique_ptr<const ArDeferredMovieJob> deferred)
 {
 	impl->deferredMovieJob.store(std::move(deferred));
@@ -375,7 +359,7 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 {
 	ORIG_S_TransferStereo16(pOutput, pfront, lpaintedtime, endtime);
 
-#if 0
+#if 1
 
 	int nPairs = endtime - lpaintedtime;
 	if (nPairs <= 0)

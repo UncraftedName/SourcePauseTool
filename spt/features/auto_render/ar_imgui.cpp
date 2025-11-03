@@ -43,7 +43,28 @@ struct ArImGuiPersist
 	std::string cmdLineFormatted;
 	std::vector<std::string> unrecognizedPlaceholders;
 
-	float fpsVal = std::stoi(*ArGlobalPlaceholders::FRAMERATE.GetValue());
+	struct DefaultCvar
+	{
+		ArCvarSetting cvarSetting;
+		std::optional<std::string> helpText = std::nullopt; // if set, this is a mutable cvar
+	};
+
+	std::vector<DefaultCvar> defaultCvarSettings{
+	    DefaultCvar{{"host_framerate", "-1"}, "Required for video & audio syncing"},
+	    DefaultCvar{{"fps_max", "-1"},
+	                "Required for correct audio syncing for now (only ran when capturing audio)"},
+	    DefaultCvar{{"snd_surround_speakers", "2"}, "Sound recording code requires stereo audio"},
+	    DefaultCvar{{"snd_lockpartial", "0"}, "Required for sound recording"},
+	    DefaultCvar{{"volume", "0"}, "Game will not output sound, but audio will still be recorded"},
+	    DefaultCvar{{"gl_clear", "1"}},
+	    DefaultCvar{{"spt_focus_nosleep", "1"}},
+	    DefaultCvar{{"spt_disable_tone_map_reset", "1"}},
+	    DefaultCvar{{"spt_override_tpose", "17"}},
+	};
+
+	std::vector<ArCvarSetting> userCvarSettings;
+
+	float fpsVal = 60.f;
 	float playbackSpeed = 1.f;
 	float volume = .5f;
 	bool captureAudio = true;
@@ -65,6 +86,9 @@ struct ArImGuiPersist
 	bool DrawUnformattedCmdLine(); // returns true if was updated
 	void DrawDefaultPlaceholders();
 	void DrawFormattedCmdLine();
+
+	void DrawCvars();
+	void ResetDefaultCvars();
 };
 
 void AutoRenderFeature::ImGuiTabCallback()
@@ -126,6 +150,17 @@ void AutoRenderFeature::ImGuiTabCallback()
 	}
 
 	persist.DrawFormattedCmdLine();
+
+	// cvar settings
+
+	if (persist.userCvarSettings.empty())
+		persist.ResetDefaultCvars();
+	Assert(std::get<std::string>(persist.userCvarSettings[0].cvar) == "host_framerate");
+	Assert(std::get<std::string>(persist.userCvarSettings[1].cvar) == "fps_max");
+	float hostFramerateVal = persist.fpsVal / persist.playbackSpeed;
+	persist.userCvarSettings[0].val = std::to_string(hostFramerateVal);
+	persist.userCvarSettings[1].val = std::to_string(hostFramerateVal * 0.9f);
+	persist.DrawCvars();
 }
 
 bool ArImGuiPersist::DrawRunningJobStatus()
@@ -206,6 +241,11 @@ bool ArImGuiPersist::DrawStartRenderButton()
 	if (!ImGui::Button("Start rendering"))
 		return false;
 
+	std::vector<ArCvarSetting> jobCvars = userCvarSettings;
+	Assert(std::get<std::string>(userCvarSettings[1].cvar) == "fps_max");
+	if (!captureAudio)
+		jobCvars.erase(jobCvars.begin() + 1); // remove fps_max if not capturing audio
+
 	// construct on the stack then move into a unique_ptr so we can use designated initializers
 	ArDeferredMovieJob defferedMovieJob{
 	    .ffmpegArgs{
@@ -220,7 +260,7 @@ bool ArImGuiPersist::DrawStartRenderButton()
 	    .maxConsumeFrames = std::nullopt, // TODO
 	    .syncMode = syncMode,
 	    .nFramesInFlight = (size_t)nFramesInFlight,
-	    .cvars = spt_auto_render_feat.CreateDefaultCvarSettings(fpsVal / playbackSpeed), // TODO
+	    .cvars = jobCvars,
 	    .volume = volume,
 	    .recordWhenConsoleIsOpen = recordWhenConsoleIsOpen,
 	    .recordAfterImGuiCallbacks = recordAfterImGuiCallbacks,
@@ -306,8 +346,9 @@ void ArImGuiPersist::DrawFramerateOptions()
 		ArGlobalPlaceholders::FRAMERATE.SetValue(std::to_string(fpsVal));
 	}
 
-	if (ImGui::InputFloat("Playback speed", &playbackSpeed))
-		playbackSpeed = std::clamp(playbackSpeed, 0.001f, 1000.f);
+	// TODO test with different playback speed settings
+	/*if (ImGui::InputFloat("Playback speed", &playbackSpeed))
+		playbackSpeed = std::clamp(playbackSpeed, 0.001f, 1000.f);*/
 }
 
 void ArImGuiPersist::DrawAudioOptions()
@@ -332,10 +373,6 @@ void ArImGuiPersist::DrawSyncMode()
 	ImGui::SameLine();
 	ImGui::RadioButton("Threaded", (int*)&syncMode, AR_SYNC_THREADED);
 
-	ImGui::BeginDisabled(syncMode == AR_SYNC_FULL);
-	ImGui::SliderInt("Number of frames in flight", &nFramesInFlight, 1, 3, nullptr, ImGuiSliderFlags_AlwaysClamp);
-	ImGui::EndDisabled();
-
 	ImGui::SameLine();
 	SptImGui::HelpMarker(
 	    "Determines how frames are submitted to the app:\n"
@@ -343,6 +380,10 @@ void ArImGuiPersist::DrawSyncMode()
 	    " - Threaded: frames are asynchronously requested from the GPU and pumped in by a worker thread\n"
 	    "\n"
 	    "The threaded option should be good and fast, the synchronous option exists as a slower fallback.");
+
+	ImGui::BeginDisabled(syncMode == AR_SYNC_FULL);
+	ImGui::SliderInt("Number of frames in flight", &nFramesInFlight, 1, 3, nullptr, ImGuiSliderFlags_AlwaysClamp);
+	ImGui::EndDisabled();
 }
 
 bool ArImGuiPersist::DrawUnformattedCmdLine()
@@ -428,4 +469,68 @@ void ArImGuiPersist::DrawFormattedCmdLine()
 		                          ImGuiInputTextFlags_ReadOnly);
 		ImGui::TreePop();
 	}
+}
+
+void ArImGuiPersist::DrawCvars()
+{
+	if (ImGui::TreeNode("ConVars"))
+	{
+		ImGui::TextWrapped(
+		    "These are cvars that will be set when the rendering is started and set back to their prior values afterwards.");
+		if (ImGui::Button("Reset to default"))
+			ResetDefaultCvars();
+
+		if (ImGui::BeginTable("##cvars", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
+		{
+			ImGui::TableSetupColumn("cvar name");
+			ImGui::TableSetupColumn("value");
+			ImGui::TableHeadersRow();
+
+			int deleteIdx = -1;
+			for (size_t i = 0; i < userCvarSettings.size(); i++)
+			{
+				ImGui::TableNextRow();
+				ImGui::TableNextColumn();
+				ImGui::PushID((int)i);
+				bool isDisabled =
+				    i < defaultCvarSettings.size() && defaultCvarSettings[i].helpText.has_value();
+				ImGui::BeginDisabled(isDisabled);
+				ImGui::InputText("##name", &std::get<std::string>(userCvarSettings[i].cvar));
+				if (isDisabled)
+				{
+					ImGui::SameLine();
+					SptImGui::HelpMarker(defaultCvarSettings[i].helpText.value().c_str());
+				}
+				else
+				{
+					ImGui::SameLine();
+					if (ImGui::SmallButton("-"))
+						deleteIdx = (int)i;
+				}
+				ImGui::TableNextColumn();
+				ImGui::InputText("##value", &userCvarSettings[i].val);
+				ImGui::EndDisabled();
+				ImGui::PopID();
+			}
+
+			if (deleteIdx >= 0)
+				userCvarSettings.erase(userCvarSettings.begin() + deleteIdx);
+
+			ImGui::EndTable();
+		}
+
+		if (ImGui::SmallButton("+"))
+			userCvarSettings.push_back(ArCvarSetting{"", ""});
+
+		ImGui::TreePop();
+	}
+}
+
+void ArImGuiPersist::ResetDefaultCvars()
+{
+	userCvarSettings.clear();
+	std::transform(defaultCvarSettings.begin(),
+	               defaultCvarSettings.end(),
+	               std::back_inserter(userCvarSettings),
+	               [](const DefaultCvar& def) { return def.cvarSetting; });
 }
