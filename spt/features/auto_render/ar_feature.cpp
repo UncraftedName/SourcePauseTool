@@ -2,7 +2,7 @@
 
 #include "ar_jobs.hpp"
 #include "ar_util.hpp"
-#include "ar_feature.hpp"
+#include "ar_interface.hpp"
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/game_detection.hpp"
@@ -147,20 +147,35 @@ struct ArRunningJob
 	}
 };
 
-struct AutoRenderFeature::Impl
+class AutoRenderFeature : public FeatureWrapper<AutoRenderFeature>
 {
-	std::shared_mutex sharedRunningJobMtx; // starting & stopping the job is exclusive, submitting data is shared
-	std::atomic<std::shared_ptr<ArDeferredMovieJob>> deferredMovieJob;
-	std::atomic<std::shared_ptr<ArRunningJob>> runningMovieJob;
-	std::atomic<std::shared_ptr<ArMovieJobResult>> lastAppResult;
+protected:
+	virtual bool ShouldLoadFeature() override;
+	virtual void InitHooks() override;
+	virtual void LoadFeature() override;
+	virtual void UnloadFeature() override;
+
+public:
+	// static inline hell to make the feature moveable
+
+	// starting & stopping the job is exclusive, submitting data is shared
+	static inline std::shared_mutex sharedRunningJobMtx;
+	static inline std::atomic<std::shared_ptr<ArDeferredMovieJob>> deferredMovieJob;
+	static inline std::atomic<std::shared_ptr<ArRunningJob>> runningMovieJob;
+	static inline std::atomic<std::shared_ptr<ArMovieJobResult>> lastMovieJobResult;
 
 	void OnFrameSignal();
-	void OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device);
-	void OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device);
+	static void OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device);
+	static void OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device);
 	void OnShaderDevicePresentSignal(IDirect3DDevice9* device, bool postImGui);
 	void RunningJobFrame(IDirect3DDevice9* device, std::shared_ptr<ArRunningJob> runningJob, bool shouldKill);
 	void ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<ArDeferredMovieJob> deferredJob);
 	void StoreMovieJobResult(ArRunningJob& runningJob);
+	/*
+	* A separate impl from the interface that doesn't lock since locking the mutex recursively is bad.
+	* Make sure to lock sharedRunningJobMtx exclusively before calling this.
+	*/
+	bool StopMovieJobNoLock();
 
 	struct MovieInfoPtrs
 	{
@@ -169,13 +184,19 @@ struct AutoRenderFeature::Impl
 
 		void Init();
 	} cl_movieinfo; // not stored as MovieInfo_t because the size of moviename changes between versions
-};
 
-/*
-* The C++ idiomatic way to do this would be with the PImpl paradigm, but that gets weird with
-* Feature::Move(). It's much easier to have a static global instead of a member field.
-*/
-std::unique_ptr<AutoRenderFeature::Impl> AutoRenderFeature::impl;
+	DECL_STATIC_HOOK_THISCALL(void, CAudioDirectSound__TransferSamples, void*, int end);
+
+	DECL_STATIC_HOOK_CDECL(void,
+	                       S_TransferStereo16,
+	                       void* pOutput,
+	                       const void* pfront,
+	                       int lpaintedtime,
+	                       int endtime);
+
+	DECL_STATIC_HOOK_THISCALL(void, CVideoMode_Common__WriteMovieFrame, void*, void* info);
+
+} static spt_auto_render_feat;
 
 // TODO test on steampipe
 namespace patterns
@@ -194,7 +215,7 @@ bool AutoRenderFeature::ShouldLoadFeature()
 	return !!g_pCVar && !!interfaces::_engine_client;
 }
 
-void AutoRenderFeature::Impl::MovieInfoPtrs::Init()
+void AutoRenderFeature::MovieInfoPtrs::Init()
 {
 	// find cl_movieinfo struct
 	if (!g_pCVar)
@@ -220,13 +241,15 @@ void AutoRenderFeature::InitHooks()
 	HOOK_FUNCTION(engine, CVideoMode_Common__WriteMovieFrame);
 
 	// setup before LoadFeature()
-	impl = std::make_unique<Impl>();
-	impl->cl_movieinfo.Init();
+	cl_movieinfo.Init();
 }
+
+// not a member function to decouple from the feature internals
+extern void ArImGuiTabCallback();
 
 void AutoRenderFeature::LoadFeature()
 {
-	if (!Works())
+	if (!SptAutoRender::Works())
 		return;
 
 	// fill in default placeholders
@@ -245,62 +268,69 @@ void AutoRenderFeature::LoadFeature()
 	ArGlobalPlaceholders::UUID.Regenerate();
 	ArGlobalPlaceholders::PIPE_NAME.Regenerate();
 
-	FrameSignal.Connect(impl.get(), &AutoRenderFeature::Impl::OnFrameSignal);
-	ShaderDevicePresentPreImGuiSignal.Connect(impl.get(),
-	                                          &AutoRenderFeature::Impl::OnShaderDevicePresentPreImGuiSignal);
-	ShaderDevicePresentPostImGuiSignal.Connect(impl.get(),
-	                                           &AutoRenderFeature::Impl::OnShaderDevicePresentPostImGuiSignal);
+	FrameSignal.Connect(this, &AutoRenderFeature::OnFrameSignal);
+	ShaderDevicePresentPreImGuiSignal.Connect(&AutoRenderFeature::OnShaderDevicePresentPreImGuiSignal);
+	ShaderDevicePresentPostImGuiSignal.Connect(&AutoRenderFeature::OnShaderDevicePresentPostImGuiSignal);
 
-	SptImGuiGroup::QoL_AutoRender.RegisterUserCallback(ImGuiTabCallback);
+	SptImGuiGroup::QoL_AutoRender.RegisterUserCallback(ArImGuiTabCallback);
 }
 
 void AutoRenderFeature::UnloadFeature()
 {
-	impl.reset();
+	deferredMovieJob.store(nullptr, std::memory_order_release);
+	runningMovieJob.store(nullptr, std::memory_order_release);
+	lastMovieJobResult.store(nullptr, std::memory_order_release);
+	cl_movieinfo.moviename = nullptr;
+	cl_movieinfo.type = nullptr;
 }
 
-bool AutoRenderFeature::Works()
+bool SptAutoRender::Works()
 {
 	return ShaderDevicePresentPreImGuiSignal.Works && ShaderDevicePresentPostImGuiSignal.Works && FrameSignal.Works;
 }
 
-bool AutoRenderFeature::SupportsAudioCapture()
+bool SptAutoRender::SupportsAudioCapture()
 {
-	return ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16 && impl->cl_movieinfo.moviename
-	       && impl->cl_movieinfo.type;
+	return spt_auto_render_feat.ORIG_CAudioDirectSound__TransferSamples
+	       && spt_auto_render_feat.ORIG_S_TransferStereo16 && spt_auto_render_feat.cl_movieinfo.moviename
+	       && spt_auto_render_feat.cl_movieinfo.type;
 }
 
-void AutoRenderFeature::QueueMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred)
+void SptAutoRender::QueueMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred)
 {
-	impl->deferredMovieJob.store(std::move(deferred), std::memory_order_release);
+	spt_auto_render_feat.deferredMovieJob.store(std::move(deferred), std::memory_order_release);
 }
 
-std::shared_ptr<const ArRunningMovieJobStatus> AutoRenderFeature::GetRunningJobStatus() const
+std::shared_ptr<const ArRunningMovieJobStatus> SptAutoRender::GetRunningMovieJobStatus()
 {
-	auto runningJob = impl->runningMovieJob.load();
+	auto runningJob = spt_auto_render_feat.runningMovieJob.load();
 	// aliasing ctor of std::shared_ptr
 	return runningJob ? std::shared_ptr<const ArRunningMovieJobStatus>(runningJob, &runningJob->status) : nullptr;
 }
 
-std::shared_ptr<const ArMovieJobResult> AutoRenderFeature::GetLastMovieJobResult() const
+std::shared_ptr<const ArMovieJobResult> SptAutoRender::GetLastMovieJobResult()
 {
-	return impl->lastAppResult.load();
+	return spt_auto_render_feat.lastMovieJobResult.load();
 }
 
-bool AutoRenderFeature::PauseMovieJob(bool pauseState)
+bool SptAutoRender::PauseMovieJob(bool pauseState)
 {
-	auto runningJob = impl->runningMovieJob.load();
+	auto runningJob = spt_auto_render_feat.runningMovieJob.load(std::memory_order_acquire);
 	if (runningJob)
 		runningJob->status.userPaused.store(pauseState);
 	return !!runningJob;
 }
 
-bool AutoRenderFeature::StopMovieJob()
+bool SptAutoRender::StopMovieJob()
 {
-	std::lock_guard lk(impl->sharedRunningJobMtx);
+	std::lock_guard lk(spt_auto_render_feat.sharedRunningJobMtx);
+	return spt_auto_render_feat.StopMovieJobNoLock();
+}
 
+bool AutoRenderFeature::StopMovieJobNoLock()
+{
 	bool killed = false;
-	auto runningJob = impl->runningMovieJob.exchange(nullptr, std::memory_order_acquire);
+	auto runningJob = runningMovieJob.exchange(nullptr, std::memory_order_acquire);
 
 	if (runningJob)
 	{
@@ -309,9 +339,9 @@ bool AutoRenderFeature::StopMovieJob()
 		runningJob->mgr->Finish(runningJob->result->stat);
 		runningJob->IncrementElapsedTime(false);
 
-		impl->StoreMovieJobResult(*runningJob);
+		StoreMovieJobResult(*runningJob);
 		if (runningJob->captureAudio)
-			impl->cl_movieinfo.moviename[0] = '\0'; // TODO make this RAII?
+			cl_movieinfo.moviename[0] = '\0'; // TODO make this RAII?
 		killed = true;
 	}
 
@@ -321,9 +351,9 @@ bool AutoRenderFeature::StopMovieJob()
 // TODO do I still need this hook? if not, then I don't need snd_lockpartial either
 IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, void*, int end)
 {
-	auto runningMovieJob = impl->runningMovieJob.load();
+	auto running = runningMovieJob.load(std::memory_order_acquire);
 
-	if (!!runningMovieJob && runningMovieJob->captureAudio)
+	if (!!running && running->captureAudio)
 	{
 		// force the code in the game to call S_TransferStereo16
 
@@ -363,9 +393,9 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	if (nPairs <= 0)
 		return;
 
-	std::shared_lock lk(impl->sharedRunningJobMtx);
+	std::shared_lock lk(sharedRunningJobMtx);
 
-	auto runningJob = impl->runningMovieJob.load();
+	auto runningJob = runningMovieJob.load();
 	if (!runningJob)
 		return;
 
@@ -461,11 +491,11 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 
 IMPL_HOOK_THISCALL(AutoRenderFeature, void, CVideoMode_Common__WriteMovieFrame, void*, void* movieInfo)
 {
-	if (!impl->runningMovieJob.load(std::memory_order_acquire))
+	if (!runningMovieJob.load(std::memory_order_acquire))
 		ORIG_CVideoMode_Common__WriteMovieFrame(thisptr, movieInfo);
 }
 
-void AutoRenderFeature::Impl::OnFrameSignal()
+void AutoRenderFeature::OnFrameSignal()
 {
 	ArGlobalPlaceholders::DATE_TIME.Update();
 
@@ -500,22 +530,22 @@ void AutoRenderFeature::Impl::OnFrameSignal()
 		if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0 && runningJob->controller
 		    && runningJob->controller->ShouldStopRecording(runningJob->status))
 		{
-			spt_auto_render_feat.StopMovieJob();
+			SptAutoRender::StopMovieJob();
 		}
 	}
 }
 
-void AutoRenderFeature::Impl::OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device)
+void AutoRenderFeature::OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device)
 {
-	OnShaderDevicePresentSignal(device, false);
+	spt_auto_render_feat.OnShaderDevicePresentSignal(device, false);
 }
 
-void AutoRenderFeature::Impl::OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device)
+void AutoRenderFeature::OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device)
 {
-	OnShaderDevicePresentSignal(device, true);
+	spt_auto_render_feat.OnShaderDevicePresentSignal(device, true);
 }
 
-void AutoRenderFeature::Impl::OnShaderDevicePresentSignal(IDirect3DDevice9* device, bool postImGui)
+void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device, bool postImGui)
 {
 	auto deferredJob = deferredMovieJob.exchange(nullptr);
 	auto runningJob = runningMovieJob.load();
@@ -535,9 +565,9 @@ void AutoRenderFeature::Impl::OnShaderDevicePresentSignal(IDirect3DDevice9* devi
 	}
 }
 
-void AutoRenderFeature::Impl::RunningJobFrame(IDirect3DDevice9* device,
-                                              std::shared_ptr<ArRunningJob> runningJob,
-                                              bool shouldKill)
+void AutoRenderFeature::RunningJobFrame(IDirect3DDevice9* device,
+                                        std::shared_ptr<ArRunningJob> runningJob,
+                                        bool shouldKill)
 {
 	if (!runningJob)
 		return;
@@ -574,11 +604,10 @@ void AutoRenderFeature::Impl::RunningJobFrame(IDirect3DDevice9* device,
 	}
 
 	if (shouldKill)
-		spt_auto_render_feat.StopMovieJob();
+		SptAutoRender::StopMovieJob();
 }
 
-void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
-                                                 std::shared_ptr<ArDeferredMovieJob> deferredJob)
+void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<ArDeferredMovieJob> deferredJob)
 {
 	if (!deferredJob)
 		return;
@@ -595,8 +624,7 @@ void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
 	newRunningJob->status.outputFramerate = deferredJob->ffmpegArgs.framerate;
 	newRunningJob->controller = std::move(deferredJob->controller);
 	newRunningJob->volume = deferredJob->volume;
-	newRunningJob->captureAudio =
-	    deferredJob->ffmpegArgs.captureAudio && spt_auto_render_feat.SupportsAudioCapture();
+	newRunningJob->captureAudio = deferredJob->ffmpegArgs.captureAudio && SptAutoRender::SupportsAudioCapture();
 	newRunningJob->recordAfterImGuiCallbacks = deferredJob->recordAfterImGuiCallbacks;
 
 	// create consumer (init pipe, ffmpeg process, nutlib, etc.)
@@ -637,21 +665,20 @@ void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
 		return;
 	}
 
-	// kill old job and reset cvars
-
-	spt_auto_render_feat.StopMovieJob();
-
-	// a small race condition here between StopMovieJob & lock(sharedRunningJobMtx), but whatever
-
 	{
-		// load new cvars, set moviename and swap out the running job object
+		// kill old job and reset cvars
+
 		std::lock_guard lk(sharedRunningJobMtx);
+
+		StopMovieJobNoLock();
+
+		// load new cvars, set moviename and swap out the running job object
 		std::ranges::copy(deferredJob->cvars, std::back_inserter(newRunningJob->cvarStorage));
 		if (newRunningJob->captureAudio)
 		{
 			// TODO document why the hell we need to do this
-			*impl->cl_movieinfo.type = 0;
-			strcpy(impl->cl_movieinfo.moviename, "spt_autorender");
+			*cl_movieinfo.type = 0;
+			strcpy(cl_movieinfo.moviename, "spt_autorender");
 		}
 		newRunningJob->IncrementElapsedTime(false);
 		runningMovieJob.store(newRunningJob);
@@ -661,12 +688,12 @@ void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
 	ArGlobalPlaceholders::PIPE_NAME.Regenerate();
 }
 
-void AutoRenderFeature::Impl::StoreMovieJobResult(ArRunningJob& runningJob)
+void AutoRenderFeature::StoreMovieJobResult(ArRunningJob& runningJob)
 {
 	// fill out runningJob->result and save it
 	auto& result = runningJob.result;
 	result->elapsedTime = runningJob.GetElapsedTime(true);
 	result->unpausedElapsedTime = runningJob.GetElapsedTime(false);
 	result->nFramesConsumed = runningJob.status.nFramesConsumed.load(std::memory_order_acquire);
-	impl->lastAppResult.store(std::move(result), std::memory_order_release);
+	lastMovieJobResult.store(std::move(result), std::memory_order_release);
 }

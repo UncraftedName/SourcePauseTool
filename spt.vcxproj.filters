@@ -1155,7 +1155,10 @@
     <ClInclude Include="spt\features\auto_render\ar_jobs.hpp">
       <Filter>spt\features\auto_render</Filter>
     </ClInclude>
-    <ClInclude Include="spt\features\auto_render\ar_feature.hpp">
+    <ClInclude Include="thirdparty\imgui\imgui_stdlib.h">
+      <Filter>thirdparty\imgui</Filter>
+    </ClInclude>
+    <ClInclude Include="spt\features\auto_render\ar_interface.hpp">
       <Filter>spt\features\auto_render</Filter>
     </ClInclude>
     <ClInclude Include="thirdparty\libnut\priv.h">

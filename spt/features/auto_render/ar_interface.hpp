@@ -97,43 +97,18 @@ public:
 * is designed to be called from the main game thread (e.g. framesignal, concmd, imgui, etc.).
 */
 
-// TODO this doesn't even need to be a feature, just make it a singleton class
-class AutoRenderFeature : public FeatureWrapper<AutoRenderFeature>
+class SptAutoRender
 {
 public:
 	// available during or after LoadFeature
-	bool Works();
-	bool SupportsAudioCapture();
+	static bool Works();
+	static bool SupportsAudioCapture();
 
 	// replaces any currently queued job
-	void QueueMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred);
-	std::shared_ptr<const ArRunningMovieJobStatus> GetRunningJobStatus() const;
-	std::shared_ptr<const ArMovieJobResult> GetLastMovieJobResult() const;
-	bool PauseMovieJob(bool pauseState); // returns true if a job is still running
-	bool StopMovieJob();                 // blocks and returns true if a job was stopped
+	static void QueueMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred);
+	static std::shared_ptr<const ArRunningMovieJobStatus> GetRunningMovieJobStatus();
+	static std::shared_ptr<const ArMovieJobResult> GetLastMovieJobResult();
+	static bool PauseMovieJob(bool pauseState); // returns true if a job is still running
+	static bool StopMovieJob();                 // blocks and returns true if a job was stopped
 
-protected:
-	virtual bool ShouldLoadFeature() override;
-	virtual void InitHooks() override;
-	virtual void LoadFeature() override;
-	virtual void UnloadFeature() override;
-
-private:
-	inline static std::atomic<bool> imGuiCallbackActive = false;
-	static void ImGuiTabCallback();
-
-	struct Impl;
-	static std::unique_ptr<AutoRenderFeature::Impl> impl;
-
-	DECL_STATIC_HOOK_THISCALL(void, CAudioDirectSound__TransferSamples, void*, int end);
-
-	DECL_STATIC_HOOK_CDECL(void,
-	                       S_TransferStereo16,
-	                       void* pOutput,
-	                       const void* pfront,
-	                       int lpaintedtime,
-	                       int endtime);
-
-	DECL_STATIC_HOOK_THISCALL(void, CVideoMode_Common__WriteMovieFrame, void*, void* info);
-
-} inline spt_auto_render_feat;
+};

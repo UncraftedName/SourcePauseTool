@@ -1,6 +1,6 @@
 #include "stdafx.hpp"
 
-#include "ar_feature.hpp"
+#include "ar_interface.hpp"
 #include "ar_util.hpp"
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
@@ -71,6 +71,8 @@ struct ArImGuiPersist
 	bool recordWhenConsoleIsOpen = false;
 	bool recordAfterImGuiCallbacks = false;
 
+	void TabCallback();
+
 	bool DrawRunningJobStatus();      // returns true if there's an active job
 	bool DrawLastFinishedJobStatus(); // returns true if there's a last job
 
@@ -91,83 +93,86 @@ struct ArImGuiPersist
 	void ResetDefaultCvars();
 };
 
-void AutoRenderFeature::ImGuiTabCallback()
+// entry point
+void ArImGuiTabCallback()
 {
 	static ArImGuiPersist persist;
+	persist.TabCallback();
+}
 
-	imGuiCallbackActive.store(true); // let render thread know that it can update stuff for imgui
-
+void ArImGuiPersist::TabCallback()
+{
 	// job statuses
 
-	bool curJobRunning = persist.DrawRunningJobStatus();
-	[[maybe_unused]] bool lastJobExists = persist.DrawLastFinishedJobStatus();
+	bool curJobRunning = DrawRunningJobStatus();
+	[[maybe_unused]] bool lastJobExists = DrawLastFinishedJobStatus();
 
 	// control buttons
 
 	ImGui::BeginDisabled(curJobRunning);
-	persist.DrawStartRenderButton();
+	DrawStartRenderButton();
 	ImGui::EndDisabled();
 
 	ImGui::SameLine();
 
 	ImGui::BeginDisabled(!curJobRunning);
 	if (ImGui::Button("Stop rendering"))
-		spt_auto_render_feat.StopMovieJob();
+		SptAutoRender::StopMovieJob();
 	ImGui::EndDisabled();
 
 	ImGui::SameLine();
 
-	persist.DrawLogFolderButton();
+	DrawLogFolderButton();
 
 	// settings
 
-	persist.DrawFfmpegPath();
-	persist.DrawPipeNameOptions();
-	persist.DrawFramerateOptions();
-	persist.DrawAudioOptions();
-	ImGui::Checkbox("Render when console is open", &persist.recordWhenConsoleIsOpen);
-	ImGui::Checkbox("Render after ImGui callbacks", &persist.recordAfterImGuiCallbacks);
+	DrawFfmpegPath();
+	DrawPipeNameOptions();
+	DrawFramerateOptions();
+	DrawAudioOptions();
+	ImGui::Checkbox("Render when console is open", &recordWhenConsoleIsOpen);
+	ImGui::Checkbox("Render after ImGui callbacks", &recordAfterImGuiCallbacks);
 	ImGui::SameLine();
 	SptImGui::HelpMarker("If set, ImGui windows will show up in the recording");
 
 	// TODO - option for different videohook
 	// TODO - option for rendering demos or number of frames
 
-	persist.DrawSyncMode();
+	DrawSyncMode();
 
 	// cmdline TODO: wrap
 
-	if (persist.DrawUnformattedCmdLine())
+	if (DrawUnformattedCmdLine())
 		ArGlobalPlaceholders::imGuiFormattedCmdLineDirty.store(true);
-	persist.DrawDefaultPlaceholders();
+	DrawDefaultPlaceholders();
 
 	if (ArGlobalPlaceholders::imGuiFormattedCmdLineDirty.exchange(false))
 	{
 		// TODO - reformat the string with per-video placeholders if the user presses the start button
-		persist.cmdLineFormatted = ArPlaceholder::FormatString(ArGlobalPlaceholders::GetAll(),
-		                                                       persist.cmdLineUnformatted,
-		                                                       &persist.unrecognizedPlaceholders);
+		cmdLineFormatted = ArPlaceholder::FormatString(ArGlobalPlaceholders::GetAll(),
+		                                               cmdLineUnformatted,
+		                                               &unrecognizedPlaceholders);
 	}
 
-	persist.DrawFormattedCmdLine();
+	DrawFormattedCmdLine();
 
 	// cvar settings
 
-	if (persist.userCvarSettings.empty())
-		persist.ResetDefaultCvars();
-	Assert(std::get<std::string>(persist.userCvarSettings[0].cvar) == "host_framerate");
-	Assert(std::get<std::string>(persist.userCvarSettings[1].cvar) == "fps_max");
-	float hostFramerateVal = persist.fpsVal / persist.playbackSpeed;
-	persist.userCvarSettings[0].val = std::to_string(hostFramerateVal);
-	persist.userCvarSettings[1].val = std::to_string(hostFramerateVal * 0.9f);
-	persist.DrawCvars();
+	if (userCvarSettings.empty())
+		ResetDefaultCvars();
+	Assert(std::get<std::string>(userCvarSettings[0].cvar) == "host_framerate");
+	Assert(std::get<std::string>(userCvarSettings[1].cvar) == "fps_max");
+	float hostFramerateVal = fpsVal / playbackSpeed;
+	userCvarSettings[0].val = std::to_string(hostFramerateVal);
+	userCvarSettings[1].val = std::to_string(hostFramerateVal * 0.9f);
+	DrawCvars();
 }
 
 bool ArImGuiPersist::DrawRunningJobStatus()
 {
 	// TODO: report number of demos, output file name, ms/frame
 
-	auto runningStat = spt_auto_render_feat.GetRunningJobStatus();
+	auto runningStat = SptAutoRender::GetRunningMovieJobStatus();
 
 	if (runningStat)
 	{
@@ -207,7 +212,7 @@ bool ArImGuiPersist::DrawRunningJobStatus()
 
 bool ArImGuiPersist::DrawLastFinishedJobStatus()
 {
-	auto lastResult = spt_auto_render_feat.GetLastMovieJobResult();
+	auto lastResult = SptAutoRender::GetLastMovieJobResult();
 	if (!lastResult)
 		return false;
 
@@ -262,7 +267,7 @@ bool ArImGuiPersist::DrawStartRenderButton()
 	    .recordAfterImGuiCallbacks = recordAfterImGuiCallbacks,
 	};
 
-	spt_auto_render_feat.QueueMovieJob(std::make_unique<ArDeferredMovieJob>(std::move(defferedMovieJob)));
+	SptAutoRender::QueueMovieJob(std::make_unique<ArDeferredMovieJob>(std::move(defferedMovieJob)));
 
 	return true;
 }
@@ -349,7 +354,7 @@ void ArImGuiPersist::DrawFramerateOptions()
 
 void ArImGuiPersist::DrawAudioOptions()
 {
-	bool hasSupport = spt_auto_render_feat.SupportsAudioCapture();
+	bool hasSupport = SptAutoRender::SupportsAudioCapture();
 	captureAudio &= hasSupport;
 	ImGui::BeginDisabled(!hasSupport);
 	ImGui::Checkbox("Capture audio", &captureAudio);

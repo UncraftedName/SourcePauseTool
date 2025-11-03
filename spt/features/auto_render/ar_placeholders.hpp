@@ -86,7 +86,7 @@ public:
 class ArGlobalPlaceholders
 {
 	inline static std::atomic<bool> imGuiFormattedCmdLineDirty = true;
-	friend class AutoRenderFeature;
+	friend struct ArImGuiPersist;
 
 public:
 #define AR_GLOBAL_PLACEHOLDER(type, name, helpText) \
