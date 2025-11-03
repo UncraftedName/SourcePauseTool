@@ -192,12 +192,8 @@ bool ArImGuiPersist::DrawRunningJobStatus()
 			    runningStat->unpausedElapsedTime.load());
 			ImGui::Text("(%.3fms/frame)", (float)elapsedNoPauses.count() / nConsumedFrames);
 		}
+		ImGui::Text("Consumed %u frames", nConsumedFrames);
 
-		std::optional<ar_frame_idx> nMaxFrames = runningStat->maxConsumeFrames;
-		if (nMaxFrames)
-			ImGui::Text("Consumed %u/%u frames", nConsumedFrames, nMaxFrames.value());
-		else
-			ImGui::Text("Consumed %u frames", nConsumedFrames);
 		ImGui::SameLine();
 		ImGui::Text("(movie of length %.3fs)", nConsumedFrames / runningStat->outputFramerate);
 	}
@@ -257,9 +253,9 @@ bool ArImGuiPersist::DrawStartRenderButton()
 	        .framerate = (float)atof(ArGlobalPlaceholders::FRAMERATE.GetValue()->c_str()),
 	        .captureAudio = captureAudio,
 	    },
-	    .maxConsumeFrames = std::nullopt, // TODO
 	    .syncMode = syncMode,
 	    .nFramesInFlight = (size_t)nFramesInFlight,
+	    .controller = nullptr, // TODO
 	    .cvars = jobCvars,
 	    .volume = volume,
 	    .recordWhenConsoleIsOpen = recordWhenConsoleIsOpen,

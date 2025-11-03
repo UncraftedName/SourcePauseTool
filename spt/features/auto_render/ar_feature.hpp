@@ -10,6 +10,7 @@
 #include <string>
 
 struct IDirect3DDevice9;
+class ArMovieController;
 
 struct ArCvarSetting
 {
@@ -38,12 +39,12 @@ struct ArDeferredMovieJob
 	* TODO why don't I pass everything in as a list of placeholders again?
 	*/
 	ArFfmpegWriter::InitArgs ffmpegArgs;
-	std::optional<ar_frame_idx> maxConsumeFrames;
 	ArSyncMode syncMode;
 	std::optional<size_t> nFramesInFlight; // only used if asyncMode != AR_SYNC_FULL, reasonable default is 3
+	std::unique_ptr<ArMovieController> controller; // optional controller to manage stopping conditions
 	std::vector<ArCvarSetting> cvars;
 	float volume;
-	bool recordWhenConsoleIsOpen; // TODO now that i'm using startmovie logic, remove this
+	bool recordWhenConsoleIsOpen;   // TODO now that i'm using startmovie logic, remove this
 	bool recordAfterImGuiCallbacks; // do you want ImGui to show up in the video?
 };
 
@@ -52,7 +53,6 @@ using ar_elapsed_time_clock = std::chrono::steady_clock;
 struct ArRunningMovieJobStatus
 {
 	std::atomic<ar_frame_idx> nFramesConsumed;
-	std::optional<ar_frame_idx> maxConsumeFrames;
 	float outputFramerate;
 	ar_elapsed_time_clock::time_point startTime;
 	std::atomic<ar_elapsed_time_clock::duration> unpausedElapsedTime;
@@ -67,6 +67,14 @@ struct ArMovieJobResult
 	ar_elapsed_time_clock::duration elapsedTime;
 	ar_elapsed_time_clock::duration unpausedElapsedTime;
 	ser::StatusTracker stat;
+};
+
+class ArMovieController
+{
+public:
+	// will be called every frame after at least 1 video frame has been consumed
+	virtual bool ShouldStopRecording(const ArRunningMovieJobStatus& status) = 0;
+	virtual ~ArMovieController() = default;
 };
 
 /*
@@ -98,7 +106,7 @@ public:
 	bool SupportsAudioCapture();
 
 	// replaces any currently queued job
-	void QueueMovieJob(std::unique_ptr<const ArDeferredMovieJob> deferred);
+	void QueueMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred);
 	std::shared_ptr<const ArRunningMovieJobStatus> GetRunningJobStatus() const;
 	std::shared_ptr<const ArMovieJobResult> GetLastMovieJobResult() const;
 	bool PauseMovieJob(bool pauseState); // returns true if a job is still running

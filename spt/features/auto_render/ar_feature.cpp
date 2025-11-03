@@ -14,7 +14,7 @@
 #include <shared_mutex>
 
 // if enabled, writes when frames/audio are consumed to a file
-#define AR_DEBUG_TIMING_INFO_FILE_NAME "ar_timing_info.txt"
+// #define AR_DEBUG_TIMING_INFO_FILE_NAME "ar_timing_info.txt"
 
 #ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
 #include <syncstream>
@@ -81,6 +81,7 @@ struct ArRunningJob
 		bool lastStatePaused = false;
 	} timingData;
 
+	std::unique_ptr<ArMovieController> controller;
 	std::unique_ptr<ArSyncManager> mgr;
 	std::vector<ArCvarStorage> cvarStorage;
 	float volume = -1.f;
@@ -149,7 +150,7 @@ struct ArRunningJob
 struct AutoRenderFeature::Impl
 {
 	std::shared_mutex sharedRunningJobMtx; // starting & stopping the job is exclusive, submitting data is shared
-	std::atomic<std::shared_ptr<const ArDeferredMovieJob>> deferredMovieJob;
+	std::atomic<std::shared_ptr<ArDeferredMovieJob>> deferredMovieJob;
 	std::atomic<std::shared_ptr<ArRunningJob>> runningMovieJob;
 	std::atomic<std::shared_ptr<ArMovieJobResult>> lastAppResult;
 
@@ -158,7 +159,7 @@ struct AutoRenderFeature::Impl
 	void OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device);
 	void OnShaderDevicePresentSignal(IDirect3DDevice9* device, bool postImGui);
 	void RunningJobFrame(IDirect3DDevice9* device, std::shared_ptr<ArRunningJob> runningJob, bool shouldKill);
-	void ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<const ArDeferredMovieJob> deferredJob);
+	void ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<ArDeferredMovieJob> deferredJob);
 	void StoreMovieJobResult(ArRunningJob& runningJob);
 
 	struct MovieInfoPtrs
@@ -265,13 +266,13 @@ bool AutoRenderFeature::Works()
 
 bool AutoRenderFeature::SupportsAudioCapture()
 {
-	return ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16
-	       && impl->cl_movieinfo.moviename && impl->cl_movieinfo.type;
+	return ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16 && impl->cl_movieinfo.moviename
+	       && impl->cl_movieinfo.type;
 }
 
-void AutoRenderFeature::QueueMovieJob(std::unique_ptr<const ArDeferredMovieJob> deferred)
+void AutoRenderFeature::QueueMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred)
 {
-	impl->deferredMovieJob.store(std::move(deferred));
+	impl->deferredMovieJob.store(std::move(deferred), std::memory_order_release);
 }
 
 std::shared_ptr<const ArRunningMovieJobStatus> AutoRenderFeature::GetRunningJobStatus() const
@@ -476,7 +477,7 @@ void AutoRenderFeature::Impl::OnFrameSignal()
 
 	// handle pausing
 
-	auto runningJob = runningMovieJob.load();
+	auto runningJob = runningMovieJob.load(std::memory_order_acquire);
 	if (runningJob)
 	{
 		bool consoleOpen = interfaces::_engine_client->Con_IsVisible();
@@ -495,6 +496,12 @@ void AutoRenderFeature::Impl::OnFrameSignal()
 		                   runningJob->pauseCounters.nFramesToSkip.load(std::memory_order_acquire),
 		                   runningJob->pauseCounters.nAudioFramesToSkip.load(std::memory_order_acquire));
 #endif
+		// did user request auto-stop?
+		if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0 && runningJob->controller
+		    && runningJob->controller->ShouldStopRecording(runningJob->status))
+		{
+			spt_auto_render_feat.StopMovieJob();
+		}
 	}
 }
 
@@ -557,24 +564,11 @@ void AutoRenderFeature::Impl::RunningJobFrame(IDirect3DDevice9* device,
 		                   paused);
 #endif
 
-		if (!paused)
+		if (!paused && !shouldKill)
 		{
-			if (!shouldKill)
-			{
-				runningJob->mgr->OnDevicePresent(device, runningJob->result->stat);
-				shouldKill |= !runningJob->result->stat.Ok();
-			}
-			if (!shouldKill)
-			{
-				auto nConsumed =
-				    runningJob->status.nFramesConsumed.fetch_add(1, std::memory_order_release) + 1;
-				auto maxConsumeFrames = runningJob->status.maxConsumeFrames;
-				if (maxConsumeFrames.has_value())
-				{
-					Assert(maxConsumeFrames.value() >= 1);
-					shouldKill |= nConsumed >= maxConsumeFrames.value();
-				}
-			}
+			runningJob->mgr->OnDevicePresent(device, runningJob->result->stat);
+			runningJob->status.nFramesConsumed.fetch_add(1, std::memory_order_release);
+			shouldKill |= !runningJob->result->stat.Ok();
 		}
 		runningJob->IncrementElapsedTime(paused);
 	}
@@ -584,7 +578,7 @@ void AutoRenderFeature::Impl::RunningJobFrame(IDirect3DDevice9* device,
 }
 
 void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
-                                                 std::shared_ptr<const ArDeferredMovieJob> deferredJob)
+                                                 std::shared_ptr<ArDeferredMovieJob> deferredJob)
 {
 	if (!deferredJob)
 		return;
@@ -598,8 +592,8 @@ void AutoRenderFeature::Impl::ProcessDeferredJob(IDirect3DDevice9* device,
 	std::shared_ptr<ArRunningJob> newRunningJob = std::make_shared<ArRunningJob>();
 	newRunningJob->status.startTime = startTime;
 	newRunningJob->status.recordWhenConsoleIsOpen = deferredJob->recordWhenConsoleIsOpen;
-	newRunningJob->status.maxConsumeFrames = deferredJob->maxConsumeFrames;
 	newRunningJob->status.outputFramerate = deferredJob->ffmpegArgs.framerate;
+	newRunningJob->controller = std::move(deferredJob->controller);
 	newRunningJob->volume = deferredJob->volume;
 	newRunningJob->captureAudio =
 	    deferredJob->ffmpegArgs.captureAudio && spt_auto_render_feat.SupportsAudioCapture();
