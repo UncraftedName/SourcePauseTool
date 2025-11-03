@@ -148,8 +148,6 @@ struct ArRunningJob
 
 struct AutoRenderFeature::Impl
 {
-	ConVar* snd_lockpartial = nullptr;
-
 	std::shared_mutex sharedRunningJobMtx; // starting & stopping the job is exclusive, submitting data is shared
 	std::atomic<std::shared_ptr<const ArDeferredMovieJob>> deferredMovieJob;
 	std::atomic<std::shared_ptr<ArRunningJob>> runningMovieJob;
@@ -222,7 +220,6 @@ void AutoRenderFeature::InitHooks()
 
 	// setup before LoadFeature()
 	impl = std::make_unique<Impl>();
-	impl->snd_lockpartial = g_pCVar->FindVar("snd_lockpartial");
 	impl->cl_movieinfo.Init();
 }
 
@@ -268,7 +265,7 @@ bool AutoRenderFeature::Works()
 
 bool AutoRenderFeature::SupportsAudioCapture()
 {
-	return impl->snd_lockpartial && ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16
+	return ORIG_CAudioDirectSound__TransferSamples && ORIG_S_TransferStereo16
 	       && impl->cl_movieinfo.moviename && impl->cl_movieinfo.type;
 }
 
@@ -336,8 +333,6 @@ IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, 
 		};
 
 		CAudioDeviceBase* audioDev = (CAudioDeviceBase*)thisptr;
-
-		ArCvarStorage lockPartial(impl->snd_lockpartial, "0", false);
 		bool oldSurroundVal = audioDev->m_bSurround;
 		audioDev->m_bSurround = false;
 		ORIG_CAudioDirectSound__TransferSamples(thisptr, end);
@@ -348,6 +343,8 @@ IMPL_HOOK_THISCALL(AutoRenderFeature, void, CAudioDirectSound__TransferSamples, 
 		ORIG_CAudioDirectSound__TransferSamples(thisptr, end);
 	}
 }
+
+// TODO track audio and video sample count and error out if they desync too much
 
 IMPL_HOOK_CDECL(AutoRenderFeature,
                 void,
