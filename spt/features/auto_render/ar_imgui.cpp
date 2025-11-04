@@ -249,15 +249,7 @@ bool ArImGuiPersist::DrawStartRenderButton()
 
 	// construct on the stack then move into a unique_ptr so we can use designated initializers
 	ArDeferredMovieJob defferedMovieJob{
-	    .ffmpegArgs{
-	        .ffmpegWorkingDir = ArUtf8ToUtf16(ArGlobalPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str()),
-	        .cmd = ArUtf8ToUtf16(cmdLineFormatted.c_str()),
-	        .pipeName = ArUtf8ToUtf16(ArGlobalPlaceholders::PIPE_NAME.GetValue()->c_str()),
-	        .width = (size_t)atoi(ArGlobalPlaceholders::VID_WIDTH.GetValue()->c_str()),
-	        .height = (size_t)atoi(ArGlobalPlaceholders::VID_HEIGHT.GetValue()->c_str()),
-	        .framerate = (float)atof(ArGlobalPlaceholders::FRAMERATE.GetValue()->c_str()),
-	        .captureAudio = captureAudio,
-	    },
+	    .unformattedCmdLine = cmdLineUnformatted,
 	    .syncMode = syncMode,
 	    .nFramesInFlight = (size_t)nFramesInFlight,
 	    .controller = nullptr, // TODO

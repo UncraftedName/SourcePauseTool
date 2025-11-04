@@ -6,6 +6,7 @@
 #include <optional>
 #include <format>
 #include <chrono>
+#include <shared_mutex>
 
 /*
 * A placeholder is a key/value pair of utf8 strings in the form "{x}"->"y". These are named tokens
@@ -22,7 +23,8 @@
 * allocation cost so they should be updated infrequently. They can also set an external atomic bool
 * if a value has changed.
 * 
-* TODO - actually I only read/write to these from a single thread... get rid of the atomic bullshit
+* The strings are utf8 for compatibility with ImGui, but they are converted to utf16 when launching
+* ffmpeg.
 */
 class ArPlaceholder
 {
@@ -33,6 +35,14 @@ class ArPlaceholder
 	ArPlaceholder(ArPlaceholder&&) = delete;
 
 public:
+
+	/*
+	* Lock this exclusively to disable writes to all placeholders. This is used when formatting and copying
+	* values to FfmpegArgs to ensure that no values change mid-format. A shared mutex is definitely not the
+	* best way to do this, but it's simple enough.
+	*/
+	static inline std::shared_mutex writeLock;
+
 	const std::string key;
 	const std::string helpText;
 

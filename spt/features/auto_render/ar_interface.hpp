@@ -24,26 +24,19 @@ enum ArSyncMode
 	AR_SYNC_THREADED,
 };
 
+/*
+* When this is converted into a running job, some values are grabbed from the global placeholders
+* and the cmdLine is pumped through ArPlaceholder::FormatString().
+*/
 struct ArDeferredMovieJob
 {
-	/*
-	* Most of the stuff from ffmpegArgs is copied straight from the global placeholders, but it
-	* must be provided here because of possible race conditions. Here's an example:
-	* 
-	* 1) say the cmdLine includes a UUID as part of the pipe name
-	* 2) the ffmpeg process isn't started right away; it starts on the next frame
-	* 3) before that happens, the value of the UUID placeholder is changed
-	* 4) the job opens a pipe with a different name than that of the cmdLine
-	* 
-	* TODO there should be some publicly exposed function to convert from placeholders to ffmpegArgs
-	* TODO why don't I pass everything in as a list of placeholders again?
-	*/
-	ArFfmpegWriter::InitArgs ffmpegArgs;
+	std::string unformattedCmdLine; // utf8, will be converted to utf16
 	ArSyncMode syncMode;
 	std::optional<size_t> nFramesInFlight; // only used if asyncMode != AR_SYNC_FULL, reasonable default is 3
 	std::unique_ptr<ArMovieController> controller; // optional controller to manage stopping conditions
 	std::vector<ArCvarSetting> cvars;
 	float volume;
+	bool captureAudio;
 	bool recordWhenConsoleIsOpen;   // TODO now that i'm using startmovie logic, remove this
 	bool recordAfterImGuiCallbacks; // do you want ImGui to show up in the video?
 };

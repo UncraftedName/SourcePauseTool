@@ -621,18 +621,34 @@ void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device, std::shared
 	std::shared_ptr<ArRunningJob> newRunningJob = std::make_shared<ArRunningJob>();
 	newRunningJob->status.startTime = startTime;
 	newRunningJob->status.recordWhenConsoleIsOpen = deferredJob->recordWhenConsoleIsOpen;
-	newRunningJob->status.outputFramerate = deferredJob->ffmpegArgs.framerate;
 	newRunningJob->controller = std::move(deferredJob->controller);
 	newRunningJob->volume = deferredJob->volume;
-	newRunningJob->captureAudio = deferredJob->ffmpegArgs.captureAudio && SptAutoRender::SupportsAudioCapture();
+	newRunningJob->captureAudio = deferredJob->captureAudio && SptAutoRender::SupportsAudioCapture();
 	newRunningJob->recordAfterImGuiCallbacks = deferredJob->recordAfterImGuiCallbacks;
 
 	// create consumer (init pipe, ffmpeg process, nutlib, etc.)
 
 	auto& stat = newRunningJob->result->stat;
 
+	ArPlaceholder::writeLock.lock();
+
+	std::string utf8CmdLine =
+	    ArPlaceholder::FormatString(ArGlobalPlaceholders::GetAll(), deferredJob->unformattedCmdLine, nullptr);
+
+	ArFfmpegWriter::InitArgs ffmpegInitArgs{
+	    .ffmpegWorkingDir = ArUtf8ToUtf16(ArGlobalPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str()),
+	    .cmd = ArUtf8ToUtf16(utf8CmdLine.c_str()),
+	    .pipeName = ArUtf8ToUtf16(ArGlobalPlaceholders::PIPE_NAME.GetValue()->c_str()),
+	    .width = (size_t)atoi(ArGlobalPlaceholders::VID_WIDTH.GetValue()->c_str()),
+	    .height = (size_t)atoi(ArGlobalPlaceholders::VID_HEIGHT.GetValue()->c_str()),
+	    .framerate = (float)atof(ArGlobalPlaceholders::FRAMERATE.GetValue()->c_str()),
+	    .captureAudio = newRunningJob->captureAudio,
+	};
+
+	ArPlaceholder::writeLock.unlock();
+
 	std::unique_ptr<ArLockableSurfaceConsumer> consumer =
-	    std::make_unique<ArFfmpegWriter>(deferredJob->ffmpegArgs, newRunningJob->result->returnCode, stat);
+	    std::make_unique<ArFfmpegWriter>(ffmpegInitArgs, newRunningJob->result->returnCode, stat);
 
 	if (stat.Ok())
 	{

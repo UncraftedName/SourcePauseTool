@@ -15,6 +15,7 @@ std::shared_ptr<const std::string> ArPlaceholder::GetValue() const
 void ArPlaceholder::SetValue(std::string newVal)
 {
 	auto newValPtr = std::make_shared<std::string>(std::move(newVal));
+	std::shared_lock lk(writeLock);
 	auto oldVal = val.exchange(newValPtr);
 	if (pDirtyFlag && (!oldVal || *oldVal != *newValPtr))
 		pDirtyFlag->store(true);
