@@ -297,7 +297,7 @@ void ArImGuiPersist::DrawFfmpegPath()
 	{
 		static std::string tmp;
 		tmp = *ArGlobalPlaceholders::EXE_PATH.GetValue();
-		if (ImGui::InputText("Exe path", &tmp))
+		if (ImGui::InputText("Exe path", &tmp, ImGuiInputTextFlags_ElideLeft))
 			ArGlobalPlaceholders::EXE_PATH.SetValue(tmp);
 	}
 
@@ -401,7 +401,8 @@ bool ArImGuiPersist::DrawUnformattedCmdLine()
 	ImGui::TextUnformatted("Program to execute:");
 	if (ImGui::InputTextMultiline("##cmdline_unformatted",
 	                              &cmdLineUnformatted,
-	                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16)))
+	                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
+	                              ImGuiInputTextFlags_WordWrap))
 	{
 		changed = true;
 	}
@@ -467,7 +468,7 @@ void ArImGuiPersist::DrawFormattedCmdLine()
 		ImGui::InputTextMultiline("##cmdline_formated",
 		                          &cmdLineFormatted,
 		                          ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
-		                          ImGuiInputTextFlags_ReadOnly);
+		                          ImGuiInputTextFlags_ReadOnly | ImGuiInputTextFlags_WordWrap);
 		ImGui::TreePop();
 	}
 }
