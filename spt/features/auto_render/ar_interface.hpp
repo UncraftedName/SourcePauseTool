@@ -45,7 +45,7 @@ using ar_elapsed_time_clock = std::chrono::steady_clock;
 
 struct ArRunningMovieJobStatus
 {
-	std::atomic<ar_frame_idx> nFramesConsumed;
+	std::atomic<size_t> nFramesConsumed;
 	float outputFramerate;
 	ar_elapsed_time_clock::time_point startTime;
 	std::atomic<ar_elapsed_time_clock::duration> unpausedElapsedTime;
@@ -55,7 +55,7 @@ struct ArRunningMovieJobStatus
 
 struct ArMovieJobResult
 {
-	ar_frame_idx nFramesConsumed; // if the process crashed, this may be slightly less than the actual video length
+	size_t nFramesConsumed; // if the process crashed, this may be slightly less than the actual video length
 	std::optional<DWORD> returnCode; // set if the process was even created
 	ar_elapsed_time_clock::duration elapsedTime;
 	ar_elapsed_time_clock::duration unpausedElapsedTime;

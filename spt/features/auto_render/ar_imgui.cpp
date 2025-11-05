@@ -189,7 +189,7 @@ bool ArImGuiPersist::DrawRunningJobStatus()
 		                                                                  - runningStat->startTime);
 		ImGui::Text("Elapsed real time: %s", std::format("{:%T}", elapsedTotal).c_str());
 
-		ar_frame_idx nConsumedFrames = runningStat->nFramesConsumed.load(std::memory_order_acquire);
+		size_t nConsumedFrames = runningStat->nFramesConsumed.load(std::memory_order_acquire);
 		if (nConsumedFrames > 0)
 		{
 			ImGui::SameLine();

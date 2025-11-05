@@ -252,7 +252,7 @@ void ArFfmpegWriter::EnsurePipeConnected(ser::StatusTracker& stat)
 // TODO misspelling -pixel_format hangs somewhere...
 void ArFfmpegWriter::Consume(D3DLOCKED_RECT rect,
                              const D3DSURFACE_DESC& desc,
-                             ar_frame_idx idx,
+                             size_t idx,
                              ser::StatusTracker& stat)
 {
 	std::shared_lock destroyLk(destroyMtx);

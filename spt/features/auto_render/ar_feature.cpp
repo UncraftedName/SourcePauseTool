@@ -3,6 +3,7 @@
 #include "ar_jobs.hpp"
 #include "ar_util.hpp"
 #include "ar_interface.hpp"
+#include "ar_placeholders.hpp"
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/game_detection.hpp"
@@ -533,6 +534,13 @@ void AutoRenderFeature::OnFrameSignal()
 			SptAutoRender::StopMovieJob();
 		}
 	}
+	
+	// handle multi-demo job
+	runningJob = runningMovieJob.load(std::memory_order_acquire);
+	if (!runningJob)
+	{
+
+	}
 }
 
 void AutoRenderFeature::OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device)
@@ -632,6 +640,7 @@ void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device, std::shared
 
 	ArPlaceholder::writeLock.lock();
 
+	// TODO drop in e.g. demo index and filename in here
 	std::string utf8CmdLine =
 	    ArPlaceholder::FormatString(ArGlobalPlaceholders::GetAll(), deferredJob->unformattedCmdLine, nullptr);
 

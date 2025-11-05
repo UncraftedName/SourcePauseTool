@@ -18,8 +18,6 @@ extern "C"
 
 using Microsoft::WRL::ComPtr;
 
-using ar_frame_idx = size_t;
-
 /*
 * The thing which eats the off screen surfaces and does stuff with them NOM NOM NOM NOM.
 * Depending on the mode, this might be run on a dedicated thread, but should probably always run synchronously.
@@ -34,14 +32,14 @@ public:
 	ArLockableSurfaceConsumer(ArLockableSurfaceConsumer&&) = delete;
 	virtual ~ArLockableSurfaceConsumer() {}
 
-	void LockAndConsume(IDirect3DSurface9* offScreenSurface, ar_frame_idx idx, ser::StatusTracker& stat);
+	void LockAndConsume(IDirect3DSurface9* offScreenSurface, size_t idx, ser::StatusTracker& stat);
 	virtual void ConsumeAudio(const short* lrPcmSamples, size_t nSamplePairs, ser::StatusTracker& stat) = 0;
 	virtual void Finish() {};
 
 protected:
 	virtual void Consume(D3DLOCKED_RECT rect,
 	                     const D3DSURFACE_DESC& desc,
-	                     ar_frame_idx idx,
+	                     size_t idx,
 	                     ser::StatusTracker& stat) = 0;
 };
 
@@ -92,7 +90,7 @@ public:
 protected:
 	virtual void Consume(D3DLOCKED_RECT rect,
 	                     const D3DSURFACE_DESC& desc,
-	                     ar_frame_idx idx,
+	                     size_t idx,
 	                     ser::StatusTracker& stat) override;
 
 private:
@@ -111,7 +109,7 @@ private:
 */
 class ArSyncManager
 {
-	ar_frame_idx nConsumedFrames = 0;
+	size_t nConsumedFrames = 0;
 
 public:
 	ArSyncManager() = default;
@@ -195,22 +193,22 @@ class ArThreadedConsumerManager : public ArSyncManager
 	std::unique_ptr<ArLockableSurfaceConsumer> consumer;
 	std::vector<VideoSlot> videoSlots;
 	std::vector<AudioSlot> audioSlots;
-	ar_frame_idx nFramesProcessedByConsumer = 0;
-	ar_frame_idx nAudioSlotsProduced = 0;
-	ar_frame_idx nAudioSlotsProcessedByConsumer = 0;
+	size_t nFramesProcessedByConsumer = 0;
+	size_t nAudioSlotsProduced = 0;
+	size_t nAudioSlotsProcessedByConsumer = 0;
 
 	void VideoThreadFunc();
 	void AudioThreadFunc();
 	void StopAndJoinWorkers();
 
 protected:
-	virtual void NewFrame(IDirect3DDevice9* device, ar_frame_idx frameNum, ser::StatusTracker& stat) override;
+	virtual void NewFrame(IDirect3DDevice9* device, size_t frameNum, ser::StatusTracker& stat) override;
 
 public:
 	virtual ~ArThreadedConsumerManager();
 	explicit ArThreadedConsumerManager(IDirect3DDevice9* device,
 	                                   D3DFORMAT format,
-	                                   ar_frame_idx nMaxFramesInFlight,
+	                                   size_t nMaxFramesInFlight,
 	                                   std::unique_ptr<ArLockableSurfaceConsumer> consumer,
 	                                   ser::StatusTracker& stat);
 	virtual short* LockSoundBuf(size_t nSamplePairs, ser::StatusTracker& stat) override;

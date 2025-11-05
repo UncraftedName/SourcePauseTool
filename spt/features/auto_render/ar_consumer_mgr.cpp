@@ -54,7 +54,7 @@ void ArSynchronousConsumerManager::Finish(ser::StatusTracker& stat)
 	consumer->Finish();
 }
 
-void ArSynchronousConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx frameNum, ser::StatusTracker& stat)
+void ArSynchronousConsumerManager::NewFrame(IDirect3DDevice9* device, size_t frameNum, ser::StatusTracker& stat)
 {
 	auto [backBuf, backBufDesc] = ArGetBackBufferInfo(device, stat);
 	if (!stat.Ok())
@@ -83,7 +83,7 @@ ArThreadedConsumerManager::~ArThreadedConsumerManager()
 // copy of ArAsyncConsumerManager
 ArThreadedConsumerManager::ArThreadedConsumerManager(IDirect3DDevice9* device,
                                                      D3DFORMAT format,
-                                                     ar_frame_idx nMaxFramesInFlight,
+                                                     size_t nMaxFramesInFlight,
                                                      std::unique_ptr<ArLockableSurfaceConsumer> consumer,
                                                      ser::StatusTracker& stat)
     : consumer(std::move(consumer)), videoSlots(nMaxFramesInFlight), audioSlots(nMaxFramesInFlight)
@@ -111,7 +111,7 @@ ArThreadedConsumerManager::ArThreadedConsumerManager(IDirect3DDevice9* device,
 	if (!stat.Ok())
 		return;
 
-	for (ar_frame_idx i = 0; i < nMaxFramesInFlight; i++)
+	for (size_t i = 0; i < nMaxFramesInFlight; i++)
 	{
 		auto& slot = videoSlots[i];
 		slot.renderTarget = std::move(rts[i]);
@@ -247,7 +247,7 @@ void ArThreadedConsumerManager::StopAndJoinWorkers()
 			worker.thread.join();
 }
 
-void ArThreadedConsumerManager::NewFrame(IDirect3DDevice9* device, ar_frame_idx frameNum, ser::StatusTracker& stat)
+void ArThreadedConsumerManager::NewFrame(IDirect3DDevice9* device, size_t frameNum, ser::StatusTracker& stat)
 {
 	VideoSlot& slot = videoSlots[frameNum % videoSlots.size()];
 
