@@ -1,10 +1,13 @@
 #include "stdafx.hpp"
 
 #include "ar_interface.hpp"
+#include "ar_placeholders.hpp"
 #include "ar_util.hpp"
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "thirdparty/imgui/imgui_stdlib.h"
+
+#include <shellapi.h>
 
 #undef clamp
 

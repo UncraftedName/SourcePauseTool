@@ -1,8 +1,7 @@
 #pragma once
 
 #include "spt/feature.hpp"
-#include "ar_jobs.hpp"
-#include "ar_placeholders.hpp"
+#include "spt/utils/serialize.hpp" // TODO move ser::status to separate file
 
 #include <memory>
 #include <mutex>
