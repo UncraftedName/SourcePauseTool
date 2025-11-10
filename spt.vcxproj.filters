@@ -466,6 +466,9 @@
     <ClCompile Include="spt\features\visualizations\fcps\fcps_event_queue.cpp">
       <Filter>spt\features\visualizations\fcps</Filter>
     </ClCompile>
+    <ClCompile Include="thirdparty\imgui\ImGuiFileDialog\ImGuiFileDialog.cpp">
+      <Filter>thirdparty\imgui\ImGuiFileDialog</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\public\tier0\basetypes.h">
@@ -1107,6 +1110,12 @@
     <ClInclude Include="thirdparty\fonts\jetbrains_mono_bold\jetbrains_mono_bold.hpp">
       <Filter>thirdparty\fonts\jetbrains_mono_bold</Filter>
     </ClInclude>
+    <ClInclude Include="thirdparty\imgui\ImGuiFileDialog\ImGuiFileDialog.h">
+      <Filter>thirdparty\imgui\ImGuiFileDialog</Filter>
+    </ClInclude>
+    <ClInclude Include="thirdparty\imgui\ImGuiFileDialog\ImGuiFileDialogConfig.h">
+      <Filter>thirdparty\imgui\ImGuiFileDialog</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="SDK includes &amp; libs">
@@ -1222,6 +1231,9 @@
     </Filter>
     <Filter Include="thirdparty\fonts\jetbrains_mono_bold">
       <UniqueIdentifier>{09f6c924-5322-48d6-87af-5553ca6db293}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="thirdparty\imgui\ImGuiFileDialog">
+      <UniqueIdentifier>{331164c2-d9cb-4cd9-b9c2-20d3c37aa0c3}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
