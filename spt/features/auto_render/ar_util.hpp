@@ -122,6 +122,7 @@ inline std::string ArLastErrorAsString()
 	return ret;
 }
 
+// TODO can I use std::codecvt_utf8?
 inline std::wstring ArUtf8ToUtf16(const char* utf8)
 {
 	DWORD wlen = MultiByteToWideChar(CP_UTF8, 0, utf8, -1, nullptr, 0);
@@ -132,6 +133,18 @@ inline std::wstring ArUtf8ToUtf16(const char* utf8)
 		MultiByteToWideChar(CP_UTF8, 0, utf8, -1, wstr.data(), wlen);
 	}
 	return wstr;
+}
+
+inline std::string ArUtf16ToUtf8(const wchar* utf16)
+{
+	DWORD len = WideCharToMultiByte(CP_UTF8, 0, utf16, -1, NULL, 0, NULL, NULL);
+	std::string str;
+	if (len != 0)
+	{
+		str.resize(len - 1);
+		WideCharToMultiByte(CP_UTF8, 0, utf16, -1, str.data(), len, NULL, NULL);
+	}
+	return str;
 }
 
 // TODO go through and put this everywhere

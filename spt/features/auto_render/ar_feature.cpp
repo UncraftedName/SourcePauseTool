@@ -7,6 +7,7 @@
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/game_detection.hpp"
+#include "spt/features/demo.hpp"
 
 #undef clamp
 
@@ -88,6 +89,7 @@ struct ArRunningJob
 	float volume = -1.f;
 	bool captureAudio = false;
 	bool recordAfterImGuiCallbacks = false;
+	bool initializedFromMultiDemo = false;
 
 	struct
 	{
@@ -99,6 +101,7 @@ struct ArRunningJob
 		std::atomic<int> nFramesToSkip;
 		std::atomic<int> nAudioFramesToSkip;
 
+		// TODO sub with a variable amount (e.g. 44100 samples)
 		// https://en.wikipedia.org/wiki/Compare-and-swap
 		// https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange.html
 		template<typename T>
@@ -148,6 +151,12 @@ struct ArRunningJob
 	}
 };
 
+struct ArRunningMultiDemoJob
+{
+	ArRunningMultiDemoJobStatus status;
+	std::shared_ptr<ArDeferredMovieJob> templateDeferredJob;
+};
+
 class AutoRenderFeature : public FeatureWrapper<AutoRenderFeature>
 {
 protected:
@@ -157,10 +166,13 @@ protected:
 	virtual void UnloadFeature() override;
 
 public:
-	// static inline hell to make the feature moveable
+	// static inline hell to work with FeatureWrapper::Move
 
-	// starting & stopping the job is exclusive, submitting data is shared
+	// starting & stopping an ArRunningJob is exclusive, submitting video/audio data is shared
+	// TODO is this necessary?
 	static inline std::shared_mutex sharedRunningJobMtx;
+
+	static inline std::atomic<std::shared_ptr<ArRunningMultiDemoJob>> runningMultiDemoJob;
 	static inline std::atomic<std::shared_ptr<ArDeferredMovieJob>> deferredMovieJob;
 	static inline std::atomic<std::shared_ptr<ArRunningJob>> runningMovieJob;
 	static inline std::atomic<std::shared_ptr<ArMovieJobResult>> lastMovieJobResult;
@@ -170,11 +182,13 @@ public:
 	static void OnShaderDevicePresentPostImGuiSignal(IDirect3DDevice9* device);
 	void OnShaderDevicePresentSignal(IDirect3DDevice9* device, bool postImGui);
 	void RunningJobFrame(IDirect3DDevice9* device, std::shared_ptr<ArRunningJob> runningJob, bool shouldKill);
-	void ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<ArDeferredMovieJob> deferredJob);
+	void ProcessDeferredJob(IDirect3DDevice9* device,
+	                        std::shared_ptr<ArDeferredMovieJob> deferredJob,
+	                        std::shared_ptr<ArRunningMultiDemoJob> fromMultiDemoJob);
 	void StoreMovieJobResult(ArRunningJob& runningJob);
 	/*
-	* A separate impl from the interface that doesn't lock since locking the mutex recursively is bad.
-	* Make sure to lock sharedRunningJobMtx exclusively before calling this.
+	* A separate impl from the interface that doesn't lock since locking a shared mutex recursively
+	* is bad. Make sure to lock sharedRunningJobMtx exclusively before calling this.
 	*/
 	bool StopMovieJobNoLock();
 
@@ -245,8 +259,9 @@ void AutoRenderFeature::InitHooks()
 	cl_movieinfo.Init();
 }
 
-// not a member function to decouple from the feature internals
-extern void ArImGuiTabCallback();
+// ImGui callbacks are not member functions so I can test decoupling them from internal feature state
+extern void ArImGuiTabCallbackEntry();
+extern void ArImGuiFileDialogWindowEntry();
 
 void AutoRenderFeature::LoadFeature()
 {
@@ -269,15 +284,20 @@ void AutoRenderFeature::LoadFeature()
 	ArGlobalPlaceholders::UUID.Regenerate();
 	ArGlobalPlaceholders::PIPE_NAME.Regenerate();
 
+	ArGlobalPlaceholders::DEMO_SEQ.SetValue("_0");
+	ArGlobalPlaceholders::DEMO_NAME.SetValue("_nodemo");
+
 	FrameSignal.Connect(this, &AutoRenderFeature::OnFrameSignal);
 	ShaderDevicePresentPreImGuiSignal.Connect(&AutoRenderFeature::OnShaderDevicePresentPreImGuiSignal);
 	ShaderDevicePresentPostImGuiSignal.Connect(&AutoRenderFeature::OnShaderDevicePresentPostImGuiSignal);
 
-	SptImGuiGroup::QoL_AutoRender.RegisterUserCallback(ArImGuiTabCallback);
+	SptImGuiGroup::QoL_AutoRender.RegisterUserCallback(ArImGuiTabCallbackEntry);
+	SptImGui::RegisterWindowCallback(ArImGuiFileDialogWindowEntry);
 }
 
 void AutoRenderFeature::UnloadFeature()
 {
+	runningMultiDemoJob.store(nullptr, std::memory_order_release);
 	deferredMovieJob.store(nullptr, std::memory_order_release);
 	runningMovieJob.store(nullptr, std::memory_order_release);
 	lastMovieJobResult.store(nullptr, std::memory_order_release);
@@ -297,16 +317,59 @@ bool SptAutoRender::SupportsAudioCapture()
 	       && spt_auto_render_feat.cl_movieinfo.type;
 }
 
-void SptAutoRender::QueueMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred)
+bool SptAutoRender::QueueSingleMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred)
 {
-	spt_auto_render_feat.deferredMovieJob.store(std::move(deferred), std::memory_order_release);
+	if (spt_auto_render_feat.runningMultiDemoJob.load(std::memory_order_acquire))
+	{
+		return false;
+	}
+	else
+	{
+		spt_auto_render_feat.deferredMovieJob.store(std::move(deferred), std::memory_order_release);
+		return true;
+	}
+}
+
+bool SptAutoRender::QueueMultiDemoJob(std::unique_ptr<ArDeferredMovieJob> templateDeferredJob,
+                                      std::vector<std::filesystem::path> demoFilePaths)
+{
+	if (demoFilePaths.empty())
+		return true;
+
+	if (spt_auto_render_feat.deferredMovieJob.load(std::memory_order_acquire))
+		return false;
+
+	std::shared_ptr<ArRunningMultiDemoJob> newMultiDemoJob = std::make_shared<ArRunningMultiDemoJob>();
+	newMultiDemoJob->status.startTime = ar_elapsed_time_clock::now();
+	newMultiDemoJob->templateDeferredJob = std::move(templateDeferredJob);
+	newMultiDemoJob->status.demoFilePaths = std::move(demoFilePaths);
+
+	// chain the controllers to make sure the movie stops when the demo ends
+	newMultiDemoJob->templateDeferredJob->controller =
+	    std::make_unique<ArChainedMovieController>(std::move(newMultiDemoJob->templateDeferredJob->controller),
+	                                               std::make_unique<ArDemoStoppedController>());
+
+	std::shared_ptr<ArRunningMultiDemoJob> multiDemoJobExpected = nullptr;
+	bool set = spt_auto_render_feat.runningMultiDemoJob.compare_exchange_strong(multiDemoJobExpected,
+	                                                                            newMultiDemoJob,
+	                                                                            std::memory_order_release,
+	                                                                            std::memory_order_relaxed);
+	if (set)
+		SptAutoRender::StopMovieJob();
+	return set;
 }
 
 std::shared_ptr<const ArRunningMovieJobStatus> SptAutoRender::GetRunningMovieJobStatus()
 {
 	auto runningJob = spt_auto_render_feat.runningMovieJob.load();
-	// aliasing ctor of std::shared_ptr
 	return runningJob ? std::shared_ptr<const ArRunningMovieJobStatus>(runningJob, &runningJob->status) : nullptr;
+}
+
+std::shared_ptr<const ArRunningMultiDemoJobStatus> SptAutoRender::GetRunningMultiDemoJobStatus()
+{
+	auto multiDemoJob = spt_auto_render_feat.runningMultiDemoJob.load(std::memory_order_acquire);
+	return multiDemoJob ? std::shared_ptr<const ArRunningMultiDemoJobStatus>(multiDemoJob, &multiDemoJob->status)
+	                    : nullptr;
 }
 
 std::shared_ptr<const ArMovieJobResult> SptAutoRender::GetLastMovieJobResult()
@@ -326,6 +389,18 @@ bool SptAutoRender::StopMovieJob()
 {
 	std::lock_guard lk(spt_auto_render_feat.sharedRunningJobMtx);
 	return spt_auto_render_feat.StopMovieJobNoLock();
+}
+
+bool SptAutoRender::StopMultiDemoJob()
+{
+	bool hadJob = !!spt_auto_render_feat.runningMultiDemoJob.exchange(nullptr, std::memory_order_acq_rel);
+	if (hadJob)
+	{
+		// TODO reset demo placeholders here and anywhere else where we kill the multi demo job
+		StopMovieJob();
+		return true;
+	}
+	return false;
 }
 
 bool AutoRenderFeature::StopMovieJobNoLock()
@@ -516,6 +591,7 @@ void AutoRenderFeature::OnFrameSignal()
 		    runningJob->status.userPaused || (runningJob->status.recordWhenConsoleIsOpen != consoleOpen);
 		if (paused)
 		{
+			// TODO this gets run one frame too late (console is open -> 1 frame is recorded)
 			runningJob->pauseCounters.nFramesToSkip.fetch_add(1, std::memory_order_release);
 			runningJob->pauseCounters.nAudioFramesToSkip.fetch_add(1, std::memory_order_release);
 		}
@@ -527,20 +603,25 @@ void AutoRenderFeature::OnFrameSignal()
 		                   runningJob->pauseCounters.nFramesToSkip.load(std::memory_order_acquire),
 		                   runningJob->pauseCounters.nAudioFramesToSkip.load(std::memory_order_acquire));
 #endif
+
 		// did user request auto-stop?
-		if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0 && runningJob->controller
+		/*if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0
+		         && runningJob->controller
 		    && runningJob->controller->ShouldStopRecording(runningJob->status))
 		{
 			SptAutoRender::StopMovieJob();
+		}*/
+
+		// TODO remove
+		if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0
+		    && runningJob->initializedFromMultiDemo)
+		{
+			if (ArDemoStoppedController{}.ShouldStopRecording(runningJob->status))
+				SptAutoRender::StopMovieJob();
 		}
 	}
-	
-	// handle multi-demo job
-	runningJob = runningMovieJob.load(std::memory_order_acquire);
-	if (!runningJob)
-	{
 
-	}
+	// TODO somehow check if the demo failed to load and move on to the next one
 }
 
 void AutoRenderFeature::OnShaderDevicePresentPreImGuiSignal(IDirect3DDevice9* device)
@@ -558,18 +639,31 @@ void AutoRenderFeature::OnShaderDevicePresentSignal(IDirect3DDevice9* device, bo
 	auto deferredJob = deferredMovieJob.exchange(nullptr);
 	auto runningJob = runningMovieJob.load();
 	if (runningJob && (runningJob->recordAfterImGuiCallbacks == postImGui))
-		RunningJobFrame(device, std::move(runningJob), !!deferredJob);
+		RunningJobFrame(device, runningJob, !!deferredJob);
+
 	if (deferredJob)
 	{
-		ProcessDeferredJob(device, std::move(deferredJob));
-
-		/*
-		* In my mind, ideally we would submit a frame as soon as we turn a deferred job into a
-		* running one, but I think not doing so is really the way to go. If we submit now:
-		* - the audio will be delayed by one frame
-		* - we would have to handle calling RunningJobFrame in the post ImGui callback but 
-		*   the user not wanting ImGui to show up in their video
-		*/
+		// init deferred job
+		ProcessDeferredJob(device, std::move(deferredJob), nullptr);
+	}
+	else if (!runningJob)
+	{
+		// init multi-demo job
+		auto multiDemoJob = runningMultiDemoJob.load(std::memory_order_acquire);
+		if (multiDemoJob)
+		{
+			if (multiDemoJob->status.nextDemoIdx.load(std::memory_order_acquire)
+			    >= multiDemoJob->status.demoFilePaths.size())
+			{
+				SptAutoRender::StopMultiDemoJob();
+			}
+			else
+			{
+				// TODO add option for what happens if the previous job fails (continue or exit)
+				// TODO force console closed somehow...
+				ProcessDeferredJob(device, multiDemoJob->templateDeferredJob, multiDemoJob);
+			}
+		}
 	}
 }
 
@@ -615,7 +709,9 @@ void AutoRenderFeature::RunningJobFrame(IDirect3DDevice9* device,
 		SptAutoRender::StopMovieJob();
 }
 
-void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device, std::shared_ptr<ArDeferredMovieJob> deferredJob)
+void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device,
+                                           std::shared_ptr<ArDeferredMovieJob> deferredJob,
+                                           std::shared_ptr<ArRunningMultiDemoJob> fromMultiDemoJob)
 {
 	if (!deferredJob)
 		return;
@@ -629,18 +725,34 @@ void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device, std::shared
 	std::shared_ptr<ArRunningJob> newRunningJob = std::make_shared<ArRunningJob>();
 	newRunningJob->status.startTime = startTime;
 	newRunningJob->status.recordWhenConsoleIsOpen = deferredJob->recordWhenConsoleIsOpen;
-	newRunningJob->controller = std::move(deferredJob->controller);
+	newRunningJob->status.framerate = deferredJob->framerate;
+	// newRunningJob->controller = std::move(deferredJob->controller); // TODO remove
 	newRunningJob->volume = deferredJob->volume;
 	newRunningJob->captureAudio = deferredJob->captureAudio && SptAutoRender::SupportsAudioCapture();
 	newRunningJob->recordAfterImGuiCallbacks = deferredJob->recordAfterImGuiCallbacks;
+	newRunningJob->initializedFromMultiDemo = !!fromMultiDemoJob;
 
 	// create consumer (init pipe, ffmpeg process, nutlib, etc.)
 
 	auto& stat = newRunningJob->result->stat;
+	std::optional<std::string> gameConCmd;
+
+	if (fromMultiDemoJob)
+	{
+		auto& multiDemoStatus = fromMultiDemoJob->status;
+
+		size_t demoIdx = multiDemoStatus.nextDemoIdx.fetch_add(1, std::memory_order_acq_rel);
+		ArGlobalPlaceholders::DEMO_SEQ.SetValue(std::format("_{:04d}", demoIdx));
+
+		// TODO test with non-ascii paths
+		// TODO should I just use startdemos?
+		auto& demoFileName = multiDemoStatus.demoFilePaths[demoIdx];
+		ArGlobalPlaceholders::DEMO_NAME.SetValue("_" + demoFileName.stem().string());
+		gameConCmd = "playdemo \"" + demoFileName.string() + "\"";
+	}
 
 	ArPlaceholder::writeLock.lock();
 
-	// TODO drop in e.g. demo index and filename in here
 	std::string utf8CmdLine =
 	    ArPlaceholder::FormatString(ArGlobalPlaceholders::GetAll(), deferredJob->unformattedCmdLine, nullptr);
 
@@ -691,6 +803,8 @@ void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device, std::shared
 	}
 
 	{
+		// TODO for super short demos, the cvars aren't reset...
+
 		// kill old job and reset cvars
 
 		std::lock_guard lk(sharedRunningJobMtx);
@@ -709,6 +823,10 @@ void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device, std::shared
 		runningMovieJob.store(newRunningJob);
 	}
 
+	// execute e.g. playdemo
+	if (gameConCmd.has_value())
+		interfaces::_engine_client->ClientCmd(gameConCmd->c_str());
+
 	ArGlobalPlaceholders::UUID.Regenerate();
 	ArGlobalPlaceholders::PIPE_NAME.Regenerate();
 }
@@ -721,4 +839,9 @@ void AutoRenderFeature::StoreMovieJobResult(ArRunningJob& runningJob)
 	result->unpausedElapsedTime = runningJob.GetElapsedTime(false);
 	result->nFramesConsumed = runningJob.status.nFramesConsumed.load(std::memory_order_acquire);
 	lastMovieJobResult.store(std::move(result), std::memory_order_release);
+}
+
+bool ArDemoStoppedController::ShouldStopRecording(const ArRunningMovieJobStatus& status)
+{
+	return !spt_demostuff.Demo_IsPlayingBack();
 }

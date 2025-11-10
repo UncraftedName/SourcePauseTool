@@ -31,11 +31,7 @@ class ArPlaceholder
 	std::atomic<std::shared_ptr<std::string>> val;
 	std::atomic<bool>* pDirtyFlag;
 
-	ArPlaceholder(ArPlaceholder&) = delete;
-	ArPlaceholder(ArPlaceholder&&) = delete;
-
 public:
-
 	/*
 	* Lock this exclusively to disable writes to all placeholders. This is used when formatting and copying
 	* values to FfmpegArgs to ensure that no values change mid-format. A shared mutex is definitely not the
@@ -55,6 +51,10 @@ public:
 	void SetValue(std::string newVal);
 	std::shared_ptr<const std::string> GetValue() const;
 
+	/*
+	* Substitutes all of the placeholders in the unformatted string. If GetValue() returns nullptr,
+	* the sampleVal is substituted instead.
+	*/
 	static std::string FormatString(const std::vector<const ArPlaceholder*>& placeholders,
 	                                const std::string& unformatted,
 	                                std::vector<std::string>* unrecognizedPlaceholders);
@@ -116,6 +116,8 @@ public:
 	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, RENDER_WORKING_DIR, "Working directory of the rendering application");
 	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, GAME_WORKING_DIR, "Working directory of the game");
 	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, MOD_DIR, "Mod directory");
+	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, DEMO_SEQ, "The demo index start at 0 formated as '_X'");
+	AR_GLOBAL_PLACEHOLDER(ArPlaceholder, DEMO_NAME, "The demo file name without extension start at 0 formated as '_name'");
 	// clang-format on
 
 #undef AR_GLOBAL_PLACEHOLDER
@@ -132,6 +134,8 @@ public:
 		    &DATE_TIME,
 		    &RENDER_WORKING_DIR,
 		    &MOD_DIR,
+		    &DEMO_SEQ,
+		    &DEMO_NAME,
 		};
 		return phs;
 	}

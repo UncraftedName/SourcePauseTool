@@ -6,8 +6,16 @@
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "thirdparty/imgui/imgui_stdlib.h"
+#include "thirdparty/imgui/ImGuiFileDialog/ImGuiFileDialog.h"
 
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <commdlg.h>
 #include <shellapi.h>
+
+#pragma comment(lib, "Comdlg32.lib")
+
+#include <set>
 
 #undef clamp
 
@@ -19,20 +27,13 @@ static std::string ArCreateDefaultCmdLine()
 	    "-f nut -i \"{1}\" "
 	    "-y -c:v libx264 -pix_fmt yuv420p -crf 18 "
 	    "-c:a aac -b:a 192k "
-	    "-shortest -preset veryfast \"{2}\\{3}.mp4\"",
+	    "-shortest -preset veryfast \"{2}\\{3}{4}.mp4\"",
 	    ArGlobalPlaceholders::EXE_PATH.key,
 	    ArGlobalPlaceholders::PIPE_NAME.key,
 	    ArGlobalPlaceholders::RENDER_WORKING_DIR.key,
-	    ArGlobalPlaceholders::DATE_TIME.key);
+	    ArGlobalPlaceholders::DATE_TIME.key,
+	    ArGlobalPlaceholders::DEMO_NAME.key);
 }
-
-// TODO figure out where to put these guys - we want access to them from a cmd as well
-// TODO if rendering a folder of demos into multiple videos, the default output filename should be changed
-
-/*AR_PER_VID_PLACEHOLDER(MAP_NAME, "The name of the loaded map on the first frame of recording");
-AR_PER_VID_PLACEHOLDER(MAP_SEQ, "The map index starting at 0 on the first frame of recording");
-AR_PER_VID_PLACEHOLDER(DEMO_SEQ, "The demo index starting at 0 (only applicable if rendering demos)");
-AR_PER_VID_PLACEHOLDER(DEMO_FILENAME, "The demo file name (only applicable if rendering demos)");*/
 
 // a whole bunch of singleton ImGui state and small functions to render sections of the autorender tab
 struct ArImGuiPersist
@@ -50,6 +51,8 @@ struct ArImGuiPersist
 	{
 		ArCvarSetting cvarSetting;
 		std::optional<std::string> helpText = std::nullopt; // if set, this is a mutable cvar
+		// TODO add a checkbox for mutable cvars, force it to be on for non-mutables
+		// TODO add export/import for these
 	};
 
 	std::vector<DefaultCvar> defaultCvarSettings{
@@ -61,26 +64,46 @@ struct ArImGuiPersist
 	    DefaultCvar{{"volume", "0"}, "Game will not output sound, but audio will still be recorded"},
 	    DefaultCvar{{"gl_clear", "1"}},
 	    DefaultCvar{{"spt_focus_nosleep", "1"}},
-	    DefaultCvar{{"spt_disable_tone_map_reset", "1"}},
+	    DefaultCvar{{"spt_disable_tone_map_reset", "1"}}, // TODO this should only be for multiple demos
+	    DefaultCvar{{"spt_demo_block_cmd", "1"}},         // TODO this should only be for multiple demos
 	    DefaultCvar{{"spt_override_tpose", "17"}},
 	};
 
 	std::vector<ArCvarSetting> userCvarSettings;
 
-	float fpsVal = 60.f;
+	float outputFramerate = 60.f;
 	float playbackSpeed = 1.f;
 	float volume = .5f;
 	bool captureAudio = true;
 	bool recordWhenConsoleIsOpen = false;
 	bool recordAfterImGuiCallbacks = false;
 
+	struct DemoSelector
+	{
+		constexpr static const char* FILE_DIALOG_ID = "ArDemoSelectDialogueKey";
+
+		struct DemoFileCmp
+		{
+			bool operator()(const std::string& a, const std::string& b) const
+			{
+				return IGFD::Utils::NaturalCompare(a, b, false, false);
+			}
+		};
+
+		std::set<std::string, DemoFileCmp> demoFilePaths;
+	} demoSelector;
+
 	void TabCallback();
 
-	bool DrawRunningJobStatus();      // returns true if there's an active job
-	bool DrawLastFinishedJobStatus(); // returns true if there's a last job
+	void DrawMultiDemoJobStatus(const ArRunningMultiDemoJobStatus* multiDemoJobStat,
+	                            const ArRunningMovieJobStatus* curMovieJobStat);
+	void DrawRunningJobStatus(const ArRunningMovieJobStatus* jobStat);
+	void DrawLastFinishedJobStatus(const ArMovieJobResult* jobResult);
 
-	bool DrawStartRenderButton(); // returns true if rendering was started
-	bool DrawLogFolderButton();   // returns true if log folder was opened
+	std::unique_ptr<ArDeferredMovieJob> CreateDeferredJob();
+
+	void DrawDemoPaths();
+	bool DrawLogFolderButton(); // returns true if log folder was opened
 
 	void DrawFfmpegPath();
 	void DrawPipeNameOptions();
@@ -94,38 +117,84 @@ struct ArImGuiPersist
 
 	void DrawCvars();
 	void ResetDefaultCvars();
-};
+} static g_ImGuiPersist;
 
 // entry point
-void ArImGuiTabCallback()
+void ArImGuiTabCallbackEntry()
 {
-	static ArImGuiPersist persist;
-	persist.TabCallback();
+	g_ImGuiPersist.TabCallback();
+}
+
+// entry point
+void ArImGuiFileDialogWindowEntry()
+{
+	auto& imfg = *ImGuiFileDialog::Instance();
+	if (imfg.Display(ArImGuiPersist::DemoSelector::FILE_DIALOG_ID))
+	{
+		if (imfg.IsOk())
+		{
+			auto& mySet = g_ImGuiPersist.demoSelector.demoFilePaths;
+			auto it = mySet.end();
+			for (auto& [_, fullPath] : imfg.GetSelection())
+				mySet.emplace_hint(it, std::move(fullPath));
+		}
+		imfg.Close();
+	}
 }
 
 void ArImGuiPersist::TabCallback()
 {
+	auto multiDemoJobStat = SptAutoRender::GetRunningMultiDemoJobStatus();
+	auto runningJobStat = SptAutoRender::GetRunningMovieJobStatus();
+	auto lastJobResult = SptAutoRender::GetLastMovieJobResult();
+
 	// job statuses
 
-	bool curJobRunning = DrawRunningJobStatus();
-	[[maybe_unused]] bool lastJobExists = DrawLastFinishedJobStatus();
+	DrawMultiDemoJobStatus(multiDemoJobStat.get(), runningJobStat.get());
+
+	DrawRunningJobStatus(runningJobStat.get());
+	DrawLastFinishedJobStatus(lastJobResult.get());
 
 	// control buttons
 
-	ImGui::BeginDisabled(curJobRunning);
-	DrawStartRenderButton();
+	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat);
+	if (ImGui::Button("Start rendering single video"))
+		SptAutoRender::QueueSingleMovieJob(CreateDeferredJob());
 	ImGui::EndDisabled();
 
 	ImGui::SameLine();
 
-	ImGui::BeginDisabled(!curJobRunning);
+	ImGui::BeginDisabled(!multiDemoJobStat && !runningJobStat);
 	if (ImGui::Button("Stop rendering"))
+	{
+		SptAutoRender::StopMultiDemoJob();
 		SptAutoRender::StopMovieJob();
+		if (!!multiDemoJobStat)
+			interfaces::_engine_client->ClientCmd("stopdemo");
+	}
 	ImGui::EndDisabled();
 
 	ImGui::SameLine();
 
 	DrawLogFolderButton();
+	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat);
+	if (ImGui::TreeNode("Render demos"))
+	{
+		ImGui::BeginDisabled(demoSelector.demoFilePaths.empty());
+		if (ImGui::Button("Start"))
+		{
+			std::vector<std::filesystem::path> paths(demoSelector.demoFilePaths.begin(),
+			                                         demoSelector.demoFilePaths.end());
+			SptAutoRender::QueueMultiDemoJob(CreateDeferredJob(), std::move(paths));
+		}
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+
+		ImGui::SameLine();
+		DrawDemoPaths();
+		ImGui::TreePop();
+	}
+	ImGui::EndDisabled();
 
 	// settings
 
@@ -138,12 +207,7 @@ void ArImGuiPersist::TabCallback()
 	ImGui::SameLine();
 	SptImGui::HelpMarker("If set, ImGui windows will show up in the recording");
 
-	// TODO - option for different videohook
-	// TODO - option for rendering demos or number of frames
-
 	DrawSyncMode();
-
-	// cmdline TODO: wrap
 
 	if (DrawUnformattedCmdLine())
 		ArGlobalPlaceholders::imGuiFormattedCmdLineDirty.store(true);
@@ -151,7 +215,6 @@ void ArImGuiPersist::TabCallback()
 
 	if (ArGlobalPlaceholders::imGuiFormattedCmdLineDirty.exchange(false))
 	{
-		// TODO - reformat the string with per-video placeholders if the user presses the start button
 		cmdLineFormatted = ArPlaceholder::FormatString(ArGlobalPlaceholders::GetAll(),
 		                                               cmdLineUnformatted,
 		                                               &unrecognizedPlaceholders);
@@ -165,18 +228,45 @@ void ArImGuiPersist::TabCallback()
 		ResetDefaultCvars();
 	Assert(std::get<std::string>(userCvarSettings[0].cvar) == "host_framerate");
 	Assert(std::get<std::string>(userCvarSettings[1].cvar) == "fps_max");
-	float hostFramerateVal = fpsVal / playbackSpeed;
+	float hostFramerateVal = outputFramerate / playbackSpeed;
 	userCvarSettings[0].val = std::to_string(hostFramerateVal);
 	userCvarSettings[1].val = std::to_string(hostFramerateVal * 0.9f);
 	DrawCvars();
 }
 
-bool ArImGuiPersist::DrawRunningJobStatus()
+void ArImGuiPersist::DrawMultiDemoJobStatus(const ArRunningMultiDemoJobStatus* multiDemoJobStat,
+                                            const ArRunningMovieJobStatus* curMovieJobStat)
 {
-	// TODO: report number of demos, output file name, ms/frame
+	if (!multiDemoJobStat)
+		return;
 
-	auto runningStat = SptAutoRender::GetRunningMovieJobStatus();
+	// TODO needs a title or something
+	SptImGui::BeginBordered();
 
+	size_t demoIdx = multiDemoJobStat->nextDemoIdx.load(std::memory_order_acquire);
+	if (curMovieJobStat)
+		demoIdx--;
+
+	// TODO test with non-ascii file paths
+	size_t nDemos = multiDemoJobStat->demoFilePaths.size();
+	std::string demoFileName =
+	    demoIdx < nDemos ? multiDemoJobStat->demoFilePaths[demoIdx].filename().string() : "ERROR";
+
+	if (curMovieJobStat)
+		ImGui::Text("Rendering demo: \"%s\" (%u/%u)", demoFileName.c_str(), demoIdx + 1, nDemos);
+	else
+		ImGui::Text("Next demo: \"%s\" (%u/%u)", demoFileName.c_str(), demoIdx, nDemos);
+
+	auto elapsedTotal =
+	    std::chrono::round<std::chrono::milliseconds>(ar_elapsed_time_clock::now() - multiDemoJobStat->startTime);
+	ImGui::Text("Elapsed real time: %s", std::format("{:%T}", elapsedTotal).c_str());
+
+	SptImGui::EndBordered();
+}
+
+void ArImGuiPersist::DrawRunningJobStatus(const ArRunningMovieJobStatus* runningStat)
+{
+	// TODO put in bordered
 	if (runningStat)
 	{
 		const char* statusText;
@@ -203,21 +293,18 @@ bool ArImGuiPersist::DrawRunningJobStatus()
 		ImGui::Text("Consumed %u frames", nConsumedFrames);
 
 		ImGui::SameLine();
-		ImGui::Text("(movie of length %.3fs)", nConsumedFrames / runningStat->outputFramerate);
+		ImGui::Text("(movie of length %.3fs)", nConsumedFrames / runningStat->framerate);
 	}
 	else
 	{
 		ImGui::Text("Status: %s", "NOT ACTIVE");
 	}
-
-	return !!runningStat;
 }
 
-bool ArImGuiPersist::DrawLastFinishedJobStatus()
+void ArImGuiPersist::DrawLastFinishedJobStatus(const ArMovieJobResult* lastResult)
 {
-	auto lastResult = SptAutoRender::GetLastMovieJobResult();
 	if (!lastResult)
-		return false;
+		return;
 
 	SptImGui::BeginBordered();
 	if (lastResult->returnCode.has_value())
@@ -236,15 +323,10 @@ bool ArImGuiPersist::DrawLastFinishedJobStatus()
 		ImGui::Text("(%.3fms/frame)", (float)elapsedWithoutPauses.count() / lastResult->nFramesConsumed);
 	}
 	SptImGui::EndBordered();
-
-	return true;
 }
 
-bool ArImGuiPersist::DrawStartRenderButton()
+std::unique_ptr<ArDeferredMovieJob> ArImGuiPersist::CreateDeferredJob()
 {
-	if (!ImGui::Button("Start rendering"))
-		return false;
-
 	std::vector<ArCvarSetting> jobCvars = userCvarSettings;
 	Assert(std::get<std::string>(userCvarSettings[1].cvar) == "fps_max");
 	if (!captureAudio)
@@ -258,13 +340,99 @@ bool ArImGuiPersist::DrawStartRenderButton()
 	    .controller = nullptr, // TODO
 	    .cvars = jobCvars,
 	    .volume = volume,
+	    .framerate = outputFramerate,
+	    .captureAudio = captureAudio,
 	    .recordWhenConsoleIsOpen = recordWhenConsoleIsOpen,
 	    .recordAfterImGuiCallbacks = recordAfterImGuiCallbacks,
 	};
 
-	SptAutoRender::QueueMovieJob(std::make_unique<ArDeferredMovieJob>(std::move(defferedMovieJob)));
+	return std::make_unique<ArDeferredMovieJob>(std::move(defferedMovieJob));
+}
 
-	return true;
+void ArImGuiPersist::DrawDemoPaths()
+{
+	auto modDir = ArGlobalPlaceholders::MOD_DIR.GetValue();
+
+	auto& imfg = *ImGuiFileDialog::Instance();
+	ImGui::BeginDisabled(imfg.IsOpened());
+	if (ImGui::Button("Add demos"))
+	{
+		/*
+		* If you're reading this, at some point it may have crossed your mind that I can just
+		* open a file dialog in windows for the demo selection. Yes I can! But (I think) all of
+		* the standard ways of doing that will block this thread, which I find to be less than
+		* ideal. Even if we start the dialog in a separate thread, we still need to have some
+		* way of force cancelling it in the case that SPT is unloaded while the selection
+		* window is open. As far as I can tell, there are no sane ways of doing that! It turns
+		* out to be much easier and less botched to use ImGuiFileDialog than windows!
+		*/
+
+		// TODO icons
+		// TODO see https://github.com/aiekick/ImGuiFileDialog/blob/master/Documentation.md#places- for serialization
+		IGFD::FileDialogConfig config{
+		    .path = *modDir,
+		    .countSelectionMax = 0,
+		    .flags = ImGuiFileDialogFlags_Modal,
+		};
+
+		imfg.OpenDialog(DemoSelector::FILE_DIALOG_ID, "Select demo files", ".dem", config);
+	}
+	ImGui::EndDisabled();
+
+	ImGui::SameLine();
+	if (ImGui::Button("Clear demo list"))
+		demoSelector.demoFilePaths.clear();
+
+	auto& demoSet = demoSelector.demoFilePaths;
+	if (!demoSet.empty())
+	{
+		ImGuiTableFlags tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg
+		                             | ImGuiTableFlags_NoHostExtendX | ImGuiTableFlags_NoKeepColumnsVisible;
+		if (ImGui::BeginTable("demo_list", 2, tableFlags))
+		{
+			ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.f, 0.f));
+
+			ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed);
+			ImGui::TableSetupColumn("file path", ImGuiTableColumnFlags_WidthFixed);
+			ImGui::TableHeadersRow();
+
+			// shorten the display name if possible
+			size_t sharedPrefixLen = 0;
+			if (demoSet.begin()->starts_with(*modDir))
+			{
+				const std::string& a = *demoSet.begin();
+				const std::string& b = *--demoSet.end();
+				for (size_t i = 0; i < a.size() && i < b.size() && i <= modDir->size() && a[i] == b[i];
+				     i++)
+				{
+					if (a[i] == '/' || a[i] == '\\')
+						sharedPrefixLen = i + 1;
+				}
+			}
+
+			int idx = 0;
+			for (auto it = demoSet.begin(); it != demoSet.end(); idx++)
+			{
+				ImGui::PushID(idx);
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex(0);
+				bool erase = ImGui::SmallButton("-");
+				ImGui::SameLine();
+				ImGui::Text("%d", idx);
+				ImGui::TableSetColumnIndex(1);
+				Assert(sharedPrefixLen < it->size());
+				ImGui::TextUnformatted(it->c_str() + sharedPrefixLen, it->c_str() + it->size());
+				ImGui::PopID();
+				if (erase)
+					it = demoSet.erase(it);
+				else
+					++it;
+			}
+
+			ImGui::PopStyleVar();
+			ImGui::EndTable();
+		}
+	}
 }
 
 bool ArImGuiPersist::DrawLogFolderButton()
@@ -308,11 +476,11 @@ void ArImGuiPersist::DrawFfmpegPath()
 
 	if (!lastFfmpegSearchSuccess.value())
 	{
-		ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "Warning: ffmpeg.exe not found,");
+		ImGui::TextColored(
+		    SPT_IMGUI_WARN_COLOR_YELLOW,
+		    "Warning: ffmpeg.exe not found in PATH. Type in the path manually or add it to your PATH.");
 		ImGui::SameLine();
-		ImGui::TextLinkOpenURL("download it", "https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-full.7z");
-		ImGui::SameLine();
-		ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "and add it to your PATH.");
+		ImGui::TextLinkOpenURL("Download link", "https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-full.7z");
 	}
 }
 
@@ -336,10 +504,10 @@ void ArImGuiPersist::DrawPipeNameOptions()
 
 void ArImGuiPersist::DrawFramerateOptions()
 {
-	if (ImGui::InputFloat("Output framerate", &fpsVal))
+	if (ImGui::InputFloat("Output framerate", &outputFramerate))
 	{
-		fpsVal = std::clamp(fpsVal, 1.f, 500.f);
-		ArGlobalPlaceholders::FRAMERATE.SetValue(std::to_string(fpsVal));
+		outputFramerate = std::clamp(outputFramerate, 1.f, 500.f);
+		ArGlobalPlaceholders::FRAMERATE.SetValue(std::to_string(outputFramerate));
 	}
 
 	// TODO test with different playback speed settings
@@ -413,6 +581,7 @@ bool ArImGuiPersist::DrawUnformattedCmdLine()
 
 void ArImGuiPersist::DrawDefaultPlaceholders()
 {
+	// TODO this doesn't work!!!
 	if (!unrecognizedPlaceholders.empty())
 	{
 		std::string out = "Warning: unrecognized placeholder(s): ";
@@ -483,6 +652,8 @@ void ArImGuiPersist::DrawCvars()
 			ImGui::TableSetupColumn("value");
 			ImGui::TableHeadersRow();
 
+			ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.0f, 0.0f));
+
 			int deleteIdx = -1;
 			for (size_t i = 0; i < userCvarSettings.size(); i++)
 			{
@@ -509,6 +680,8 @@ void ArImGuiPersist::DrawCvars()
 				ImGui::EndDisabled();
 				ImGui::PopID();
 			}
+
+			ImGui::PopStyleVar();
 
 			if (deleteIdx >= 0)
 				userCvarSettings.erase(userCvarSettings.begin() + deleteIdx);
