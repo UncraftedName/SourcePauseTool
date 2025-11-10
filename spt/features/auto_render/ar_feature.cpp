@@ -155,6 +155,12 @@ struct ArRunningMultiDemoJob
 {
 	ArRunningMultiDemoJobStatus status;
 	std::shared_ptr<ArDeferredMovieJob> templateDeferredJob;
+	/*
+	* Make the datetime placeholder the same for each video in a multi-demo job. This allows you to
+	* easily see which videos come from the same job and enables windows to sort the video files in
+	* the same order as the demo files they come from.
+	*/
+	ArPhDatetime phDatetimeReplacement = ArGlobalPlaceholders::DATE_TIME.CopyByKey<ArPhDatetime>();
 };
 
 class AutoRenderFeature : public FeatureWrapper<AutoRenderFeature>
@@ -340,9 +346,10 @@ bool SptAutoRender::QueueMultiDemoJob(std::unique_ptr<ArDeferredMovieJob> templa
 		return false;
 
 	std::shared_ptr<ArRunningMultiDemoJob> newMultiDemoJob = std::make_shared<ArRunningMultiDemoJob>();
+	newMultiDemoJob->phDatetimeReplacement.Update(); // only time this is ever set
 	newMultiDemoJob->status.startTime = ar_elapsed_time_clock::now();
-	newMultiDemoJob->templateDeferredJob = std::move(templateDeferredJob);
 	newMultiDemoJob->status.demoFilePaths = std::move(demoFilePaths);
+	newMultiDemoJob->templateDeferredJob = std::move(templateDeferredJob);
 
 	// chain the controllers to make sure the movie stops when the demo ends
 	newMultiDemoJob->templateDeferredJob->controller =
@@ -738,24 +745,46 @@ void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device,
 	auto& stat = newRunningJob->result->stat;
 	std::optional<std::string> gameConCmd;
 
+	/*
+	* This here is some botched code to override some of the global placeholder values before
+	* calling FormatString:
+	* - create a copy of the global placeholders list (just a vector of pointers)
+	* - create a copy of the placeholders we'll override (this just sets the key) and set them
+	* - swap out the placeholders in our copy of the list
+	* - call FormatString
+	*/
+
+	auto placeholders = ArGlobalPlaceholders::GetAll();
+
+	ArPlaceholder demoSeqPh = ArGlobalPlaceholders::DEMO_SEQ.CopyByKey();
+	ArPlaceholder demoNamePh = ArGlobalPlaceholders::DEMO_NAME.CopyByKey();
+
+	auto swapPh = [&placeholders](const ArPlaceholder& repl)
+	{
+		auto it = std::ranges::find(placeholders, repl.key, &ArPlaceholder::key);
+		*it = &repl;
+	};
+
 	if (fromMultiDemoJob)
 	{
+		swapPh(fromMultiDemoJob->phDatetimeReplacement);
 		auto& multiDemoStatus = fromMultiDemoJob->status;
 
 		size_t demoIdx = multiDemoStatus.nextDemoIdx.fetch_add(1, std::memory_order_acq_rel);
-		ArGlobalPlaceholders::DEMO_SEQ.SetValue(std::format("_{:04d}", demoIdx));
+		demoSeqPh.SetValue(std::format("_{:04d}", demoIdx));
+		swapPh(demoSeqPh);
 
 		// TODO test with non-ascii paths
-		// TODO should I just use startdemos?
 		auto& demoFileName = multiDemoStatus.demoFilePaths[demoIdx];
-		ArGlobalPlaceholders::DEMO_NAME.SetValue("_" + demoFileName.stem().string());
+		demoNamePh.SetValue("_" + demoFileName.stem().string());
+		swapPh(demoNamePh);
+
 		gameConCmd = "playdemo \"" + demoFileName.string() + "\"";
 	}
 
 	ArPlaceholder::writeLock.lock();
 
-	std::string utf8CmdLine =
-	    ArPlaceholder::FormatString(ArGlobalPlaceholders::GetAll(), deferredJob->unformattedCmdLine, nullptr);
+	std::string utf8CmdLine = ArPlaceholder::FormatString(placeholders, deferredJob->unformattedCmdLine, nullptr);
 
 	ArFfmpegWriter::InitArgs ffmpegInitArgs{
 	    .ffmpegWorkingDir = ArUtf8ToUtf16(ArGlobalPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str()),

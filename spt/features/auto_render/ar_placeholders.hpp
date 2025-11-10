@@ -51,6 +51,13 @@ public:
 	void SetValue(std::string newVal);
 	std::shared_ptr<const std::string> GetValue() const;
 
+	// make a copy in order to replace one of the ArGlobalPlaceholders
+	template<typename T = ArPlaceholder>
+	T CopyByKey(std::atomic<bool>* pDirtyFlag_ = nullptr)
+	{
+		return T{key, "NO HELP TEXT", pDirtyFlag_};
+	}
+
 	/*
 	* Substitutes all of the placeholders in the unformatted string. If GetValue() returns nullptr,
 	* the sampleVal is substituted instead.
