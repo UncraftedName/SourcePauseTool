@@ -14,6 +14,7 @@
 #include "thirdparty/imgui/imgui_internal.h"
 #include "thirdparty/imgui/imgui_impl_dx9.h"
 #include "thirdparty/imgui/imgui_impl_win32.h"
+#include "thirdparty/imgui/ImGuiFileDialog/ImGuiFileDialog.h"
 #include "thirdparty/fonts/jetbrains_mono_bold/jetbrains_mono_bold.hpp"
 #include "thirdparty/fonts/codicon/codicon.hpp"
 #include "thirdparty/flatbuffers/base.h"
@@ -279,6 +280,12 @@ private:
 			    "To view more version info, check DEV -> ImGui Developer Settings -> Show ImGui example window.\n"
 			    "Then in the demo window go to Tools -> About Dear ImGui.");
 			ImGui::TextDisabled("%s", "Copyright (c) 2014-2024 Omar Cornut");
+
+			ImGui::Separator();
+			ImGui::TextUnformatted("ImGuiFileDialog " IGFD_VERSION);
+			ImGui::TextUnformatted("IGFD_IMGUI_SUPPORTED_VERSION: " IGFD_IMGUI_SUPPORTED_VERSION);
+			ABOUT_WINDOW_GITHUB("imgui_file_dialog", "https://github.com/aiekick/ImGuiFileDialog");
+			ImGui::TextDisabled("%s", "Copyright (c) 2018-2025 Stephane Cuillerdier (aka Aiekick).");
 
 			ImGui::Separator();
 			ImGui::TextUnformatted("MinHook");

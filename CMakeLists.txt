@@ -184,6 +184,7 @@ set(SPT_SOURCES
 	thirdparty/imgui/imgui_impl_win32.cpp
 	thirdparty/imgui/imgui_tables.cpp
 	thirdparty/imgui/imgui_widgets.cpp
+	thirdparty/imgui/ImGuiFileDialog/ImGuiFileDialog.cpp
 
 	thirdparty/md5.cpp
 	thirdparty/x86.c
