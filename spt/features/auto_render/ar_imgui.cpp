@@ -82,15 +82,33 @@ struct ArImGuiPersist
 	{
 		constexpr static const char* FILE_DIALOG_ID = "ArDemoSelectDialogueKey";
 
-		struct DemoFileCmp
+		// full path, display path
+		using demoFilePath = std::pair<std::filesystem::path, std::string>;
+
+		struct DemoFileCmpNatural
 		{
-			bool operator()(const std::string& a, const std::string& b) const
+			bool operator()(const demoFilePath& a, const demoFilePath& b) const
 			{
-				return IGFD::Utils::NaturalCompare(a, b, false, false);
+				/*
+				* ImGuiFileDialog comes with IGFD::Utils::NaturalCompare for
+				* ImGuiFileDialogFlags_NaturalSorting but it kinda sucks.
+				* See: https://github.com/aiekick/ImGuiFileDialog/issues/223.
+				*/
+				return CompareStringEx(LOCALE_NAME_INVARIANT,
+				                       NORM_IGNORECASE | SORT_DIGITSASNUMBERS,
+				                       a.first.c_str(),
+				                       -1,
+				                       b.first.c_str(),
+				                       -1,
+				                       NULL,
+				                       NULL,
+				                       0)
+				       == CSTR_LESS_THAN;
 			}
 		};
 
-		std::set<std::string, DemoFileCmp> demoFilePaths;
+		std::set<demoFilePath, DemoFileCmpNatural> paths;
+
 	} demoSelector;
 
 	void TabCallback();
@@ -133,10 +151,20 @@ void ArImGuiFileDialogWindowEntry()
 	{
 		if (imfg.IsOk())
 		{
-			auto& mySet = g_ImGuiPersist.demoSelector.demoFilePaths;
+			std::filesystem::path modDirPath =
+			    ArUtf8ToUtf16(ArGlobalPlaceholders::MOD_DIR.GetValue()->c_str());
+			auto& mySet = g_ImGuiPersist.demoSelector.paths;
 			auto it = mySet.end();
-			for (auto& [_, fullPath] : imfg.GetSelection())
-				mySet.emplace_hint(it, std::move(fullPath));
+			for (auto& [_, displayPath] : imfg.GetSelection())
+			{
+				std::filesystem::path asPath = ArUtf8ToUtf16(displayPath.c_str());
+				// shorten if possible
+				std::error_code ec;
+				auto relPath = std::filesystem::relative(displayPath, modDirPath, ec);
+				if (!ec && !relPath.empty() && relPath.c_str()[0] != L'.')
+					displayPath = relPath.string(); // TODO test with non-ascii
+				it = mySet.emplace_hint(it, std::move(asPath), std::move(displayPath));
+			}
 		}
 		imfg.Close();
 	}
@@ -169,8 +197,6 @@ void ArImGuiPersist::TabCallback()
 	{
 		SptAutoRender::StopMultiDemoJob();
 		SptAutoRender::StopMovieJob();
-		if (!!multiDemoJobStat)
-			interfaces::_engine_client->ClientCmd("stopdemo");
 	}
 	ImGui::EndDisabled();
 
@@ -180,12 +206,14 @@ void ArImGuiPersist::TabCallback()
 	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat);
 	if (ImGui::TreeNode("Render demos"))
 	{
-		ImGui::BeginDisabled(demoSelector.demoFilePaths.empty());
+		ImGui::BeginDisabled(demoSelector.paths.empty());
 		if (ImGui::Button("Start"))
 		{
-			std::vector<std::filesystem::path> paths(demoSelector.demoFilePaths.begin(),
-			                                         demoSelector.demoFilePaths.end());
-			SptAutoRender::QueueMultiDemoJob(CreateDeferredJob(), std::move(paths));
+			std::vector<std::filesystem::path> submitPaths;
+			std::ranges::transform(demoSelector.paths,
+			                       std::back_inserter(submitPaths),
+			                       &DemoSelector::demoFilePath::first);
+			SptAutoRender::QueueMultiDemoJob(CreateDeferredJob(), std::move(submitPaths));
 		}
 		ImGui::EndDisabled();
 		ImGui::SameLine();
@@ -372,18 +400,20 @@ void ArImGuiPersist::DrawDemoPaths()
 		IGFD::FileDialogConfig config{
 		    .path = *modDir,
 		    .countSelectionMax = 0,
-		    .flags = ImGuiFileDialogFlags_Modal,
+		    .flags = ImGuiFileDialogFlags_Modal | ImGuiFileDialogFlags_DisableCreateDirectoryButton
+		             | ImGuiFileDialogFlags_NaturalSorting | ImGuiFileDialogFlags_HideColumnType
+		             | ImGuiFileDialogFlags_DisableThumbnailMode | ImGuiFileDialogFlags_ShowDevicesButton,
 		};
 
 		imfg.OpenDialog(DemoSelector::FILE_DIALOG_ID, "Select demo files", ".dem", config);
 	}
 	ImGui::EndDisabled();
 
+	auto& demoSet = demoSelector.paths;
 	ImGui::SameLine();
 	if (ImGui::Button("Clear demo list"))
-		demoSelector.demoFilePaths.clear();
+		demoSet.clear();
 
-	auto& demoSet = demoSelector.demoFilePaths;
 	if (!demoSet.empty())
 	{
 		ImGuiTableFlags tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg
@@ -396,20 +426,6 @@ void ArImGuiPersist::DrawDemoPaths()
 			ImGui::TableSetupColumn("file path", ImGuiTableColumnFlags_WidthFixed);
 			ImGui::TableHeadersRow();
 
-			// shorten the display name if possible
-			size_t sharedPrefixLen = 0;
-			if (demoSet.begin()->starts_with(*modDir))
-			{
-				const std::string& a = *demoSet.begin();
-				const std::string& b = *--demoSet.end();
-				for (size_t i = 0; i < a.size() && i < b.size() && i <= modDir->size() && a[i] == b[i];
-				     i++)
-				{
-					if (a[i] == '/' || a[i] == '\\')
-						sharedPrefixLen = i + 1;
-				}
-			}
-
 			int idx = 0;
 			for (auto it = demoSet.begin(); it != demoSet.end(); idx++)
 			{
@@ -420,8 +436,7 @@ void ArImGuiPersist::DrawDemoPaths()
 				ImGui::SameLine();
 				ImGui::Text("%d", idx);
 				ImGui::TableSetColumnIndex(1);
-				Assert(sharedPrefixLen < it->size());
-				ImGui::TextUnformatted(it->c_str() + sharedPrefixLen, it->c_str() + it->size());
+				ImGui::TextUnformatted(it->second.c_str(), it->second.c_str() + it->second.size());
 				ImGui::PopID();
 				if (erase)
 					it = demoSet.erase(it);

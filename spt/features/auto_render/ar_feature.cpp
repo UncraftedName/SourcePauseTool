@@ -398,6 +398,7 @@ bool SptAutoRender::StopMultiDemoJob()
 	{
 		// TODO reset demo placeholders here and anywhere else where we kill the multi demo job
 		StopMovieJob();
+		interfaces::_engine_client->ClientCmd("stopdemo");
 		return true;
 	}
 	return false;
