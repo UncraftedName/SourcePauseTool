@@ -9,7 +9,6 @@
 #include <string>
 
 struct IDirect3DDevice9;
-class ArMovieController;
 
 struct ArCvarSetting
 {
@@ -33,7 +32,6 @@ struct ArDeferredMovieJob
 	ArSyncMode syncMode;
 	std::optional<size_t> nFramesInFlight; // only used if asyncMode != AR_SYNC_FULL, reasonable default is 3
 	// TODO the user can call StopMovieJob themselves, this isn't necessary
-	std::unique_ptr<ArMovieController> controller; // optional controller to manage stopping conditions
 	std::vector<ArCvarSetting> cvars;
 	float volume;
 	float framerate;
@@ -74,40 +72,6 @@ struct ArMovieJobResult
 	ser::StatusTracker stat;
 };
 
-class ArMovieController
-{
-public:
-	// will be called every frame after at least 1 video frame has been consumed
-	virtual bool ShouldStopRecording(const ArRunningMovieJobStatus& status) = 0;
-	virtual ~ArMovieController() = default;
-};
-
-// ArChainedMovieController(c1, c2) -> stops if c1 or c2 wants to stop
-class ArChainedMovieController : public ArMovieController
-{
-	// templating this with N controllers is annoying and probably not something anyone will ever do
-	std::unique_ptr<ArMovieController> c1, c2;
-
-public:
-	explicit ArChainedMovieController(std::unique_ptr<ArMovieController> c1, std::unique_ptr<ArMovieController> c2)
-	    : c1(std::move(c2)), c2(std::move(c2))
-	{
-	}
-
-	bool ShouldStopRecording(const ArRunningMovieJobStatus& s) override
-	{
-		return (c1 && c1->ShouldStopRecording(s)) || (c2 && c2->ShouldStopRecording(s));
-	}
-};
-
-// requests a stop when a demo ends
-class ArDemoStoppedController : public ArMovieController
-{
-public:
-	explicit ArDemoStoppedController() = default;
-	virtual bool ShouldStopRecording(const ArRunningMovieJobStatus& status) override;
-};
-
 /*
 * Provides functionality to automatically render videos by streaming raw data to ffmpeg. Since this
 * happens over many frames and launches an external process, we have a bit of lifetime management:
@@ -134,6 +98,7 @@ class SptAutoRender
 public:
 	// available during or after LoadFeature
 	static bool Works();
+	static bool MultiDemoJobWorks();
 	static bool SupportsAudioCapture();
 
 	/*
@@ -159,12 +124,9 @@ public:
 	* - a call to QueueMultiDemoJob is a noop
 	* - StopMovieJob will only stop the current demo
 	* 
-	* This will automatically call QueueSingleMovieJob() with the templateDeferredJob until the list of
-	* demos is exhausted. The controller (if any) will be set to
-	* ArChainedMovieController(prevController, ArDemoStoppedController).
-	* 
-	* Returns true if the job was queued, false if there is any other type of job running. This
-	* will also stop the current running single movie job (if any).
+	* This will automatically call QueueSingleMovieJob() with the templateDeferredJob until the
+	* list of demos is exhausted. Returns true if the job was queued, false if there is any other
+	* type of job running. This will also stop the current running single movie job (if any).
 	*/
 	static bool QueueMultiDemoJob(std::unique_ptr<ArDeferredMovieJob> templateDeferredJob,
 	                              std::vector<std::filesystem::path> demoFilePaths);

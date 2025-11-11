@@ -178,7 +178,9 @@ void ArImGuiPersist::TabCallback()
 
 	// job statuses
 
+	ImGui::BeginDisabled(!SptAutoRender::MultiDemoJobWorks());
 	DrawMultiDemoJobStatus(multiDemoJobStat.get(), runningJobStat.get());
+	ImGui::EndDisabled();
 
 	DrawRunningJobStatus(runningJobStat.get());
 	DrawLastFinishedJobStatus(lastJobResult.get());
@@ -203,7 +205,7 @@ void ArImGuiPersist::TabCallback()
 	ImGui::SameLine();
 
 	DrawLogFolderButton();
-	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat);
+	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat || !SptAutoRender::MultiDemoJobWorks());
 	if (ImGui::TreeNode("Render demos"))
 	{
 		ImGui::BeginDisabled(demoSelector.paths.empty());
@@ -363,7 +365,6 @@ std::unique_ptr<ArDeferredMovieJob> ArImGuiPersist::CreateDeferredJob()
 	    .unformattedCmdLine = cmdLineUnformatted,
 	    .syncMode = syncMode,
 	    .nFramesInFlight = (size_t)nFramesInFlight,
-	    .controller = nullptr, // TODO
 	    .cvars = jobCvars,
 	    .volume = volume,
 	    .framerate = outputFramerate,

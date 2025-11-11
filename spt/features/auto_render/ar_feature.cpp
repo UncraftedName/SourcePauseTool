@@ -85,7 +85,6 @@ struct ArRunningJob
 		bool lastStatePaused = false;
 	} timingData;
 
-	std::unique_ptr<ArMovieController> controller;
 	std::unique_ptr<ArSyncManager> mgr;
 	std::vector<ArCvarStorage> cvarStorage;
 	float volume = -1.f;
@@ -344,6 +343,11 @@ bool SptAutoRender::Works()
 	return ShaderDevicePresentPreImGuiSignal.Works && ShaderDevicePresentPostImGuiSignal.Works && FrameSignal.Works;
 }
 
+bool SptAutoRender::MultiDemoJobWorks()
+{
+	return !!spt_demostuff.pDemoplayer;
+}
+
 bool SptAutoRender::SupportsAudioCapture()
 {
 	return spt_auto_render_feat.ORIG_CAudioDirectSound__TransferSamples
@@ -367,6 +371,8 @@ bool SptAutoRender::QueueSingleMovieJob(std::unique_ptr<ArDeferredMovieJob> defe
 bool SptAutoRender::QueueMultiDemoJob(std::unique_ptr<ArDeferredMovieJob> templateDeferredJob,
                                       std::vector<std::filesystem::path> demoFilePaths)
 {
+	if (!MultiDemoJobWorks())
+		return false;
 	if (demoFilePaths.empty())
 		return true;
 
@@ -378,11 +384,6 @@ bool SptAutoRender::QueueMultiDemoJob(std::unique_ptr<ArDeferredMovieJob> templa
 	newMultiDemoJob->status.startTime = ar_elapsed_time_clock::now();
 	newMultiDemoJob->status.demoFilePaths = std::move(demoFilePaths);
 	newMultiDemoJob->templateDeferredJob = std::move(templateDeferredJob);
-
-	// chain the controllers to make sure the movie stops when the demo ends
-	newMultiDemoJob->templateDeferredJob->controller =
-	    std::make_unique<ArChainedMovieController>(std::move(newMultiDemoJob->templateDeferredJob->controller),
-	                                               std::make_unique<ArDemoStoppedController>());
 
 	std::shared_ptr<ArRunningMultiDemoJob> multiDemoJobExpected = nullptr;
 	bool set = spt_auto_render_feat.runningMultiDemoJob.compare_exchange_strong(multiDemoJobExpected,
@@ -569,19 +570,12 @@ void AutoRenderFeature::OnFrameSignal()
 		                   runningJob->pauseCounters.nAudioSamplesToSkip.load(std::memory_order_acquire));
 #endif
 
-		// did user request auto-stop?
-		/*if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0
-		         && runningJob->controller
-		    && runningJob->controller->ShouldStopRecording(runningJob->status))
-		{
-			SptAutoRender::StopMovieJob();
-		}*/
-
-		// TODO remove
+		
+		// multi demo job and demo is done -> move on to next demo
 		if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0
 		    && runningJob->initializedFromMultiDemo)
 		{
-			if (ArDemoStoppedController{}.ShouldStopRecording(runningJob->status))
+			if (!spt_demostuff.Demo_IsPlayingBack())
 				SptAutoRender::StopMovieJob();
 		}
 	}
@@ -852,9 +846,4 @@ void AutoRenderFeature::StoreMovieJobResult(ArRunningJob& runningJob)
 	result->unpausedElapsedTime = runningJob.GetElapsedTime(false);
 	result->nFramesConsumed = runningJob.status.nFramesConsumed.load(std::memory_order_acquire);
 	lastMovieJobResult.store(std::move(result), std::memory_order_release);
-}
-
-bool ArDemoStoppedController::ShouldStopRecording(const ArRunningMovieJobStatus& status)
-{
-	return !spt_demostuff.Demo_IsPlayingBack();
 }
