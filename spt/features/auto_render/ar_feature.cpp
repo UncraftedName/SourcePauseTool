@@ -508,13 +508,13 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 
 #ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
 	size_t nSamplesConsumed = runningJob->status.nAudioSamplesConsumed.load(std::memory_order_acquire);
-	std::osyncstream(runningJob->timingInfoFile)
-	    << std::format("[{}]: {} samples consumed ({} from game this call, timestamp={:.3f}), processing {} samples\n",
-	                   __FUNCTION__,
-	                   nPairsFromGame,
-	                   nSamplesConsumed,
-	                   nSamplesConsumed / (float)AR_SAMPLERATE,
-	                   nPairs);
+	std::osyncstream(runningJob->timingInfoFile) << std::format(
+	    "[{}]: {} samples consumed ({} from game this call, timestamp={:.3f}), processing {} samples\n",
+	    __FUNCTION__,
+	    nSamplesConsumed,
+	    nPairsFromGame,
+	    nSamplesConsumed / (float)AR_SAMPLERATE,
+	    nPairs);
 #endif
 
 	if (nPairs <= 0)
@@ -570,7 +570,6 @@ void AutoRenderFeature::OnFrameSignal()
 		                   runningJob->pauseCounters.nAudioSamplesToSkip.load(std::memory_order_acquire));
 #endif
 
-		
 		// multi demo job and demo is done -> move on to next demo
 		if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0
 		    && runningJob->initializedFromMultiDemo)
