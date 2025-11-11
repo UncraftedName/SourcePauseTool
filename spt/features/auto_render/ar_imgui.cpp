@@ -7,6 +7,7 @@
 #include "spt/utils/interfaces.hpp"
 #include "thirdparty/imgui/imgui_stdlib.h"
 #include "thirdparty/imgui/ImGuiFileDialog/ImGuiFileDialog.h"
+#include "thirdparty/fonts/codicon/codepoints/IconsCodicons.h"
 
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
@@ -172,6 +173,11 @@ void ArImGuiFileDialogWindowEntry()
 
 void ArImGuiPersist::TabCallback()
 {
+	// TODO move to main imgui file?
+	auto& imfg = *ImGuiFileDialog::Instance();
+	imfg.SetFileStyle(IGFD_FileStyleByTypeDir, "", ImVec4(0.8f, 0.5f, 0.5f, 1.f), ICON_CI_FOLDER);
+	imfg.SetFileStyle(IGFD_FileStyleByTypeFile, "", ImVec4(0.5f, 0.8f, 0.5f, 1.f), ICON_CI_FILE);
+
 	auto multiDemoJobStat = SptAutoRender::GetRunningMultiDemoJobStatus();
 	auto runningJobStat = SptAutoRender::GetRunningMovieJobStatus();
 	auto lastJobResult = SptAutoRender::GetLastMovieJobResult();
