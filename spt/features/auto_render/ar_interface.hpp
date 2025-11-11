@@ -47,10 +47,10 @@ using ar_elapsed_time_clock = std::chrono::steady_clock;
 struct ArRunningMovieJobStatus
 {
 	std::atomic<size_t> nFramesConsumed;
+	std::atomic<size_t> nAudioSamplesConsumed;
 	float framerate;
 	ar_elapsed_time_clock::time_point startTime;
 	std::atomic<ar_elapsed_time_clock::duration> unpausedElapsedTime;
-	std::atomic<bool> userPaused;
 	bool recordWhenConsoleIsOpen;
 };
 
@@ -114,7 +114,7 @@ public:
 * 
 * 1) start by submitting a job via QueueSingleMovieJob() - this returns immediately
 * 2) the job starts on the next frame, and you can query its status via GetRunningJobStatus()
-* 3) the feature feeds in raw frames and audio to ffmpeg every frame, you can pause and resume it via PauseMovieJob()
+* 3) the feature feeds in raw frames and audio to ffmpeg every frame
 * 4) the job stops if:
 *      - ffmpeg exits prematurely
 *      - you call StopMovieJob() - this stops streaming data, but ffmpeg may take a while to finish
@@ -172,8 +172,6 @@ public:
 	static std::shared_ptr<const ArRunningMovieJobStatus> GetRunningMovieJobStatus();
 	static std::shared_ptr<const ArRunningMultiDemoJobStatus> GetRunningMultiDemoJobStatus();
 	static std::shared_ptr<const ArMovieJobResult> GetLastMovieJobResult();
-	// returns true if a job is running and this pause state was set
-	static bool PauseMovieJob(bool pauseState);
 	// blocks and returns true if a job was stopped
 	static bool StopMovieJob();
 	// calls StopMovieJob as well if there is a multi-demo job

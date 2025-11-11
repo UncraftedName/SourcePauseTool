@@ -298,9 +298,7 @@ void ArImGuiPersist::DrawRunningJobStatus(const ArRunningMovieJobStatus* running
 	if (runningStat)
 	{
 		const char* statusText;
-		if (runningStat->userPaused)
-			statusText = "PAUSED (user request)";
-		else if (!runningStat->recordWhenConsoleIsOpen && interfaces::_engine_client->Con_IsVisible())
+		if (!runningStat->recordWhenConsoleIsOpen && interfaces::_engine_client->Con_IsVisible())
 			statusText = "PAUSED (console is open)";
 		else
 			statusText = "RUNNING";

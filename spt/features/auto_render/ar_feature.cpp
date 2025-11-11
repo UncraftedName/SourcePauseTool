@@ -22,6 +22,8 @@
 #include <syncstream>
 #endif
 
+#define AR_SAMPLERATE 44100
+
 // TODO go through everything and figure out what memory orderings to use
 // TODO should cvar storage exec commands instead of setting cvars?
 
@@ -95,34 +97,60 @@ struct ArRunningJob
 	{
 		/*
 		* Since video and audio are handled on separate threads, I handle pausing by incrementing
-		* an counter for both to specify how many frames to skip. This should minize the chances of
-		* a desync if the console is spammed open/closed a bunch of times.
+		* an counter for both to specify how many frames to skip. This should minimize the chances
+		* of a desync if the console is spammed open/closed a bunch of times. For audio, keeping
+		* track of the number of samples to decrement instead of frames should be slightly more
+		* accurate and should help keep the audio and video in sync.
 		*/
 		std::atomic<int> nFramesToSkip;
-		std::atomic<int> nAudioFramesToSkip;
+		std::atomic<int> nAudioSamplesToSkip;
 
-		// TODO sub with a variable amount (e.g. 44100 samples)
-		// https://en.wikipedia.org/wiki/Compare-and-swap
-		// https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange.html
-		template<typename T>
-		static bool SubIfNonNegative(std::atomic<T>& a)
+		/*
+		* pauseCounter - how much more we should pause for
+		* timeAdvanceAttempt - how much we are advancing time (e.g. number of frames or samples)
+		* 
+		* Try to subtract the counter by timeAdvanceAttempt and return the amount we should
+		* actually advance time by. Result after subtraction:
+		* - (counter > 0)  -> return 0, caller does no work
+		* - (counter <= 0) -> return timeAdvanceAttempt - oldCounterVal
+		* 
+		* https://en.wikipedia.org/wiki/Compare-and-swap
+		* https://en.cppreference.com/w/cpp/atomic/atomic/compare_exchange.html
+		*/
+		static int CalcTimeAdvance(std::atomic<int>& pauseCounter, int timeAdvanceAttempt)
 		{
-			T old = a.load(std::memory_order_acquire);
-			while (old > 0)
+			Assert(timeAdvanceAttempt >= 0);
+			int oldVal = pauseCounter.load(std::memory_order_acquire);
+			while (oldVal > 0)
 			{
-				if (a.compare_exchange_weak(old,
-				                            old - 1,
-				                            std::memory_order_acq_rel,
-				                            std::memory_order_acquire))
-					return true;
+				int actualTimeAdvance = std::max(0, timeAdvanceAttempt - oldVal);
+				int newVal = std::max(0, oldVal - timeAdvanceAttempt);
+				if (pauseCounter.compare_exchange_weak(oldVal,
+				                                       newVal,
+				                                       std::memory_order_acq_rel,
+				                                       std::memory_order_acquire))
+				{
+					return actualTimeAdvance;
+				}
 			}
-			return false;
+			return timeAdvanceAttempt;
+		}
+
+		void FrameCheckPause(const ArRunningMovieJobStatus& status)
+		{
+			bool consoleOpen = interfaces::_engine_client->Con_IsVisible();
+			bool paused = status.recordWhenConsoleIsOpen != consoleOpen;
+			if (paused)
+			{
+				nFramesToSkip.fetch_add(1, std::memory_order_release);
+				nAudioSamplesToSkip.fetch_add((int)(AR_SAMPLERATE / status.framerate),
+				                              std::memory_order_release);
+			}
 		}
 	} pauseCounters;
 
 #ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
 	std::ofstream timingInfoFile{AR_DEBUG_TIMING_INFO_FILE_NAME};
-	int64_t nAudioSamplesConsumed = 0;
 #endif
 
 	// periodically call this to update the time without pauses
@@ -384,14 +412,6 @@ std::shared_ptr<const ArMovieJobResult> SptAutoRender::GetLastMovieJobResult()
 	return spt_auto_render_feat.lastMovieJobResult.load();
 }
 
-bool SptAutoRender::PauseMovieJob(bool pauseState)
-{
-	auto runningJob = spt_auto_render_feat.runningMovieJob.load(std::memory_order_acquire);
-	if (runningJob)
-		runningJob->status.userPaused.store(pauseState);
-	return !!runningJob;
-}
-
 bool SptAutoRender::StopMovieJob()
 {
 	std::lock_guard lk(spt_auto_render_feat.sharedRunningJobMtx);
@@ -471,10 +491,8 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 {
 	ORIG_S_TransferStereo16(pOutput, pfront, lpaintedtime, endtime);
 
-#if 1
-
-	int nPairs = endtime - lpaintedtime;
-	if (nPairs <= 0)
+	int nPairsFromGame = endtime - lpaintedtime;
+	if (nPairsFromGame <= 0)
 		return;
 
 	std::shared_lock lk(sharedRunningJobMtx);
@@ -483,20 +501,26 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	if (!runningJob)
 		return;
 
-	bool paused = runningJob->pauseCounters.SubIfNonNegative(runningJob->pauseCounters.nAudioFramesToSkip);
+	// the actual number of pairs we're processing
+	int nPairs =
+	    runningJob->pauseCounters.CalcTimeAdvance(runningJob->pauseCounters.nAudioSamplesToSkip, nPairsFromGame);
 
 #ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
+	size_t nSamplesConsumed = runningJob->status.nAudioSamplesConsumed.load(std::memory_order_acquire);
 	std::osyncstream(runningJob->timingInfoFile)
-	    << std::format("[{}]: {} samples (total={}) (timestamp={:.3f}), paused={}\n",
+	    << std::format("[{}]: {} samples consumed ({} from game this call, timestamp={:.3f}), processing {} samples\n",
 	                   __FUNCTION__,
-	                   nPairs,
-	                   runningJob->nAudioSamplesConsumed,
-	                   runningJob->nAudioSamplesConsumed / 44100.f,
-	                   paused);
+	                   nPairsFromGame,
+	                   nSamplesConsumed,
+	                   nSamplesConsumed / (float)AR_SAMPLERATE,
+	                   nPairs);
 #endif
 
-	if (paused)
+	if (nPairs <= 0)
 		return;
+
+	// skip over samples to emulate pausing
+	pfront = (int*)pfront + (nPairsFromGame - nPairs) * 2;
 
 	// error will get picked up by the render thread
 	ser::StatusTracker stat;
@@ -513,64 +537,7 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 
 	runningJob->mgr->UnlockSoundBuf(stat);
 
-#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
-	runningJob->nAudioSamplesConsumed += nPairs;
-#endif
-
-#else
-
-	// NEW
-
-	std::shared_lock lk(impl->sharedRunningJobMtx);
-
-	auto runningJob = impl->runningMovieJob.load(std::memory_order_acquire);
-	if (!runningJob)
-		return;
-
-	// TODO handle paused state
-
-	int bufferSizeBytes = 0x4000 * 2;
-	int deviceSampleCount = bufferSizeBytes / 2;
-	int* snd_p = (int*)pfront;
-
-	int samplePairCount = deviceSampleCount / 2;
-	int sampleMask = samplePairCount - 1;
-	float vol = runningJob->volume;
-
-	while (lpaintedtime < endtime)
-	{
-		int lpos = lpaintedtime & sampleMask;
-		int snd_linear_count = std::min(samplePairCount - lpos, endtime - lpaintedtime);
-
-#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
-		std::osyncstream(runningJob->timingInfoFile)
-		    << std::format("[{}]: {} samples (total={}) (timestamp={:.3f}), paused={}\n",
-		                   __FUNCTION__,
-		                   snd_linear_count,
-		                   runningJob->nAudioSamplesConsumed,
-		                   runningJob->nAudioSamplesConsumed / 44100.f,
-		                   false);
-		runningJob->nAudioSamplesConsumed += snd_linear_count;
-#endif
-
-		{
-			ser::StatusTracker stat;
-			short* outBuf = runningJob->mgr->LockSoundBuf(snd_linear_count, stat);
-			if (!outBuf || !stat.Ok())
-				return;
-			for (int i = 0; i < snd_linear_count * 2; i++)
-			{
-				float sample = ((int*)snd_p)[i] * vol;
-				outBuf[i] = static_cast<short>(std::clamp(sample, -32768.f, 32767.f));
-			}
-			runningJob->mgr->UnlockSoundBuf(stat);
-		}
-
-		snd_p += snd_linear_count * 2;
-		lpaintedtime += snd_linear_count;
-	}
-
-#endif
+	runningJob->status.nAudioSamplesConsumed.fetch_add(nPairs, std::memory_order_release);
 }
 
 IMPL_HOOK_THISCALL(AutoRenderFeature, void, CVideoMode_Common__WriteMovieFrame, void*, void* movieInfo)
@@ -594,22 +561,12 @@ void AutoRenderFeature::OnFrameSignal()
 	auto runningJob = runningMovieJob.load(std::memory_order_acquire);
 	if (runningJob)
 	{
-		bool consoleOpen = interfaces::_engine_client->Con_IsVisible();
-		bool paused =
-		    runningJob->status.userPaused || (runningJob->status.recordWhenConsoleIsOpen != consoleOpen);
-		if (paused)
-		{
-			// TODO this gets run one frame too late (console is open -> 1 frame is recorded)
-			runningJob->pauseCounters.nFramesToSkip.fetch_add(1, std::memory_order_release);
-			runningJob->pauseCounters.nAudioFramesToSkip.fetch_add(1, std::memory_order_release);
-		}
 #ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
 		std::osyncstream(runningJob->timingInfoFile)
-		    << std::format("[{}]: paused={} (framesToPause={}, audioFramesToPause={})\n",
+		    << std::format("[{}]: (framesToSkip={}, audioSamplesToSkip={})\n",
 		                   __FUNCTION__,
-		                   paused,
 		                   runningJob->pauseCounters.nFramesToSkip.load(std::memory_order_acquire),
-		                   runningJob->pauseCounters.nAudioFramesToSkip.load(std::memory_order_acquire));
+		                   runningJob->pauseCounters.nAudioSamplesToSkip.load(std::memory_order_acquire));
 #endif
 
 		// did user request auto-stop?
@@ -679,20 +636,46 @@ void AutoRenderFeature::RunningJobFrame(IDirect3DDevice9* device,
                                         std::shared_ptr<ArRunningJob> runningJob,
                                         bool shouldKill)
 {
-	if (!runningJob)
-		return;
-
 	{
 		std::shared_lock lk(sharedRunningJobMtx);
 
+		if (!runningJob)
+			return;
+
+		runningJob->pauseCounters.FrameCheckPause(runningJob->status);
+		bool paused =
+		    runningJob->pauseCounters.CalcTimeAdvance(runningJob->pauseCounters.nFramesToSkip, 1) <= 0;
+
 		/*
 		* Kill the current job if:
-		* - there's a new job to queue
+		* - there's a new job to queue (shouldKill is already true)
 		* - the job failed
 		* - the job had an error while consuming a new frame
 		* - the job consumed enough frames
+		* - the audio and video are too far out of sync (this causes nutlib to eat all of our memory)
 		*/
-		bool paused = runningJob->pauseCounters.SubIfNonNegative(runningJob->pauseCounters.nFramesToSkip);
+
+		if (!shouldKill && runningJob->captureAudio)
+		{
+			// check audio/video desync
+			double vidTimestamp = runningJob->status.nFramesConsumed.load(std::memory_order_acquire)
+			                      / (double)runningJob->status.framerate;
+			double audioTimestamp = runningJob->status.nAudioSamplesConsumed.load(std::memory_order_acquire)
+			                        / (double)AR_SAMPLERATE;
+			double diff = std::abs(vidTimestamp - audioTimestamp);
+			double nFramesDesynced = diff * runningJob->status.framerate;
+			if (nFramesDesynced > 15)
+			{
+				runningJob->result->stat.Err(
+				    std::format("SPT: The audio and video desynced too much "
+				                "(vid ts={:.3f}s, audio ts={:.3f}s, approx {} frames desync), "
+				                "aborting to prevent OOM error",
+				                vidTimestamp,
+				                audioTimestamp,
+				                (int)nFramesDesynced));
+				shouldKill = true;
+			}
+		}
 
 #ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
 		auto _nConsumed = runningJob->status.nFramesConsumed.load(std::memory_order_acquire);
@@ -700,7 +683,7 @@ void AutoRenderFeature::RunningJobFrame(IDirect3DDevice9* device,
 		    << std::format("[{}]: frame {} (timestamp={:.3f}), paused={}\n",
 		                   __FUNCTION__,
 		                   _nConsumed,
-		                   _nConsumed / runningJob->status.outputFramerate,
+		                   _nConsumed / runningJob->status.framerate,
 		                   paused);
 #endif
 
