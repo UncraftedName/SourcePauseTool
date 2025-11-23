@@ -340,12 +340,13 @@ void AutoRenderFeature::UnloadFeature()
 
 bool SptAutoRender::Works()
 {
-	return ShaderDevicePresentPreImGuiSignal.Works && ShaderDevicePresentPostImGuiSignal.Works && FrameSignal.Works;
+	return ShaderDevicePresentPreImGuiSignal.Works && ShaderDevicePresentPostImGuiSignal.Works
+	       && spt_auto_render_feat.ORIG_CVideoMode_Common__WriteMovieFrame && FrameSignal.Works;
 }
 
 bool SptAutoRender::MultiDemoJobWorks()
 {
-	return !!spt_demostuff.pDemoplayer;
+	return Works() && !!spt_demostuff.pDemoplayer;
 }
 
 bool SptAutoRender::SupportsAudioCapture()
@@ -357,6 +358,8 @@ bool SptAutoRender::SupportsAudioCapture()
 
 bool SptAutoRender::QueueSingleMovieJob(std::unique_ptr<ArDeferredMovieJob> deferred)
 {
+	if (!Works())
+		return false;
 	if (spt_auto_render_feat.runningMultiDemoJob.load(std::memory_order_acquire))
 	{
 		return false;
@@ -499,7 +502,7 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	std::shared_lock lk(sharedRunningJobMtx);
 
 	auto runningJob = runningMovieJob.load();
-	if (!runningJob)
+	if (!runningJob || !runningJob->captureAudio)
 		return;
 
 	// the actual number of pairs we're processing
