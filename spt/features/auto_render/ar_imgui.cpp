@@ -57,6 +57,7 @@ struct ArImGuiPersist
 	};
 
 	std::vector<DefaultCvar> defaultCvarSettings{
+	    DefaultCvar{{"sv_cheats", "1"}, "Required for vido & audio syncing"},
 	    DefaultCvar{{"host_framerate", "-1"}, "Required for video & audio syncing"},
 	    DefaultCvar{{"fps_max", "-1"},
 	                "Required for correct audio syncing for now (only ran when capturing audio)"},
@@ -263,11 +264,11 @@ void ArImGuiPersist::TabCallback()
 
 	if (userCvarSettings.empty())
 		ResetDefaultCvars();
-	Assert(std::get<std::string>(userCvarSettings[0].cvar) == "host_framerate");
-	Assert(std::get<std::string>(userCvarSettings[1].cvar) == "fps_max");
+	Assert(std::get<std::string>(userCvarSettings[1].cvar) == "host_framerate");
+	Assert(std::get<std::string>(userCvarSettings[2].cvar) == "fps_max");
 	float hostFramerateVal = outputFramerate / playbackSpeed;
-	userCvarSettings[0].val = std::to_string(hostFramerateVal);
-	userCvarSettings[1].val = std::to_string(hostFramerateVal * 0.9f);
+	userCvarSettings[1].val = std::to_string(hostFramerateVal);
+	userCvarSettings[2].val = std::to_string(hostFramerateVal * 0.9f);
 	DrawCvars();
 }
 
@@ -363,9 +364,9 @@ void ArImGuiPersist::DrawLastFinishedJobStatus(const ArMovieJobResult* lastResul
 std::unique_ptr<ArDeferredMovieJob> ArImGuiPersist::CreateDeferredJob()
 {
 	std::vector<ArCvarSetting> jobCvars = userCvarSettings;
-	Assert(std::get<std::string>(userCvarSettings[1].cvar) == "fps_max");
+	Assert(std::get<std::string>(userCvarSettings[2].cvar) == "fps_max");
 	if (!captureAudio)
-		jobCvars.erase(jobCvars.begin() + 1); // remove fps_max if not capturing audio
+		jobCvars.erase(jobCvars.begin() + 2); // remove fps_max if not capturing audio
 
 	// construct on the stack then move into a unique_ptr so we can use designated initializers
 	ArDeferredMovieJob defferedMovieJob{
