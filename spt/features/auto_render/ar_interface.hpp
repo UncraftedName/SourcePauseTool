@@ -38,6 +38,7 @@ struct ArDeferredMovieJob
 	bool captureAudio;
 	bool recordWhenConsoleIsOpen;   // TODO now that i'm using startmovie logic, remove this
 	bool recordAfterImGuiCallbacks; // do you want ImGui to show up in the video?
+	bool dumpDebugTimingFile; // if set, creates a dump file in the ffmpeg working dir
 };
 
 using ar_elapsed_time_clock = std::chrono::steady_clock;

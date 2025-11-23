@@ -14,13 +14,7 @@
 #include <variant>
 #include <chrono>
 #include <shared_mutex>
-
-// if enabled, writes when frames/audio are consumed to a file
-// #define AR_DEBUG_TIMING_INFO_FILE_NAME "ar_timing_info.txt"
-
-#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
 #include <syncstream>
-#endif
 
 #define AR_SAMPLERATE 44100
 
@@ -92,6 +86,9 @@ struct ArRunningJob
 	bool recordAfterImGuiCallbacks = false;
 	bool initializedFromMultiDemo = false;
 
+	// debug file for dumping timestamps
+	std::ofstream timingInfoFile;
+
 	struct
 	{
 		/*
@@ -147,10 +144,6 @@ struct ArRunningJob
 			}
 		}
 	} pauseCounters;
-
-#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
-	std::ofstream timingInfoFile{AR_DEBUG_TIMING_INFO_FILE_NAME};
-#endif
 
 	// periodically call this to update the time without pauses
 	void IncrementElapsedTime(bool paused)
@@ -319,6 +312,7 @@ void AutoRenderFeature::LoadFeature()
 
 	ArGlobalPlaceholders::DEMO_SEQ.SetValue("_0");
 	ArGlobalPlaceholders::DEMO_NAME.SetValue("_nodemo");
+	ArGlobalPlaceholders::EXE_PATH.FindFfmpeg();
 
 	FrameSignal.Connect(this, &AutoRenderFeature::OnFrameSignal);
 	ShaderDevicePresentPreImGuiSignal.Connect(&AutoRenderFeature::OnShaderDevicePresentPreImGuiSignal);
@@ -509,16 +503,17 @@ IMPL_HOOK_CDECL(AutoRenderFeature,
 	int nPairs =
 	    runningJob->pauseCounters.CalcTimeAdvance(runningJob->pauseCounters.nAudioSamplesToSkip, nPairsFromGame);
 
-#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
-	size_t nSamplesConsumed = runningJob->status.nAudioSamplesConsumed.load(std::memory_order_acquire);
-	std::osyncstream(runningJob->timingInfoFile) << std::format(
-	    "[{}]: {} samples consumed ({} from game this call, timestamp={:.3f}), processing {} samples\n",
-	    __FUNCTION__,
-	    nSamplesConsumed,
-	    nPairsFromGame,
-	    nSamplesConsumed / (float)AR_SAMPLERATE,
-	    nPairs);
-#endif
+	if (runningJob->timingInfoFile.is_open())
+	{
+		size_t nSamplesConsumed = runningJob->status.nAudioSamplesConsumed.load(std::memory_order_acquire);
+		std::osyncstream(runningJob->timingInfoFile) << std::format(
+		    "[{}]: {} samples consumed ({} from game this call, timestamp={:.3f}), processing {} samples\n",
+		    __FUNCTION__,
+		    nSamplesConsumed,
+		    nPairsFromGame,
+		    nSamplesConsumed / (float)AR_SAMPLERATE,
+		    nPairs);
+	}
 
 	if (nPairs <= 0)
 		return;
@@ -560,19 +555,9 @@ void AutoRenderFeature::OnFrameSignal()
 	ArGlobalPlaceholders::VID_WIDTH.SetValue(std::to_string(width));
 	ArGlobalPlaceholders::VID_HEIGHT.SetValue(std::to_string(height));
 
-	// handle pausing
-
 	auto runningJob = runningMovieJob.load(std::memory_order_acquire);
 	if (runningJob)
 	{
-#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
-		std::osyncstream(runningJob->timingInfoFile)
-		    << std::format("[{}]: (framesToSkip={}, audioSamplesToSkip={})\n",
-		                   __FUNCTION__,
-		                   runningJob->pauseCounters.nFramesToSkip.load(std::memory_order_acquire),
-		                   runningJob->pauseCounters.nAudioSamplesToSkip.load(std::memory_order_acquire));
-#endif
-
 		// multi demo job and demo is done -> move on to next demo
 		if (runningJob->status.nFramesConsumed.load(std::memory_order_acquire) > 0
 		    && runningJob->initializedFromMultiDemo)
@@ -671,17 +656,27 @@ void AutoRenderFeature::RunningJobFrame(IDirect3DDevice9* device,
 				                (int)nFramesDesynced));
 				shouldKill = true;
 			}
+
+			if (runningJob->timingInfoFile.is_open())
+			{
+				std::osyncstream(runningJob->timingInfoFile)
+				    << std::format("[{}]: Timestamp desync is {:.3f} (~{:.1f} frames)\n",
+				                   __FUNCTION__,
+				                   vidTimestamp - audioTimestamp,
+				                   nFramesDesynced);
+			}
 		}
 
-#ifdef AR_DEBUG_TIMING_INFO_FILE_NAME
-		auto _nConsumed = runningJob->status.nFramesConsumed.load(std::memory_order_acquire);
-		std::osyncstream(runningJob->timingInfoFile)
-		    << std::format("[{}]: frame {} (timestamp={:.3f}), paused={}\n",
-		                   __FUNCTION__,
-		                   _nConsumed,
-		                   _nConsumed / runningJob->status.framerate,
-		                   paused);
-#endif
+		if (runningJob->timingInfoFile.is_open())
+		{
+			auto _nConsumed = runningJob->status.nFramesConsumed.load(std::memory_order_acquire);
+			std::osyncstream(runningJob->timingInfoFile)
+			    << std::format("[{}]: {} frames consumed (timestamp={:.3f}), paused={}\n",
+			                   __FUNCTION__,
+			                   _nConsumed,
+			                   _nConsumed / runningJob->status.framerate,
+			                   paused);
+		}
 
 		if (!paused && !shouldKill)
 		{
@@ -762,6 +757,14 @@ void AutoRenderFeature::ProcessDeferredJob(IDirect3DDevice9* device,
 	}
 
 	ArPlaceholder::writeLock.lock();
+
+	if (deferredJob->dumpDebugTimingFile)
+	{
+		std::string utf8FilePath = std::format("{}/{}_timing_dump.txt",
+		                                       *ArGlobalPlaceholders::RENDER_WORKING_DIR.GetValue(),
+		                                       *ArGlobalPlaceholders::DATE_TIME.GetValue());
+		newRunningJob->timingInfoFile.open(ArUtf8ToUtf16(utf8FilePath.c_str()));
+	}
 
 	std::string utf8CmdLine = ArPlaceholder::FormatString(placeholders, deferredJob->unformattedCmdLine, nullptr);
 

@@ -21,12 +21,15 @@ void ArPlaceholder::SetValue(std::string newVal)
 		pDirtyFlag->store(true);
 }
 
-bool ArPhExePath::FindFfmpeg()
+void ArPhExePath::FindFfmpeg()
 {
 	wchar wExePath[MAX_PATH];
 	DWORD wlen = SearchPathW(nullptr, L"ffmpeg.exe", nullptr, MAX_PATH, wExePath, nullptr);
 	if (wlen >= MAX_PATH || wlen == 0)
-		return false;
+	{
+		success = false;
+		return;
+	}
 	char exePath[MAX_PATH];
 	BOOL usedDefault;
 	DWORD len = WideCharToMultiByte(CP_UTF8,
@@ -38,10 +41,12 @@ bool ArPhExePath::FindFfmpeg()
 	                                nullptr,
 	                                &usedDefault);
 	if (len == 0 || len >= MAX_PATH || usedDefault)
-		return false;
-
+	{
+		success = false;
+		return;
+	}
 	SetValue(std::string(exePath, len));
-	return true;
+	success = true;
 }
 
 void ArPhUuid::Regenerate()

@@ -69,9 +69,16 @@ public:
 
 class ArPhExePath : public ArPlaceholder
 {
+	bool success = false;
+
 public:
 	using ArPlaceholder::ArPlaceholder;
-	bool FindFfmpeg();
+	void FindFfmpeg();
+
+	bool LastWasSuccess() const
+	{
+		return success;
+	}
 };
 
 class ArPhUuid : public ArPlaceholder

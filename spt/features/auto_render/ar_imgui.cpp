@@ -39,7 +39,6 @@ static std::string ArCreateDefaultCmdLine()
 // a whole bunch of singleton ImGui state and small functions to render sections of the autorender tab
 struct ArImGuiPersist
 {
-	std::optional<bool> lastFfmpegSearchSuccess;
 	bool resetCmdLine = true;
 	ArSyncMode syncMode = AR_SYNC_THREADED;
 	int nFramesInFlight = 3;
@@ -79,6 +78,7 @@ struct ArImGuiPersist
 	bool captureAudio = true;
 	bool recordWhenConsoleIsOpen = false;
 	bool recordAfterImGuiCallbacks = false;
+	bool dumpDebugTimingFile = false;
 
 	struct DemoSelector
 	{
@@ -125,12 +125,16 @@ struct ArImGuiPersist
 	void DrawDemoPaths();
 	bool DrawLogFolderButton(); // returns true if log folder was opened
 
+	void DrawMultiDemoJobControls();
+
+	void DrawSettings();
 	void DrawFfmpegPath();
 	void DrawPipeNameOptions();
 	void DrawFramerateOptions();
 	void DrawAudioOptions();
 	void DrawSyncMode();
 
+	bool CheckResetUnformattedCmdLine();
 	bool DrawUnformattedCmdLine(); // returns true if was updated
 	void DrawDefaultPlaceholders();
 	void DrawFormattedCmdLine();
@@ -212,40 +216,16 @@ void ArImGuiPersist::TabCallback()
 	ImGui::SameLine();
 
 	DrawLogFolderButton();
-	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat || !SptAutoRender::MultiDemoJobWorks());
-	ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
-	if (ImGui::TreeNode("Render demos"))
-	{
-		ImGui::BeginDisabled(demoSelector.paths.empty());
-		if (ImGui::Button(ICON_CI_RUN_ALL " Start"))
-		{
-			std::vector<std::filesystem::path> submitPaths;
-			std::ranges::transform(demoSelector.paths,
-			                       std::back_inserter(submitPaths),
-			                       &DemoSelector::demoFilePath::first);
-			SptAutoRender::QueueMultiDemoJob(CreateDeferredJob(), std::move(submitPaths));
-		}
-		ImGui::EndDisabled();
-		ImGui::SameLine();
 
-		ImGui::SameLine();
-		DrawDemoPaths();
-		ImGui::TreePop();
-	}
+	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat || !SptAutoRender::MultiDemoJobWorks());
+	DrawMultiDemoJobControls();
 	ImGui::EndDisabled();
 
 	// settings
 
-	DrawFfmpegPath();
-	DrawPipeNameOptions();
-	DrawFramerateOptions();
-	DrawAudioOptions();
-	ImGui::Checkbox("Render when console is open", &recordWhenConsoleIsOpen);
-	ImGui::Checkbox("Render after ImGui callbacks", &recordAfterImGuiCallbacks);
-	ImGui::SameLine();
-	SptImGui::HelpMarker("If set, ImGui windows will show up in the recording");
+	DrawSettings();
 
-	DrawSyncMode();
+	// placeholders
 
 	if (DrawUnformattedCmdLine())
 		ArGlobalPlaceholders::imGuiFormattedCmdLineDirty.store(true);
@@ -257,6 +237,8 @@ void ArImGuiPersist::TabCallback()
 		                                               cmdLineUnformatted,
 		                                               &unrecognizedPlaceholders);
 	}
+
+	// formatted cmd
 
 	DrawFormattedCmdLine();
 
@@ -363,6 +345,8 @@ void ArImGuiPersist::DrawLastFinishedJobStatus(const ArMovieJobResult* lastResul
 
 std::unique_ptr<ArDeferredMovieJob> ArImGuiPersist::CreateDeferredJob()
 {
+	CheckResetUnformattedCmdLine();
+
 	std::vector<ArCvarSetting> jobCvars = userCvarSettings;
 	Assert(std::get<std::string>(userCvarSettings[2].cvar) == "fps_max");
 	if (!captureAudio)
@@ -379,6 +363,7 @@ std::unique_ptr<ArDeferredMovieJob> ArImGuiPersist::CreateDeferredJob()
 	    .captureAudio = captureAudio,
 	    .recordWhenConsoleIsOpen = recordWhenConsoleIsOpen,
 	    .recordAfterImGuiCallbacks = recordAfterImGuiCallbacks,
+	    .dumpDebugTimingFile = dumpDebugTimingFile,
 	};
 
 	return std::make_unique<ArDeferredMovieJob>(std::move(defferedMovieJob));
@@ -474,11 +459,55 @@ bool ArImGuiPersist::DrawLogFolderButton()
 	return true;
 }
 
+void ArImGuiPersist::DrawMultiDemoJobControls()
+{
+	ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+	if (ImGui::TreeNode(ICON_CI_FILES " Render demos"))
+	{
+		ImGui::BeginDisabled(demoSelector.paths.empty());
+		if (ImGui::Button(ICON_CI_RUN_ALL " Start"))
+		{
+			std::vector<std::filesystem::path> submitPaths;
+			std::ranges::transform(demoSelector.paths,
+			                       std::back_inserter(submitPaths),
+			                       &DemoSelector::demoFilePath::first);
+			SptAutoRender::QueueMultiDemoJob(CreateDeferredJob(), std::move(submitPaths));
+		}
+		ImGui::EndDisabled();
+		ImGui::SameLine();
+
+		ImGui::SameLine();
+		DrawDemoPaths();
+		ImGui::TreePop();
+	}
+}
+
+void ArImGuiPersist::DrawSettings()
+{
+	// expand settings the first time if ffmpeg wasn't auto-detected
+	if (!ArGlobalPlaceholders::EXE_PATH.LastWasSuccess())
+		ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
+	if (ImGui::TreeNode(ICON_CI_GEAR " Settings"))
+	{
+		DrawFfmpegPath();
+		DrawPipeNameOptions();
+		DrawFramerateOptions();
+		DrawAudioOptions();
+		ImGui::Checkbox("Render when console is open", &recordWhenConsoleIsOpen);
+		ImGui::Checkbox("Render after ImGui callbacks", &recordAfterImGuiCallbacks);
+		ImGui::SameLine();
+		SptImGui::HelpMarker("If set, ImGui windows will show up in the recording");
+		ImGui::Checkbox("Dump debug timing file", &dumpDebugTimingFile);
+		ImGui::SameLine();
+		SptImGui::HelpMarker("If set, dumps a file in the render working dir with audio/video timestamps");
+
+		DrawSyncMode();
+		ImGui::TreePop();
+	}
+}
+
 void ArImGuiPersist::DrawFfmpegPath()
 {
-	if (!lastFfmpegSearchSuccess.has_value())
-		lastFfmpegSearchSuccess = ArGlobalPlaceholders::EXE_PATH.FindFfmpeg();
-
 	{
 		static std::string tmp;
 		tmp = *ArGlobalPlaceholders::EXE_PATH.GetValue();
@@ -488,7 +517,7 @@ void ArImGuiPersist::DrawFfmpegPath()
 
 	ImGui::SameLine();
 	if (ImGui::Button(ICON_CI_SEARCH " Auto-detect"))
-		lastFfmpegSearchSuccess = ArGlobalPlaceholders::EXE_PATH.FindFfmpeg();
+		ArGlobalPlaceholders::EXE_PATH.FindFfmpeg();
 	ImGui::SetItemTooltip("search for ffmpeg in the PATH");
 	ImGui::SameLine();
 	SptImGui::HelpMarker(
@@ -496,7 +525,7 @@ void ArImGuiPersist::DrawFfmpegPath()
 	    "By default it's ffmpeg, but you can in theory pump it into\n"
 	    "a custom application that can process the .nut format.");
 
-	if (!lastFfmpegSearchSuccess.value())
+	if (!ArGlobalPlaceholders::EXE_PATH.LastWasSuccess())
 	{
 		ImGui::TextColored(
 		    SPT_IMGUI_WARN_COLOR_YELLOW,
@@ -575,30 +604,37 @@ void ArImGuiPersist::DrawSyncMode()
 	ImGui::EndDisabled();
 }
 
-bool ArImGuiPersist::DrawUnformattedCmdLine()
+bool ArImGuiPersist::CheckResetUnformattedCmdLine()
 {
-	bool changed = false;
-
 	if (resetCmdLine)
 	{
 		cmdLineUnformatted = ArCreateDefaultCmdLine();
 		resetCmdLine = false;
-		changed = true;
+		return true;
 	}
+	return false;
+}
 
-	ImGui::TextUnformatted(ICON_CI_TERMINAL_CMD " Command to execute:");
-	if (ImGui::InputTextMultiline("##cmdline_unformatted",
-	                              &cmdLineUnformatted,
-	                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
-	                              ImGuiInputTextFlags_WordWrap))
-	{
-		changed = true;
-	}
+bool ArImGuiPersist::DrawUnformattedCmdLine()
+{
+	bool changed = false;
 
-	if (ImGui::Button(ICON_CI_DEBUG_RESTART " Reset to default"))
+	if (ImGui::TreeNode(ICON_CI_TERMINAL_CMD " Command to execute"))
 	{
-		cmdLineUnformatted = ArCreateDefaultCmdLine();
-		changed = true;
+		if (ImGui::Button(ICON_CI_DEBUG_RESTART " Reset to default"))
+			resetCmdLine = true;
+
+		changed = CheckResetUnformattedCmdLine();
+
+		if (ImGui::InputTextMultiline("##cmdline_unformatted",
+		                              &cmdLineUnformatted,
+		                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
+		                              ImGuiInputTextFlags_WordWrap))
+		{
+			changed = true;
+		}
+
+		ImGui::TreePop();
 	}
 
 	return changed;
