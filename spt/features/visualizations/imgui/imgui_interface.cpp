@@ -80,9 +80,9 @@ public:
 	inline static bool doWindowCallbacks = false;
 	inline static std::vector<SptImGuiWindowCallback> windowCallbacks;
 	inline static std::set<ImGuiHudCvar> hudCvars;
+	inline static HWND gameWnd = nullptr;
 
 private:
-	inline static HWND gameWnd = nullptr;
 	inline static WNDPROC origWndProc = nullptr;
 	inline static IDirect3DDevice9* dx9Device = nullptr;
 	inline static std::atomic<int> fontSize;
@@ -1224,6 +1224,11 @@ void SptImGui::RegisterHudCvarCallback(ConVar& var, const SptImGuiHudTextCallbac
 void SptImGui::BringFocusToMainWindow()
 {
 	SptImGuiFeature::forceMainWindowFocus = true;
+}
+
+HWND SptImGui::GetGameWindow()
+{
+	return spt_imgui_feat.gameWnd;
 }
 
 ImGuiWindow* SptImGui::GetMainWindow()

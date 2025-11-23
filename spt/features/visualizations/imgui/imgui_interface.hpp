@@ -297,6 +297,7 @@ public:
 	*/
 	static void BringFocusToMainWindow();
 
+	static HWND GetGameWindow();
 	static ImGuiWindow* GetMainWindow();
 	static void ToggleFeature();
 

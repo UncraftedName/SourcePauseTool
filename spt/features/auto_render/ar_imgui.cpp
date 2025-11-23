@@ -153,7 +153,19 @@ void ArImGuiTabCallbackEntry()
 void ArImGuiFileDialogWindowEntry()
 {
 	auto& imfg = *ImGuiFileDialog::Instance();
-	if (imfg.Display(ArImGuiPersist::DemoSelector::FILE_DIALOG_ID))
+
+	if (!imfg.IsOpened())
+		return;
+
+	// TODO apply this logic to the main imgui window
+	RECT gameRect;
+	GetWindowRect(SptImGui::GetGameWindow(), &gameRect);
+	ImVec2 minSize{
+	    (gameRect.right - gameRect.left) / 4.f,
+	    (gameRect.bottom - gameRect.top) / 4.f,
+	};
+
+	if (imfg.Display(ArImGuiPersist::DemoSelector::FILE_DIALOG_ID, ImGuiWindowFlags_NoCollapse, minSize))
 	{
 		if (imfg.IsOk())
 		{
