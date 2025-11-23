@@ -132,6 +132,7 @@ struct ArRunningJob
 			return timeAdvanceAttempt;
 		}
 
+		// TODO - tasses set host_framerate to 66, but we're expecting 60 for audio syncing...
 		void FrameCheckPause(const ArRunningMovieJobStatus& status)
 		{
 			bool consoleOpen = interfaces::_engine_client->Con_IsVisible();
