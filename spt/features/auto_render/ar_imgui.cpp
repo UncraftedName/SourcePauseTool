@@ -194,14 +194,14 @@ void ArImGuiPersist::TabCallback()
 	// control buttons
 
 	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat);
-	if (ImGui::Button("Start rendering single video"))
+	if (ImGui::Button(ICON_CI_RUN " Start rendering single video"))
 		SptAutoRender::QueueSingleMovieJob(CreateDeferredJob());
 	ImGui::EndDisabled();
 
 	ImGui::SameLine();
 
 	ImGui::BeginDisabled(!multiDemoJobStat && !runningJobStat);
-	if (ImGui::Button("Stop rendering"))
+	if (ImGui::Button(ICON_CI_STOP " Stop rendering"))
 	{
 		SptAutoRender::StopMultiDemoJob();
 		SptAutoRender::StopMovieJob();
@@ -212,10 +212,11 @@ void ArImGuiPersist::TabCallback()
 
 	DrawLogFolderButton();
 	ImGui::BeginDisabled(!!multiDemoJobStat || !!runningJobStat || !SptAutoRender::MultiDemoJobWorks());
+	ImGui::SetNextItemOpen(true, ImGuiCond_Appearing);
 	if (ImGui::TreeNode("Render demos"))
 	{
 		ImGui::BeginDisabled(demoSelector.paths.empty());
-		if (ImGui::Button("Start"))
+		if (ImGui::Button(ICON_CI_RUN_ALL " Start"))
 		{
 			std::vector<std::filesystem::path> submitPaths;
 			std::ranges::transform(demoSelector.paths,
@@ -388,7 +389,7 @@ void ArImGuiPersist::DrawDemoPaths()
 
 	auto& imfg = *ImGuiFileDialog::Instance();
 	ImGui::BeginDisabled(imfg.IsOpened());
-	if (ImGui::Button("Add demos"))
+	if (ImGui::Button(ICON_CI_NEW_FILE " Add demos"))
 	{
 		/*
 		* If you're reading this, at some point it may have crossed your mind that I can just
@@ -416,7 +417,7 @@ void ArImGuiPersist::DrawDemoPaths()
 
 	auto& demoSet = demoSelector.paths;
 	ImGui::SameLine();
-	if (ImGui::Button("Clear demo list"))
+	if (ImGui::Button(ICON_CI_TRASH " Clear demo list"))
 		demoSet.clear();
 
 	if (!demoSet.empty())
@@ -428,7 +429,7 @@ void ArImGuiPersist::DrawDemoPaths()
 			ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(0.f, 0.f));
 
 			ImGui::TableSetupColumn("index", ImGuiTableColumnFlags_WidthFixed);
-			ImGui::TableSetupColumn("file path", ImGuiTableColumnFlags_WidthFixed);
+			ImGui::TableSetupColumn(ICON_CI_FILE " file path", ImGuiTableColumnFlags_WidthFixed);
 			ImGui::TableHeadersRow();
 
 			int idx = 0;
@@ -437,7 +438,7 @@ void ArImGuiPersist::DrawDemoPaths()
 				ImGui::PushID(idx);
 				ImGui::TableNextRow();
 				ImGui::TableSetColumnIndex(0);
-				bool erase = ImGui::SmallButton("-");
+				bool erase = SptImGui::SmallIconButton(ICON_CI_TRASH);
 				ImGui::SameLine();
 				ImGui::Text("%d", idx);
 				ImGui::TableSetColumnIndex(1);
@@ -457,7 +458,7 @@ void ArImGuiPersist::DrawDemoPaths()
 
 bool ArImGuiPersist::DrawLogFolderButton()
 {
-	if (!ImGui::Button("Open log folder"))
+	if (!ImGui::Button(ICON_CI_FOLDER " Open log folder"))
 		return false;
 
 	std::wstring wWorkingDirStr = ArUtf8ToUtf16(ArGlobalPlaceholders::RENDER_WORKING_DIR.GetValue()->c_str());
@@ -480,12 +481,12 @@ void ArImGuiPersist::DrawFfmpegPath()
 	{
 		static std::string tmp;
 		tmp = *ArGlobalPlaceholders::EXE_PATH.GetValue();
-		if (ImGui::InputText("Exe path", &tmp, ImGuiInputTextFlags_ElideLeft))
+		if (ImGui::InputText(ICON_CI_FILE " Exe path", &tmp, ImGuiInputTextFlags_ElideLeft))
 			ArGlobalPlaceholders::EXE_PATH.SetValue(tmp);
 	}
 
 	ImGui::SameLine();
-	if (ImGui::Button("Auto-detect"))
+	if (ImGui::Button(ICON_CI_SEARCH " Auto-detect"))
 		lastFfmpegSearchSuccess = ArGlobalPlaceholders::EXE_PATH.FindFfmpeg();
 	ImGui::SetItemTooltip("search for ffmpeg in the PATH");
 	ImGui::SameLine();
@@ -540,7 +541,10 @@ void ArImGuiPersist::DrawAudioOptions()
 	bool hasSupport = SptAutoRender::SupportsAudioCapture();
 	captureAudio &= hasSupport;
 	ImGui::BeginDisabled(!hasSupport);
-	ImGui::Checkbox("Capture audio", &captureAudio);
+	if (captureAudio)
+		ImGui::Checkbox(ICON_CI_UNMUTE " Capture audio###capture_audio", &captureAudio);
+	else
+		ImGui::Checkbox(ICON_CI_MUTE " Capture audio###capture_audio", &captureAudio);
 	ImGui::BeginDisabled(!captureAudio);
 	ImGui::SliderFloat("Volume", &volume, 0.f, 1.f, nullptr, ImGuiSliderFlags_AlwaysClamp);
 	ImGui::SameLine();
@@ -581,7 +585,7 @@ bool ArImGuiPersist::DrawUnformattedCmdLine()
 		changed = true;
 	}
 
-	ImGui::TextUnformatted("Program to execute:");
+	ImGui::TextUnformatted(ICON_CI_TERMINAL_CMD " Command to execute:");
 	if (ImGui::InputTextMultiline("##cmdline_unformatted",
 	                              &cmdLineUnformatted,
 	                              ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16),
@@ -590,7 +594,7 @@ bool ArImGuiPersist::DrawUnformattedCmdLine()
 		changed = true;
 	}
 
-	if (ImGui::Button("Reset to default"))
+	if (ImGui::Button(ICON_CI_DEBUG_RESTART " Reset to default"))
 	{
 		cmdLineUnformatted = ArCreateDefaultCmdLine();
 		changed = true;
@@ -604,7 +608,7 @@ void ArImGuiPersist::DrawDefaultPlaceholders()
 	// TODO this doesn't work!!!
 	if (!unrecognizedPlaceholders.empty())
 	{
-		std::string out = "Warning: unrecognized placeholder(s): ";
+		std::string out = ICON_CI_WARNING " Warning: unrecognized placeholder(s): ";
 		for (auto& s : unrecognizedPlaceholders)
 		{
 			out += s;
@@ -613,7 +617,7 @@ void ArImGuiPersist::DrawDefaultPlaceholders()
 		ImGui::TextColored(SPT_IMGUI_WARN_COLOR_YELLOW, "%.*s", out.size() - 2, out.c_str());
 	}
 
-	if (ImGui::TreeNode("Available placeholders"))
+	if (ImGui::TreeNode(ICON_CI_WORD_WRAP " Available placeholders"))
 	{
 		if (ImGui::BeginTable("##placeholders",
 		                      3,
@@ -647,7 +651,7 @@ void ArImGuiPersist::DrawDefaultPlaceholders()
 
 void ArImGuiPersist::DrawFormattedCmdLine()
 {
-	if (ImGui::TreeNode("Formatted command"))
+	if (ImGui::TreeNode(ICON_CI_TERMINAL_CMD " Formatted command"))
 	{
 		ImGui::InputTextMultiline("##cmdline_formated",
 		                          &cmdLineFormatted,
@@ -659,11 +663,11 @@ void ArImGuiPersist::DrawFormattedCmdLine()
 
 void ArImGuiPersist::DrawCvars()
 {
-	if (ImGui::TreeNode("ConVars"))
+	if (ImGui::TreeNode(ICON_CI_WRENCH " ConVars"))
 	{
 		ImGui::TextWrapped(
 		    "These are cvars that will be set when the rendering is started and set back to their prior values afterwards.");
-		if (ImGui::Button("Reset to default"))
+		if (ImGui::Button(ICON_CI_DEBUG_RESTART " Reset to default"))
 			ResetDefaultCvars();
 
 		if (ImGui::BeginTable("##cvars", 2, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
@@ -692,7 +696,7 @@ void ArImGuiPersist::DrawCvars()
 				else
 				{
 					ImGui::SameLine();
-					if (ImGui::SmallButton("-"))
+					if (SptImGui::SmallIconButton(ICON_CI_TRASH))
 						deleteIdx = (int)i;
 				}
 				ImGui::TableNextColumn();
@@ -709,7 +713,7 @@ void ArImGuiPersist::DrawCvars()
 			ImGui::EndTable();
 		}
 
-		if (ImGui::SmallButton("+"))
+		if (SptImGui::SmallIconButton(ICON_CI_PLUS))
 			userCvarSettings.push_back(ArCvarSetting{"", ""});
 
 		ImGui::TreePop();
