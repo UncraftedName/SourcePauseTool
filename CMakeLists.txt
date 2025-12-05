@@ -1,15 +1,48 @@
 cmake_minimum_required(VERSION 3.10)
 
-project(SPT)
+project(SPT LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
-add_compile_options("/MP")
+add_compile_options(/MP)
 
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_LIST_DIR}/build")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}")
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/build)
 
-FILE(GLOB_RECURSE SPT_SOURCES
+FILE(GLOB_RECURSE SPTLIB_SOURCES
+	SPTLib/Hooks.cpp
+	SPTLib/IHookableDirFilter.cpp
+	SPTLib/IHookableModule.cpp
+	SPTLib/IHookableNameFilter.cpp
+	SPTLib/IHookableNameFilterOrdered.cpp
+	SPTLib/MemUtils.cpp
+	SPTLib/sptlib.cpp
+	SPTLib/Windows/DetoursUtils.cpp
+	SPTLib/Windows/Hooks_win.cpp
+	SPTLib/Windows/MemUtils_win.cpp
+	SPTLib/Windows/minhook/src/buffer.c
+	SPTLib/Windows/minhook/src/hook.c
+	SPTLib/Windows/minhook/src/trampoline.c
+	SPTLib/Windows/minhook/src/hde/hde32.c
+)
+
+add_library(SPTLib STATIC ${SPTLIB_SOURCES})
+target_include_directories(SPTLib PUBLIC SPTLib SPTLib/Windows/minhook/include)
+
+add_library(mathlib STATIC IMPORTED)
+set_target_properties(mathlib PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/SDK/orangebox_new/lib/mathlib.lib")
+
+add_library(xz STATIC IMPORTED)
+set_target_properties(xz PROPERTIES
+	IMPORTED_LOCATION_DEBUG   "${CMAKE_SOURCE_DIR}/thirdparty/xz/lib/lzma_dbg.lib"
+	IMPORTED_LOCATION_RELEASE "${CMAKE_SOURCE_DIR}/thirdparty/xz/lib/lzma_rel.lib"
+)
+
+add_library(curl STATIC IMPORTED)
+set_target_properties(curl PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/curl/lib/libcurl_a.lib")
+target_link_libraries(curl INTERFACE Advapi32 Crypt32 Wldap32)
+target_include_directories(curl INTERFACE thirdparty/curl/include)
+
+set(SPT_SOURCES
+
 	spt/cvars.cpp
 	spt/feature.cpp
 	spt/sptlib-wrapper.cpp
@@ -140,7 +173,6 @@ FILE(GLOB_RECURSE SPT_SOURCES
 
 	spt/vgui/vgui_utils.cpp
 	
-	# The imgui stuff has some branch dependent code
 	thirdparty/imgui/imgui.cpp
 	thirdparty/imgui/imgui_demo.cpp
 	thirdparty/imgui/imgui_draw.cpp
@@ -148,115 +180,57 @@ FILE(GLOB_RECURSE SPT_SOURCES
 	thirdparty/imgui/imgui_impl_win32.cpp
 	thirdparty/imgui/imgui_tables.cpp
 	thirdparty/imgui/imgui_widgets.cpp
-)
 
-add_library(spt_generic STATIC 	
 	thirdparty/md5.cpp
 	thirdparty/x86.c
 )
-target_include_directories(spt_generic PUBLIC thirdparty)
-target_compile_options(spt_generic PUBLIC /W4 /wd4471)
-target_compile_definitions(spt_generic PUBLIC sptONLY _CRT_SECURE_NO_DEPRECATE _CRT_NONSTDC_NO_DEPRECATE)
-target_link_libraries(spt_generic PUBLIC curl Dbghelp legacy_stdio_definitions mathlib Normaliz SPTLib xz ws2_32)
 
-FILE(GLOB_RECURSE SPTLIB_SOURCES
-	SPTLib/Hooks.cpp
-	SPTLib/IHookableDirFilter.cpp
-	SPTLib/IHookableModule.cpp
-	SPTLib/IHookableNameFilter.cpp
-	SPTLib/IHookableNameFilterOrdered.cpp
-	SPTLib/MemUtils.cpp
-	SPTLib/sptlib.cpp
-	SPTLib/Windows/DetoursUtils.cpp
-	SPTLib/Windows/Hooks_win.cpp
-	SPTLib/Windows/MemUtils_win.cpp
-	SPTLib/Windows/minhook/src/buffer.c
-	SPTLib/Windows/minhook/src/hook.c
-	SPTLib/Windows/minhook/src/trampoline.c
-	SPTLib/Windows/minhook/src/hde/hde32.c
-)
+function(add_engine_branch dllName sdkDir engineBranchDefines)
+	# SDK lib
+	set(sdk_target ${dllName}_sdk)
+	add_library(${sdk_target} STATIC "${sdkDir}/src/all.cpp")
+	target_compile_definitions(${sdk_target} PRIVATE ${engineBranchDefines})
+	target_include_directories(${sdk_target} PUBLIC
+		${sdkDir}/include/common
+		${sdkDir}/include/public
+		${sdkDir}/include/public/tier0
+		${sdkDir}/include/public/tier1
+		${sdkDir}/include/game/server
+		${sdkDir}/include/game/client
+		${sdkDir}/include/game/shared
+	)
+	target_compile_options(${sdk_target} PRIVATE /W3 /wd5033 /wd4273)
 
-add_library(SPTLib STATIC ${SPTLIB_SOURCES})
-target_include_directories(SPTLib PUBLIC SPTLib SPTLib/Windows/minhook/include)
+	# main DLL
+	add_library(${dllName} SHARED ${SPT_SOURCES})
 
-add_library(mathlib STATIC IMPORTED)
-set_target_properties(mathlib PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/SDK/orangebox_new/lib/mathlib.lib")
-	
-add_library(xz STATIC IMPORTED)
-set_target_properties(xz PROPERTIES
-	IMPORTED_LOCATION   "${CMAKE_SOURCE_DIR}/thirdparty/xz/lib/lzma_dbg.lib"
-	IMPORTED_LOCATION_RELEASE "${CMAKE_SOURCE_DIR}/thirdparty/xz/lib/lzma_rel.lib"
-)
+	target_compile_definitions(${dllName} PRIVATE
+		${engineBranchDefines}
+		TARGET_NAME="${dllname}.dll"
+		_CRT_SECURE_NO_DEPRECATE
+		_CRT_NONSTDC_NO_DEPRECATE
+	)
+	target_include_directories(${dllName} PUBLIC
+		${CMAKE_SOURCE_DIR}
+		${CMAKE_SOURCE_DIR}/spt
+		${CMAKE_SOURCE_DIR}/spt/utils
+		${CMAKE_SOURCE_DIR}/thirdparty
+	)
+	target_compile_options(${dllName} PRIVATE /W4 /wd4471)
+	target_link_libraries(${dllName} PUBLIC
+		curl
+		Dbghelp
+		legacy_stdio_definitions
+		mathlib
+		Normaliz
+		SPTLib
+		xz
+		ws2_32
+		${sdk_target}
+	)
+endfunction()
 
-add_library(curl STATIC IMPORTED)
-set_target_properties(curl PROPERTIES IMPORTED_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/curl/lib/libcurl_a.lib")
-target_link_libraries(curl INTERFACE Advapi32 Crypt32 Wldap32)
-target_include_directories(curl INTERFACE thirdparty/curl/include)
-
-add_library(sdk_orangebox STATIC SDK/orangebox_new/src/all_orangebox.cpp)
-target_include_directories(sdk_orangebox PUBLIC 
-	SDK/orangebox_new/include/common
-	SDK/orangebox_new/include/game
-	SDK/orangebox_new/include/public
-	SDK/orangebox_new/include/public/tier0
-	SDK/orangebox_new/include/public/tier1
-	SDK/orangebox_new/include/game/server
-	SDK/orangebox_new/include/game/client
-	SDK/orangebox_new/include/game/shared)
-target_compile_definitions(sdk_orangebox PUBLIC SSDK2007 TARGET_NAME="spt.dll")
-
-add_library(spt SHARED ${SPT_SOURCES})
-target_precompile_headers(spt PRIVATE spt/utils/stdafx.hpp)
-target_include_directories(spt PUBLIC spt . spt/utils)
-target_link_libraries(spt PUBLIC sdk_orangebox spt_generic)
-
-add_library(sdk_2013 STATIC SDK/sdk2013_new/src/all_2013.cpp)
-target_include_directories(sdk_2013 PUBLIC 
-	SDK/sdk2013_new/include/common
-	SDK/sdk2013_new/include/public
-	SDK/sdk2013_new/include/public/tier0
-	SDK/sdk2013_new/include/public/tier1
-	SDK/sdk2013_new/include/game/server
-	SDK/sdk2013_new/include/game/client
-	SDK/sdk2013_new/include/game/shared)
-target_compile_definitions(sdk_2013 PUBLIC SSDK2013 TARGET_NAME="spt-2013.dll")
-
-add_library(spt_2013 SHARED ${SPT_SOURCES})
-target_precompile_headers(spt_2013 PRIVATE spt/utils/stdafx.hpp)
-set_target_properties(spt_2013 PROPERTIES OUTPUT_NAME "spt-2013")
-target_include_directories(spt_2013 PUBLIC spt . spt/utils)
-target_link_libraries(spt_2013 PUBLIC sdk_2013 spt_generic)
-
-add_library(sdk_oe STATIC SDK/episode1_new/src/all_oe.cpp)
-target_include_directories(sdk_oe PUBLIC 
-	SDK/episode1_new/include/common
-	SDK/episode1_new/include/public
-	SDK/episode1_new/include/public/tier0
-	SDK/episode1_new/include/public/tier1
-	SDK/episode1_new/include/game/server
-	SDK/episode1_new/include/game/client
-	SDK/episode1_new/include/game/shared)
-target_compile_definitions(sdk_oe PUBLIC OE TARGET_NAME="spt-oe.dll")
-
-add_library(spt_oe SHARED ${SPT_SOURCES})
-target_precompile_headers(spt_oe PRIVATE spt/utils/stdafx.hpp)
-set_target_properties(spt_oe PROPERTIES OUTPUT_NAME "spt-oe")
-target_include_directories(spt_oe PUBLIC spt . spt/utils)
-target_link_libraries(spt_oe PUBLIC sdk_oe spt_generic)
-
-add_library(sdk_bms STATIC SDK/bms_new/src/all_bms.cpp)
-target_include_directories(sdk_bms PUBLIC 
-	SDK/bms_new/include/common
-	SDK/bms_new/include/public
-	SDK/bms_new/include/public/tier0
-	SDK/bms_new/include/public/tier1
-	SDK/bms_new/include/game/server
-	SDK/bms_new/include/game/client
-	SDK/bms_new/include/game/shared)
-target_compile_definitions(sdk_bms PUBLIC BMS TARGET_NAME="spt-bms.dll")
-
-add_library(spt_bms SHARED ${SPT_SOURCES})
-target_precompile_headers(spt_bms PRIVATE spt/utils/stdafx.hpp)
-set_target_properties(spt_bms PROPERTIES OUTPUT_NAME "spt-bms")
-target_include_directories(spt_bms PUBLIC spt . spt/utils)
-target_link_libraries(spt_bms PUBLIC sdk_bms spt_generic)
+add_engine_branch(spt "${CMAKE_SOURCE_DIR}/SDK/orangebox_new" "SSDK2007")
+add_engine_branch(spt-2013 "${CMAKE_SOURCE_DIR}/SDK/sdk2013_new" "SSDK2013")
+add_engine_branch(spt-bms "${CMAKE_SOURCE_DIR}/SDK/bms_new" "BMS")
+add_engine_branch(spt-oe "${CMAKE_SOURCE_DIR}/SDK/episode1_new" "OE")

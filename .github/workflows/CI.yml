@@ -16,28 +16,31 @@ on:
 
 jobs:
   Build:
-    name: Build ${{matrix.config.file}} (${{ matrix.Configuration }})
+    name: Build ${{matrix.preset.name}}
     runs-on: windows-2022
     strategy:
       fail-fast: false
       matrix:
-        Configuration: [Release, Debug]
-        config:
-          - {target: spt, file: spt.dll}
-          - {target: spt_2013, file: spt-2013.dll}
-          - {target: spt_oe, file: spt-oe.dll}
-          - {target: spt_bms, file: spt-bms.dll}
+        preset:
+          - { name: "Debug",        file: "build/Debug/spt.dll" }
+          - { name: "Debug 2013",   file: "build/Debug/spt-2013.dll" }
+          - { name: "Debug BMS",    file: "build/Debug/spt-bms.dll" }
+          - { name: "Debug OE",     file: "build/Debug/spt-oe.dll" }
+          - { name: "Release",      file: "build/Release/spt.dll" }
+          - { name: "Release 2013", file: "build/Release/spt-2013.dll" }
+          - { name: "Release BMS",  file: "build/Release/spt-bms.dll" }
+          - { name: "Release OE",   file: "build/Release/spt-oe.dll" }
     steps:
       - name: Checkout SPT
         uses: actions/checkout@v4
       - name: Checkout submodules
         run: git submodule update --init -j $env:NUMBER_OF_PROCESSORS SPTLib
       - name: Configure CMake
-        run: cmake -B ${{github.workspace}}/build -A Win32 -DCMAKE_BUILD_TYPE=${{matrix.Configuration}}
+        run: cmake --preset base-x86
       - name: Build
-        run: cmake --build ${{github.workspace}}/build --target ${{matrix.config.target}} -j $env:NUMBER_OF_PROCESSORS --config ${{matrix.Configuration}}
+        run: cmake --build --preset "${{matrix.preset.name}}"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{matrix.config.file}} (${{matrix.Configuration}})
-          path: ${{github.workspace}}/build/${{matrix.Configuration}}/${{matrix.config.file}}
+          name: ${{matrix.preset.name}}
+          path: ${{github.workspace}}/${{matrix.preset.file}}
           if-no-files-found: error
