@@ -1,6 +1,6 @@
 #include "stdafx.hpp"
 
-#include "tr_config.hpp"
+#include "tr_structs.hpp"
 
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
@@ -37,6 +37,7 @@ public:
 	// only one active trace until we support import/export
 	TrPlayerTrace tr;
 	tr_tick activeDrawTick = 0;
+	TrRenderStyleConfig renderCfg{};
 
 protected:
 	virtual bool ShouldLoadFeature() override;
@@ -194,37 +195,44 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 	spt_player_trace_feat.activeDrawTick = 0;
 }
 
-ConVar spt_draw_trace{"spt_draw_trace", "0", FCVAR_DONTRECORD, "Draw last recorded player trace."};
+namespace player_trace
+{
+
+	ConVar spt_draw_trace{"spt_draw_trace", "0", FCVAR_DONTRECORD, "Draw last recorded player trace."};
 
 #ifdef SPT_HUD_ENABLED
-ConVar spt_hud_trace{"spt_hud_trace", "0", FCVAR_DONTRECORD, "Show info about the player trace."};
+	ConVar spt_hud_trace{"spt_hud_trace", "0", FCVAR_DONTRECORD, "Show info about the player trace."};
 #endif
 
-ConVar spt_trace_autoplay("spt_trace_autoplay", "0", FCVAR_DONTRECORD, "Play the trace recording in real time.");
-ConVar spt_trace_ent_collect_radius("spt_trace_ent_collect_radius",
-                                    "250",
-                                    FCVAR_DONTRECORD,
-                                    "The radius around the player used for entity collection");
-ConVar spt_trace_draw_portal_collision_entities(
-    "spt_trace_draw_portal_collision_entities",
-    "0",
-    FCVAR_DONTRECORD,
-    "If enabled, draws all portalsimulator_collisionentity when drawing the trace.");
-ConVar spt_trace_draw_path_cones(
-    "spt_trace_draw_path_cones",
-    "1",
-    FCVAR_DONTRECORD,
-    "If enabled, draws cones along the player path to indicate the player travel direction.");
-ConVar spt_trace_draw_cam_style("spt_trace_draw_cam_style",
-                                "0",
-                                FCVAR_DONTRECORD,
-                                "Player trace camera type:\n"
-                                "  0 = camera frustum\n"
-                                "  1 = box and line\n");
-ConVar spt_trace_draw_contact_points("spt_trace_draw_contact_points",
-                                     "1",
-                                     FCVAR_DONTRECORD,
-                                     "If enabled, draws recorded contact points for the player.");
+	ConVar spt_trace_autoplay("spt_trace_autoplay",
+	                          "0",
+	                          FCVAR_DONTRECORD,
+	                          "Play the trace recording in real time.");
+	ConVar spt_trace_ent_collect_radius("spt_trace_ent_collect_radius",
+	                                    "250",
+	                                    FCVAR_DONTRECORD,
+	                                    "The radius around the player used for entity collection");
+	ConVar spt_trace_draw_portal_collision_entities(
+	    "spt_trace_draw_portal_collision_entities",
+	    "0",
+	    FCVAR_DONTRECORD,
+	    "If enabled, draws all portalsimulator_collisionentity when drawing the trace.");
+	ConVar spt_trace_draw_path_cones(
+	    "spt_trace_draw_path_cones",
+	    "1",
+	    FCVAR_DONTRECORD,
+	    "If enabled, draws cones along the player path to indicate the player travel direction.");
+	ConVar spt_trace_draw_cam_style("spt_trace_draw_cam_style",
+	                                "0",
+	                                FCVAR_DONTRECORD,
+	                                "Player trace camera type:\n"
+	                                "  0 = camera frustum\n"
+	                                "  1 = box and line\n");
+	ConVar spt_trace_draw_contact_points("spt_trace_draw_contact_points",
+	                                     "1",
+	                                     FCVAR_DONTRECORD,
+	                                     "If enabled, draws recorded contact points for the player.");
+} // namespace player_trace
 
 bool PlayerTraceFeature::ShouldLoadFeature()
 {
@@ -364,8 +372,15 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	if (!spt_draw_trace.GetBool())
 		return;
 	activeDrawTick = clamp(activeDrawTick, 0, tr.numRecordedTicks - 1);
+
+	renderCfg.playerPath.cones.draw = spt_trace_draw_path_cones.GetBool();
+	renderCfg.playerEye.style =
+	    (TrPlayerCameraDrawType)std::clamp(spt_trace_draw_cam_style.GetInt(), 0, (int)TR_PCDT_COUNT);
+	renderCfg.contactPoints.draw = spt_trace_draw_contact_points.GetBool();
+	renderCfg.entPhys.portalCollisionEnts.draw = spt_trace_draw_portal_collision_entities.GetBool();
+
 	TrReadContextScope scope{tr};
-	tr.GetRenderingCache().RenderAll(mr, activeDrawTick);
+	tr.GetRenderingCache().RenderAll(mr, renderCfg, activeDrawTick);
 }
 
 #ifdef SPT_HUD_ENABLED

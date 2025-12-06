@@ -2,21 +2,34 @@
 
 #include "tr_render_cache.hpp"
 
+#ifdef SPT_PLAYER_TRACE_ENABLED
+
+#include "spt/features/visualizations/renderer/mesh_renderer.hpp"
+#include "spt/features/ent_props.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/map_utils.hpp"
 #include "spt/utils/math.hpp"
-#include "spt/features/ent_props.hpp"
-
-#ifdef SPT_PLAYER_TRACE_ENABLED
 
 #define PORTAL_HALF_WIDTH 32.0f
 #define PORTAL_HALF_HEIGHT 54.0f
 
 using namespace player_trace;
 
+template<typename T>
+static bool CheckUpdateCache(T& cached, const T& newVal)
+{
+	bool dirty = memcmp(&cached, &newVal, sizeof(T));
+	if (dirty)
+		memcpy(&cached, &newVal, sizeof(T));
+	return dirty;
+}
+
 void TrRenderingCache::RebuildPlayerHullMeshes()
 {
 	auto& tr = TrReadContextScope::Current();
+
+	bool cfgDirty = CheckUpdateCache(cfg.playerHull, pNewCfg->playerHull);
+	auto& hullCfg = pNewCfg->playerHull;
 
 	// qphys
 
@@ -31,39 +44,36 @@ void TrRenderingCache::RebuildPlayerHullMeshes()
 	    {meshes.qPhysDuck, tr.playerDuckBboxIdx},
 	};
 
-	for (auto [mesh, hullIdx] : qPhysData)
+	for (auto& [mesh, hullIdx] : qPhysData)
 	{
-		if (mesh.Valid())
+		if (!cfgDirty && mesh.Valid())
 			continue;
 
 		mesh = spt_meshBuilder.CreateStaticMesh(
-		    [hullIdx](MeshBuilderDelegate& mb)
+		    [hullIdx, &hullCfg](MeshBuilderDelegate& mb)
 		    {
-			    auto& style = trStyles.playerHull;
-			    auto& colors = trColors.playerHull;
-
 			    const Vector& mins = **hullIdx->minsIdx;
 			    const Vector& maxs = **hullIdx->maxsIdx;
-			    mb.AddBox(vec3_origin, mins, maxs, vec3_angle, colors.qPhys);
+			    mb.AddBox(vec3_origin, mins, maxs, vec3_angle, hullCfg.colors.qPhys);
 			    mb.AddBox(vec3_origin,
 			              Vector{mins.x * qphysHullReduction, mins.y * qphysHullReduction, mins.z},
 			              Vector{maxs.x * qphysHullReduction, maxs.y * qphysHullReduction, maxs.z},
 			              vec3_angle,
-			              colors.qPhysReduction);
-			    if (style.drawOriginCube)
+			              hullCfg.colors.qPhysReduction);
+			    if (hullCfg.drawOriginCube)
 			    {
 				    mb.AddBox(vec3_origin,
-				              Vector{-style.originCubeSize},
-				              Vector{style.originCubeSize},
+				              Vector{-hullCfg.originCubeSize},
+				              Vector{hullCfg.originCubeSize},
 				              vec3_angle,
-				              colors.qPhysOrigin);
+				              hullCfg.colors.qPhysOrigin);
 			    }
-			    if (style.drawQPhysCenter)
+			    if (hullCfg.drawQPhysCenter)
 			    {
 				    // `ent_bbox player` usually draws a cross at the vphys center, but qphys is prolly more relevant (for portals)
 				    mb.AddCross((mins + maxs) * .5f,
-				                style.qPhysCenterCrossRadius,
-				                colors.qPhys.lineColor);
+				                hullCfg.qPhysCenterCrossRadius,
+				                hullCfg.colors.qPhys.lineColor);
 			    }
 			    // add a small almost invisible shell around the qphhys box to try to prevent common z-fighting cases
 			    mb.AddBox(vec3_origin,
@@ -85,33 +95,34 @@ void TrRenderingCache::RebuildPlayerHullMeshes()
 	    {meshes.vPhysDuck, tr.playerDuckBboxIdx},
 	};
 
-	for (auto [mesh, hullIdx] : vPhysData)
+	for (auto& [mesh, hullIdx] : vPhysData)
 	{
-		if (mesh.Valid())
+		if (!cfgDirty && mesh.Valid())
 			continue;
 		mesh = spt_meshBuilder.CreateStaticMesh(
-		    [hullIdx](MeshBuilderDelegate& mb)
+		    [hullIdx, &hullCfg](MeshBuilderDelegate& mb)
 		    {
 			    const Vector& mins = **hullIdx->minsIdx;
 			    const Vector& maxs = **hullIdx->maxsIdx;
-			    mb.AddBox(vec3_origin, mins, maxs, vec3_angle, trColors.playerHull.vPhys);
+			    mb.AddBox(vec3_origin, mins, maxs, vec3_angle, hullCfg.colors.vPhys);
 		    });
 	}
 }
 
 void TrRenderingCache::RebuildEyeMeshes(float fov)
 {
-	int expectedDrawType = clamp(spt_trace_draw_cam_style.GetInt(), 0, TR_PCDT_COUNT - 1);
-
-	if (meshes.camType != expectedDrawType || meshes.eyeMeshFov != fov)
+	if (CheckUpdateCache(cfg.playerEye, pNewCfg->playerEye) || meshes.lastEyeMeshFov != fov)
 		StaticMesh::DestroyAllV(meshes.eyes, meshes.sgEyes);
 
-	meshes.camType = (TrPlayerCameraDrawType)expectedDrawType;
-	meshes.eyeMeshFov = fov;
+	auto& eyeCfg = pNewCfg->playerEye;
 
-	auto buildFrustumFunc = [fov](MeshBuilderDelegate& mb, ShapeColor color)
+	using EyeType = TrRenderStyleConfig::PlayerEye::EyeType;
+	meshes.lastEyeMeshFov = fov;
+
+	auto buildFrustumFunc = [fov, &eyeCfg](MeshBuilderDelegate& mb, EyeType eyeType)
 	{
-		auto& frustumStyle = trStyles.playerHull.camera.frustum;
+		auto& frustumStyle = eyeCfg.frustum;
+		ShapeColor color = frustumStyle.colors[eyeType];
 		float scaledFov = utils::ScaleFOVByWidthRatio(fov, frustumStyle.aspect * 3.f / 4.f);
 		float halfHorizontalAng = DEG2RAD(scaledFov * .5f);
 		float halfVerticalAng = atanf(tanf(halfHorizontalAng) / frustumStyle.aspect);
@@ -142,36 +153,37 @@ void TrRenderingCache::RebuildEyeMeshes(float fov)
 		mb.AddTri(p1, p2, p3, color);
 	};
 
-	auto buildBoxAndLineFunc = [](MeshBuilderDelegate& mb, ShapeColor color)
+	auto buildBoxAndLineFunc = [&eyeCfg](MeshBuilderDelegate& mb, EyeType eyeType)
 	{
-		auto& style = trStyles.playerHull.camera.boxAndLine;
-		mb.AddBox(vec3_origin, Vector{-style.boxRadius}, Vector{style.boxRadius}, vec3_angle, color);
-		mb.AddLine(vec3_origin, Vector{style.lineLength, 0, 0}, color.faceColor);
+		auto& style = eyeCfg.boxAndLine;
+		mb.AddBox(vec3_origin,
+		          Vector{-style.boxRadius},
+		          Vector{style.boxRadius},
+		          vec3_angle,
+		          style.colors[eyeType]);
+		mb.AddLine(vec3_origin, Vector{style.lineLength, 0, 0}, style.colors[eyeType].faceColor);
 	};
 
-	auto& colors = trColors.playerHull.camera;
-
-	if (!meshes.eyes.Valid())
+	struct
 	{
-		meshes.eyes = spt_meshBuilder.CreateStaticMesh(
+		StaticMesh& mesh;
+		EyeType eyeType;
+	} eyeMeshData[] = {
+	    {meshes.eyes, EyeType::TR_EYE_ACTUAL},
+	    {meshes.sgEyes, EyeType::TR_EYE_SAVEGLITCH},
+	};
+
+	for (auto& [mesh, eyeType] : eyeMeshData)
+	{
+		if (mesh.Valid())
+			continue;
+		mesh = spt_meshBuilder.CreateStaticMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
-			    if (meshes.camType == TR_PCDT_FRUSTUM)
-				    buildFrustumFunc(mb, colors.frustum.eyes);
+			    if (eyeCfg.style == TR_PCDT_FRUSTUM)
+				    buildFrustumFunc(mb, eyeType);
 			    else
-				    buildBoxAndLineFunc(mb, colors.boxAndLine.eyes);
-		    });
-	}
-
-	if (!meshes.sgEyes.Valid())
-	{
-		meshes.sgEyes = spt_meshBuilder.CreateStaticMesh(
-		    [&](MeshBuilderDelegate& mb)
-		    {
-			    if (meshes.camType == TR_PCDT_FRUSTUM)
-				    buildFrustumFunc(mb, colors.frustum.sgEyes);
-			    else
-				    buildBoxAndLineFunc(mb, colors.boxAndLine.sgEyes);
+				    buildBoxAndLineFunc(mb, eyeType);
 		    });
 	}
 }
@@ -182,11 +194,12 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 
 	meshes.playerPath.dynamicMeshes.clear();
 
-	if (!StaticMesh::AllValid(meshes.playerPath.staticMeshes)
-	    || meshes.playerPathGeneratedWithCones != spt_trace_draw_path_cones.GetBool())
-	{
+	bool clearStatics = CheckUpdateCache(cfg.playerPath, pNewCfg->playerPath);
+	if (!clearStatics)
+		clearStatics = !StaticMesh::AllValid(meshes.playerPath.staticMeshes);
+
+	if (clearStatics)
 		meshes.playerPath.staticMeshes.clear();
-	}
 
 	if (meshes.playerPath.staticMeshes.empty())
 		meshes.playerPath.staticMeshesBuiltUpToTick = 0;
@@ -194,7 +207,7 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 	if (meshes.playerPath.staticMeshesBuiltUpToTick + 1 >= tr.numRecordedTicks)
 		return;
 
-	meshes.playerPathGeneratedWithCones = spt_trace_draw_path_cones.GetBool();
+	auto& pathCfg = pNewCfg->playerPath;
 
 	/*
 	* TODO: right now, it's possible to overdraw if e.g. the line gets drawn but the cone doesn't -
@@ -235,9 +248,6 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 			return true;
 		};
 
-		auto& pathStyle = trStyles.playerPath;
-		auto& pathColors = trColors.playerPath;
-
 		Vector p1 = **pdIdx->qPosIdx + landmarkOff;
 
 		incrementIdxToCurTick(pdIdx);
@@ -246,7 +256,7 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 
 		Vector p2 = **pdIdx->qPosIdx + landmarkOff;
 
-		bool drawCones = spt_trace_draw_path_cones.GetBool();
+		bool drawCones = pathCfg.cones.draw;
 		bool drawPath = true;
 		TrSegmentReason segmentReason = TR_SR_NONE;
 
@@ -274,7 +284,7 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 			drawPath = false;
 			segmentReason = segmentIdx->reason;
 		}
-		else if (ptsValid && p2.DistToSqr(p1) > trStyles.playerPath.maxDistBeforeImplicitBreakSqr)
+		else if (ptsValid && p2.DistToSqr(p1) > pathCfg.segments.maxDistBeforeImplicitBreakSqr)
 		{
 			drawPath = false;
 			segmentReason = TR_SR_IMPLICIT;
@@ -284,14 +294,17 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 			segmentReason = TR_SR_NONE;
 		}
 
-		LineColor pathCol = pathColors.grounded;
+		LineColor pathCol = pathCfg.segments.colors.grounded;
 		if (drawPath)
 		{
 			if (!mb.AddLine(p1, p2, pathCol)) [[unlikely]]
 				return false;
 		}
 
-		if (drawCones && segmentReason == TR_SR_NONE && ticksWithoutCone++ > pathStyle.cones.tickInterval)
+		if (pathCfg.endpoints.draw)
+			segmentReason = TR_SR_NONE;
+
+		if (drawCones && segmentReason == TR_SR_NONE && ticksWithoutCone++ > pathCfg.cones.tickInterval)
 		{
 			ticksWithoutCone = 0;
 			Vector implVelNorm = lastImplicitVel;
@@ -304,12 +317,12 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 			    pathCol.zTestLines,
 			    pathCol.zTestLines,
 			};
-			coneCol.faceColor.a *= pathColors.coneOpacity;
-			if (!mb.AddCone(p2 - implVelNorm * pathStyle.cones.length,
+			coneCol.faceColor.a *= pathCfg.cones.opacity;
+			if (!mb.AddCone(p2 - implVelNorm * pathCfg.cones.length,
 			                ang,
-			                pathStyle.cones.length,
-			                pathStyle.cones.radius,
-			                pathStyle.cones.nCirclePoints,
+			                pathCfg.cones.length,
+			                pathCfg.cones.radius,
+			                pathCfg.cones.nCirclePoints,
 			                false,
 			                coneCol))
 			{
@@ -317,8 +330,7 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 			}
 		}
 
-		if (pathStyle.segmentEndpoints.enabled
-		    && (segmentReason != TR_SR_NONE || deferredSegmentReason != TR_SR_NONE))
+		if (segmentReason != TR_SR_NONE || deferredSegmentReason != TR_SR_NONE)
 		{
 			bool firstCircle = segmentReason != TR_SR_NONE;
 
@@ -332,12 +344,12 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 
 			QAngle ang;
 			VectorAngles(vel, ang);
-			ShapeColor endpointColor = pathColors.segmentEndPoints[curReason];
-			endpointColor.faceColor.a *= pathColors.segmentEndpointOpacity;
+			ShapeColor endpointColor = pathCfg.endpoints.colors[curReason];
+			endpointColor.faceColor.a *= pathCfg.endpoints.opacity;
 			if (!mb.AddCircle(p1,
 			                  ang,
-			                  pathStyle.segmentEndpoints.radius,
-			                  pathStyle.segmentEndpoints.nCirclePoints,
+			                  pathCfg.endpoints.radius,
+			                  pathCfg.endpoints.nCirclePoints,
 			                  endpointColor))
 			{
 				return false;
@@ -348,7 +360,7 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 		return true;
 	};
 
-	tr_tick maxTicksForDynamic = tr.IsRecording() ? trStyles.playerPath.maxTicksToRenderAsDynamicMesh : 0;
+	tr_tick maxTicksForDynamic = tr.IsRecording() ? pathCfg.segments.maxTicksToRenderAsDynamicMesh : 0;
 
 	if (tr.numRecordedTicks - meshes.playerPath.staticMeshesBuiltUpToTick > maxTicksForDynamic)
 	{
@@ -370,39 +382,44 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 
 void TrRenderingCache::RebuildPortalMeshes()
 {
-	if (StaticMesh::AllValidV(meshes.openBluePortal,
-	                          meshes.openOrangePortal,
-	                          meshes.closedBluePortal,
-	                          meshes.closedOrangePortal))
+	bool cfgDirty = CheckUpdateCache(cfg.portals, pNewCfg->portals);
+	auto& portalCfg = pNewCfg->portals;
+
+	if (!cfgDirty)
 	{
-		return;
+		if (StaticMesh::AllValidV(meshes.openBluePortal,
+		                          meshes.openOrangePortal,
+		                          meshes.closedBluePortal,
+		                          meshes.closedOrangePortal))
+		{
+			return;
+		}
 	}
 
-	auto buildFunc = [this](bool open, bool orange)
+	auto buildFunc = [this, &portalCfg](bool open, bool orange)
 	{
 		return spt_meshBuilder.CreateStaticMesh(
-		    [open, orange](MeshBuilderDelegate& mb)
+		    [open, orange, &portalCfg](MeshBuilderDelegate& mb)
 		    {
-			    auto& portalStyle = trStyles.portals;
-			    ShapeColor col{C_OUTLINE(orange ? trColors.portals.orange : trColors.portals.blue)};
+			    ShapeColor col = orange ? portalCfg.colors.orange : portalCfg.colors.blue;
 			    if (!open)
 				    col.faceColor.a /= 4;
 			    Vector boxMaxs{
-			        portalStyle.twicePortalThickness,
+			        portalCfg.portalThickness * 0.5f,
 			        PORTAL_HALF_WIDTH,
 			        PORTAL_HALF_HEIGHT,
 			    };
 			    mb.AddBox(vec3_origin, -boxMaxs, boxMaxs, vec3_angle, col);
 
 			    col.wd = WD_BOTH;
-			    Vector p1{boxMaxs.x, PORTAL_HALF_WIDTH, PORTAL_HALF_HEIGHT + portalStyle.hatFloat};
+			    Vector p1{boxMaxs.x, PORTAL_HALF_WIDTH, PORTAL_HALF_HEIGHT + portalCfg.hatFloat};
 			    Vector p2{p1.x, -p1.y, p1.z};
-			    Vector p3 = (p1 + p2) * .5f + Vector{0, 0, portalStyle.hatHeight};
+			    Vector p3 = (p1 + p2) * .5f + Vector{0, 0, portalCfg.hatHeight};
 			    mb.AddTri(p1, p2, p3, col);
 
 			    col.wd = WD_CW;
 			    Vector arrowPos{boxMaxs.x, 0, 0};
-			    mb.AddArrow3D(arrowPos, arrowPos + Vector{1, 0, 0}, portalStyle.arrowParams, col);
+			    mb.AddArrow3D(arrowPos, arrowPos + Vector{1, 0, 0}, portalCfg.arrowParams, col);
 		    });
 	};
 
@@ -412,8 +429,14 @@ void TrRenderingCache::RebuildPortalMeshes()
 	meshes.closedOrangePortal = buildFunc(false, true);
 }
 
-void TrRenderingCache::RebuildPhysMeshes(const TrEntityCache::EntMap& entMap)
+void TrRenderingCache::RebuildPhysMeshes(tr_tick atTick)
 {
+	auto& tr = TrReadContextScope::Current();
+	auto& entCache = tr.GetEntityCache();
+	auto& entMap = entCache.GetEnts(atTick);
+
+	bool cfgDirty = CheckUpdateCache(cfg.entPhys, pNewCfg->entPhys);
+	auto& physCfg = pNewCfg->entPhys;
 	auto& physMeshes = meshes.ents.physObjs;
 
 	for (auto& [_, tracked] : physMeshes)
@@ -423,15 +446,14 @@ void TrRenderingCache::RebuildPhysMeshes(const TrEntityCache::EntMap& entMap)
 	{
 		const TrEnt& ent = **entIdx;
 
-		const ShapeColor& shapeCol = strcmp(*entIdx->classNameIdx, "portalsimulator_collisionentity")
-		                                 ? trColors.entities.physMesh
-		                                 : trColors.entities.physMeshPortalCollisionEnt;
+		bool isPortalCollisionEnt = !strcmp(*entIdx->classNameIdx, "portalsimulator_collisionentity");
+		const ShapeColor& shapeCol = isPortalCollisionEnt ? physCfg.color : physCfg.portalCollisionEnts.color;
 
 		for (auto physIdx : *ent.physSp)
 		{
 			auto [it, new_elem] = physMeshes.try_emplace(physIdx->meshIdx);
 			it->second.isActive = true;
-			if (it->second.mesh.Valid())
+			if (!cfgDirty && it->second.mesh.Valid())
 				continue;
 
 			const TrPhysMesh& physMesh = **it->first;
@@ -443,7 +465,7 @@ void TrRenderingCache::RebuildPhysMeshes(const TrEntityCache::EntMap& entMap)
 				    {
 					    mb.AddSphere(vec3_origin,
 					                 physMesh.ballRadius,
-					                 trStyles.entities.nBallMeshSubdivisions,
+					                 physCfg.nBallMeshSubdivisions,
 					                 shapeCol);
 				    });
 			}
@@ -517,20 +539,21 @@ void TrRenderingCache::RenderPlayerHull(MeshRendererDelegate& mr,
 		            { AngleMatrix(ang, pos, infoOut.mat); });
 	}
 
-	if (spt_trace_draw_contact_points.GetBool())
+	if (pNewCfg->contactPoints.draw)
 	{
 		for (auto contactPtIdx : *pd.contactPtsSp)
 		{
 			mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
-			    [contactPtIdx, &pd, &landmarkDeltaToMapAtTick](MeshBuilderDelegate& mb)
+			    [contactPtIdx, &pd, &landmarkDeltaToMapAtTick, this](MeshBuilderDelegate& mb)
 			    {
+				    auto& contactCfg = pNewCfg->contactPoints;
 				    Vector maxs{1.f};
 				    const Vector& pos = **contactPtIdx->posIdx + landmarkDeltaToMapAtTick;
-				    mb.AddBox(pos, -maxs, maxs, vec3_angle, trColors.playerHull.contactPt);
+				    mb.AddBox(pos, -maxs, maxs, vec3_angle, contactCfg.color);
 				    // DebugDrawContactPoints does (pt - norm * len), not sure why it's not (pt + norm * len)
 				    mb.AddLine(pos,
-				               pos - **contactPtIdx->normIdx * trStyles.playerHull.contactNormalLength,
-				               trColors.playerHull.contactPt.lineColor);
+				               pos - **contactPtIdx->normIdx * contactCfg.normalLength,
+				               contactCfg.color.lineColor);
 			    }));
 		}
 	}
@@ -566,11 +589,8 @@ void TrRenderingCache::RenderPortals(MeshRendererDelegate& mr, const Vector& lan
 void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& landmarkDeltaToMapAtTick, tr_tick atTick)
 {
 	auto& tr = TrReadContextScope::Current();
-	auto& entCache = tr.GetEntityCache();
-	auto& entMap = entCache.GetEnts(atTick);
-	RebuildPhysMeshes(entMap);
 
-	if (trStyles.entities.drawEntCollectRadius)
+	if (pNewCfg->entCollectAabb.draw)
 	{
 		auto traceStateIdx = tr.GetAtTick<TrTraceState>(atTick);
 		auto plDataIdx = tr.GetAtTick<TrPlayerData>(atTick);
@@ -583,10 +603,28 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 				              **traceStateIdx->entCollectBboxAroundPlayerIdx->minsIdx,
 				              **traceStateIdx->entCollectBboxAroundPlayerIdx->maxsIdx,
 				              vec3_angle,
-				              trColors.entities.collectAABB);
+				              pNewCfg->entCollectAabb.color);
 			    }));
 		}
 	}
+
+	if (pNewCfg->entObb.draw)
+		RenderEntObbs(mr, landmarkDeltaToMapAtTick, atTick);
+
+	if (pNewCfg->entPhys.draw)
+	{
+		RebuildPhysMeshes(atTick);
+		RenderEntPhysMeshes(mr, landmarkDeltaToMapAtTick, atTick);
+	}
+}
+
+void TrRenderingCache::RenderEntObbs(MeshRendererDelegate& mr, const Vector& landmarkDeltaToMapAtTick, tr_tick atTick)
+{
+	auto& tr = TrReadContextScope::Current();
+	auto& entCache = tr.GetEntityCache();
+	auto& entMap = entCache.GetEnts(atTick);
+
+	auto& obbCfg = pNewCfg->entObb;
 
 	const char* allowedTriggers[] = {
 	    "trigger_once",
@@ -600,10 +638,8 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 	// draw each OBB as a dynamic mesh, the mesh system will fuse them anyways
 	for (auto [entIdx, transIdx] : entMap)
 	{
-		bool drawObb = true;
-
 		if (entIdx->m_nSolidType == SOLID_NONE)
-			drawObb = false;
+			continue;
 
 		const char* className = *entIdx->classNameIdx;
 		bool isTrigger = false;
@@ -614,8 +650,11 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 			                        [className](const char* allowedTriggerName)
 			                        { return !strcmp(className, allowedTriggerName); });
 			if (!isTrigger)
-				drawObb = false; // don't draw other trigger types
+				continue; // don't draw other trigger types
 		}
+		if (isTrigger && !obbCfg.enableTriggers)
+			continue;
+
 		const TrAbsBox& obb = **transIdx->obbIdx;
 		const TrTransform& trans = **transIdx->obbTransIdx;
 		Vector mins = obb.minsIdx.GetOrDefault(Vector{NAN}), maxs = obb.maxsIdx.GetOrDefault(Vector{NAN});
@@ -632,34 +671,37 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 			    // add in landmark delta manually so that meshes can be merged
 			    Vector origin = pos + landmarkDeltaToMapAtTick;
 			    // interfaces::debugOverlay->AddTextOverlay(origin, 0, "%s", className);
-			    ShapeColor color = isTrigger ? trColors.entities.obbTrigger : trColors.entities.obb;
-			    if (drawObb && mins != maxs)
+			    ShapeColor color = isTrigger ? obbCfg.colorTrigger : obbCfg.color;
+			    if (mins != maxs)
 				    mb.AddBox(origin, mins, maxs, ang, color);
-			    if (drawObb && trStyles.entities.drawObbCenter && !isTrigger && pos != vec3_origin)
-			    {
-				    // a position at exactly the origin *probably* means it's not relevant
-				    mb.AddCross(origin,
-				                trStyles.entities.obbCenterCrossRadius,
-				                trColors.entities.obb.lineColor);
-			    }
+
+			    // a position at exactly the origin *probably* means it's not relevant
+			    if (obbCfg.enableCenterCross && !isTrigger && pos != vec3_origin)
+				    mb.AddCross(origin, obbCfg.centerCrossRadius, color.lineColor);
 			    if (entIdx == entCache.hoveredEnt)
 			    {
 				    Vector extra{1.f};
 				    if (mins == maxs)
-					    mins = -(maxs = Vector{trStyles.entities.obbCenterCrossRadius});
-				    mb.AddBox(origin, mins - extra, maxs + extra, ang, trColors.entities.obbHovered);
+					    mins = -(maxs = Vector{obbCfg.centerCrossRadius});
+				    mb.AddBox(origin, mins - extra, maxs + extra, ang, obbCfg.colorHovered);
 			    }
 		    }));
 	}
-	entCache.hoveredEnt.Invalidate();
+}
+
+void TrRenderingCache::RenderEntPhysMeshes(MeshRendererDelegate& mr,
+                                           const Vector& landmarkDeltaToMapAtTick,
+                                           tr_tick atTick)
+{
+	auto& tr = TrReadContextScope::Current();
+	auto& entCache = tr.GetEntityCache();
+	auto& entMap = entCache.GetEnts(atTick);
 
 	for (auto [entIdx, transIdx] : entMap)
 	{
-		if (!spt_trace_draw_portal_collision_entities.GetBool()
-		    && !strcmp(*entIdx->classNameIdx, "portalsimulator_collisionentity"))
-		{
+		bool isPortalCollisionEnt = !strcmp(*entIdx->classNameIdx, "portalsimulator_collisionentity");
+		if (isPortalCollisionEnt && !pNewCfg->entPhys.portalCollisionEnts.draw)
 			continue;
-		}
 
 		auto physMeshTransIdxSp = *transIdx->physTransSp;
 		auto physIdxsp = *entIdx->physSp;
@@ -751,9 +793,10 @@ void TrRenderingCache::CacheLandmarkOffsetsToFirstMapFromTraceData()
 	}
 }
 
-void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, tr_tick atTick)
+void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, const TrRenderStyleConfig& newCfg, tr_tick atTick)
 {
 	auto& tr = TrReadContextScope::Current();
+	pNewCfg = &newCfg;
 
 	if (renderedLastTimeOnMap != utils::GetLoadedMap())
 	{
@@ -763,14 +806,22 @@ void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, tr_tick atTick)
 
 	atTick = tr.numRecordedTicks == 0 ? 0 : clamp(atTick, 0, tr.numRecordedTicks - 1);
 	Vector landmarkdelta = GetLandmarkOffsetToFirstMap(utils::GetLoadedMap());
-	RenderPlayerPath(mr, landmarkdelta);
+	if (newCfg.playerPath.draw)
+		RenderPlayerPath(mr, landmarkdelta);
 	TrIdx<TrMap> atMap = tr.GetMapAtTick(atTick);
-	if (!atMap.IsValid())
-		return;
-	landmarkdelta -= GetLandmarkOffsetToFirstMap(*atMap->nameIdx);
-	RenderPlayerHull(mr, landmarkdelta, atTick);
-	RenderPortals(mr, landmarkdelta, atTick);
-	RenderEntities(mr, landmarkdelta, atTick);
+	if (atMap.IsValid())
+	{
+		landmarkdelta -= GetLandmarkOffsetToFirstMap(*atMap->nameIdx);
+		if (newCfg.playerHull.draw)
+			RenderPlayerHull(mr, landmarkdelta, atTick);
+		if (newCfg.portals.draw)
+			RenderPortals(mr, landmarkdelta, atTick);
+		RenderEntities(mr, landmarkdelta, atTick);
+	}
+
+	tr.GetEntityCache().hoveredEnt.Invalidate();
+
+	pNewCfg = nullptr;
 }
 
 #endif

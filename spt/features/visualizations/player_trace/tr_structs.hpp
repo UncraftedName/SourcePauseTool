@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <compare>
 
-#include "tr_config.hpp"
+#include "spt/features/visualizations/renderer/mesh_defs.hpp"
 #include "spt/features/ent_props.hpp"
 #include "spt/utils/interfaces.hpp"
 #include "spt/utils/serialize.hpp"
@@ -13,7 +13,8 @@
 #undef min
 #undef max
 
-#ifdef SPT_PLAYER_TRACE_ENABLED
+#ifdef SPT_MESH_RENDERING_ENABLED
+#define SPT_PLAYER_TRACE_ENABLED
 
 /*
 * Welcome to the funny over-engineered player trace feature. The trace is stored as a bunch of
@@ -39,6 +40,16 @@ namespace player_trace
 	class TrRenderingCache;
 	class TrEntityCache;
 	struct TrPlayerTrace;
+
+	// no con-commands here since CON_COMMAND_F declares them as static
+	extern ConVar spt_draw_trace;
+	extern ConVar spt_hud_trace;
+	extern ConVar spt_trace_autoplay;
+	extern ConVar spt_trace_ent_collect_radius;
+	extern ConVar spt_trace_draw_portal_collision_entities;
+	extern ConVar spt_trace_draw_path_cones;
+	extern ConVar spt_trace_draw_cam_style;
+	extern ConVar spt_trace_draw_contact_points;
 
 	// a scope within which we can deref TrIdx & TrSpan
 	class TrReadContextScope
@@ -240,6 +251,22 @@ namespace player_trace
 	TR_DEFINE_LUMP(TrMapTransition_v1, "map_transition", 1);
 
 	using TrMapTransition = TrMapTransition_v1;
+
+	// only one reason per tick atm, so try to under from least to most important
+	enum TrSegmentReason : int
+	{
+
+		TR_SR_NONE = -2,
+		TR_SR_TRACE_START = -1,
+
+		TR_SR_FCPS,
+		TR_SR_PLAYER_PORTALLED,
+		TR_SR_SAVELOAD,
+		TR_SR_MAP_TRANSITION,
+		TR_SR_IMPLICIT, // never recorded, only used for drawing (must be last)
+
+		TR_SR_COLORED_COUNT,
+	};
 
 	struct TrSegmentStart_v1
 	{
@@ -815,6 +842,9 @@ namespace player_trace
 			return {};
 		return std::span<const T>{TrReadContextScope::Current().Get<T>()}.subspan(start, n);
 	}
+
+	// TODO: move me
+	bool GetActiveTracePos(Vector& pos, QAngle& ang, float& fov);
 } // namespace player_trace
 
 #endif
