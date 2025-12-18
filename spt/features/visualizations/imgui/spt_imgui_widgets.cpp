@@ -51,7 +51,7 @@ public:
 
 bool SptImGui::SmallIconButton(const char* label)
 {
-	ImGui::PushStyleVarX(ImGuiStyleVar_FramePadding, 0.f);	
+	ImGui::PushStyleVarX(ImGuiStyleVar_FramePadding, 0.f);
 	bool ret = ImGui::SmallButton(label);
 	ImGui::PopStyleVar();
 	return ret;
@@ -781,6 +781,15 @@ const utils::PortalInfo* SptImGui::PortalSelectionWidgetCvar(ConVar& c,
 
 	EndCmdGroup();
 	return selectedPortal;
+}
+
+bool SptImGui::Color32Edit(const char* label, color32& c, ImGuiColorEditFlags flags)
+{
+	ImVec4 imtintCol = ImGui::ColorConvertU32ToFloat4(Color32ToImU32(c));
+	bool ret = ImGui::ColorEdit4(label, (float*)&imtintCol, flags);
+	if (ret)
+		c = ImU32ToColor32(ImGui::ColorConvertFloat4ToU32(imtintCol));
+	return ret;
 }
 
 #endif

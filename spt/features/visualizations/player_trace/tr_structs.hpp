@@ -46,6 +46,8 @@ namespace player_trace
 	extern ConVar spt_hud_trace;
 	extern ConVar spt_trace_autoplay;
 	extern ConVar spt_trace_ent_collect_radius;
+	extern ConVar spt_trace_draw_recording;
+	extern ConVar spt_trace_draw_while_recording;
 	extern ConVar spt_trace_draw_portal_collision_entities;
 	extern ConVar spt_trace_draw_path_cones;
 	extern ConVar spt_trace_draw_cam_style;

@@ -191,9 +191,11 @@ namespace SptImGuiGroup
 
 	// player trace
 	inline Tab PlayerTrace{ICON_CI_ISSUE_REOPENED " Player trace", &Root};
+	inline Tab PlayerTrace_Select{ICON_CI_FILES " Trace selection", &PlayerTrace};
 	inline Tab PlayerTrace_Player{ICON_CI_PERSON " Player data", &PlayerTrace};
 	inline Tab PlayerTrace_Entities{ICON_CI_PACKAGE " Active entities", &PlayerTrace};
 	inline Tab PlayerTrace_Portals{ICON_CI_CIRCLE_LARGE " Active portals", &PlayerTrace};
+	inline Tab PlayerTrace_DrawStyle{ICON_CI_PAINTCAN " Draw style", &PlayerTrace};
 
 	// quality of life and/or purely visual stuff
 	inline Tab QoL{ICON_CI_SMILEY " QoL", &Root};
@@ -479,6 +481,8 @@ public:
 			lastStartDisplayTime = -666;
 		}
 	};
+
+	static bool Color32Edit(const char* label, color32& c, ImGuiColorEditFlags flags);
 };
 
 inline ConCommand spt_gui{

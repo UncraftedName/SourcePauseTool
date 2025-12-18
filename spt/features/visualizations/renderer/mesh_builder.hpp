@@ -10,6 +10,8 @@
 #include "internal\ref_mgr.hpp"
 #include "spt\utils\mesh_utils.hpp"
 
+color32 color32Mult(color32 a, color32 b);
+
 struct LineColor
 {
 	color32 lineColor;

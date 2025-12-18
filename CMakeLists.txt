@@ -134,12 +134,15 @@ set(SPT_SOURCES
 	spt/features/visualizations/player_trace/tr_collect.cpp
 	spt/features/visualizations/player_trace/tr_entity_cache.cpp
 	spt/features/visualizations/player_trace/tr_feature.cpp
+	spt/features/visualizations/player_trace/tr_multiple_player.cpp
 	spt/features/visualizations/player_trace/tr_record_cache.cpp
 	spt/features/visualizations/player_trace/tr_render_cache.cpp
 	spt/features/visualizations/player_trace/tr_state_access.cpp
 	spt/features/visualizations/player_trace/imgui/entity_tab.cpp
+	spt/features/visualizations/player_trace/imgui/import_tab.cpp
 	spt/features/visualizations/player_trace/imgui/player_tab.cpp
 	spt/features/visualizations/player_trace/imgui/portal_tab.cpp
+	spt/features/visualizations/player_trace/imgui/style_tab.cpp
 	spt/features/visualizations/player_trace/import_export/tr_binary_read.cpp
 	spt/features/visualizations/player_trace/import_export/tr_binary_read_upgrade.cpp
 	spt/features/visualizations/player_trace/import_export/tr_binary_write.cpp
@@ -228,6 +231,7 @@ function(add_engine_branch dllName sdkDir engineBranchDefines)
 	target_link_libraries(${dllName} PUBLIC
 		curl
 		Dbghelp
+		Shlwapi
 		legacy_stdio_definitions
 		mathlib
 		Normaliz

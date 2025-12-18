@@ -9,9 +9,11 @@
 
 using namespace player_trace;
 
-void tr_imgui::DrawActiveTraceInfo(tr_tick activeTick)
+void tr_imgui::DrawDetailedInfoHeader(ImGuiDetailedInfoTraceSelection& info)
 {
-	auto& tr = TrReadContextScope::Current();
+	auto& tr = info.tp->detailedImGuiTraceIt->second.tr;
+	tr_tick activeTick = info.activeTick;
+
 	if (tr.hasStartRecordingBeenCalled)
 	{
 		ImGui::Text("Active tick: %u/%u", activeTick, tr.numRecordedTicks == 0 ? 0 : tr.numRecordedTicks - 1);
@@ -24,10 +26,15 @@ void tr_imgui::DrawActiveTraceInfo(tr_tick activeTick)
 	}
 }
 
-void tr_imgui::PlayerTabCallback(tr_tick activeTick)
+void tr_imgui::PlayerTabCallback(ImGuiDetailedInfoTraceSelection& info)
 {
-	tr_imgui::DrawActiveTraceInfo(activeTick);
-	auto& tr = TrReadContextScope::Current();
+	if (!tr_imgui::DrawDetailedTraceSelect(info))
+		return;
+	tr_imgui::DrawDetailedInfoHeader(info);
+
+	auto& tr = info.tp->detailedImGuiTraceIt->second.tr;
+	TrReadContextScope scope{tr};
+	tr_tick activeTick = info.activeTick;
 
 	tr_struct_version playerExportVersion = tr.GetFirstExportVersion<TrPlayerData>();
 	auto plIdx = tr.GetAtTick<TrPlayerData>(activeTick);
