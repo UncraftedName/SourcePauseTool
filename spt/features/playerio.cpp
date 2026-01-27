@@ -665,6 +665,41 @@ CON_COMMAND(spt_setvel, "Sets the velocity of the player.")
 }
 
 #ifdef SPT_PORTAL_UTILS
+
+#define F_FMT "%.9g"
+
+static void PrintVec(const Vector& v)
+{
+	Msg(F_FMT " " F_FMT " " F_FMT, v.x, v.y, v.z);
+}
+
+template<size_t R, size_t C>
+static void PrintMatrix(const float (&arr)[R][C])
+{
+	int fmtLens[R][C]{};
+	int maxLens[C]{};
+	for (int i = 0; i < C; i++)
+	{
+		for (int j = 0; j < R; j++)
+		{
+			fmtLens[j][i] = snprintf(nullptr, 0, F_FMT, arr[j][i]);
+			if (fmtLens[j][i] > maxLens[i])
+				maxLens[i] = fmtLens[j][i];
+		}
+	}
+	for (int j = 0; j < R; j++)
+	{
+		for (int i = 0; i < C; i++)
+		{
+			Msg("%*s" F_FMT "%s",
+			    maxLens[i] - fmtLens[j][i],
+			    "",
+			    arr[j][i],
+			    i == C - 1 ? (j == R - 1 ? "" : "\n") : ", ");
+		}
+	}
+}
+
 CON_COMMAND(y_spt_print_portals, "Prints info for all portals")
 {
 	auto& portalList = utils::GetPortalList();
@@ -683,7 +718,45 @@ CON_COMMAND(y_spt_print_portals, "Prints info for all portals")
 		    portal.ang.x,
 		    portal.ang.y,
 		    portal.ang.z);
+
+		if (!utils::spt_serverEntList.Valid())
+			continue;
+
+		static utils::CachedField<int, "CProp_Portal", "m_vPortalCorners", true, sizeof(Vector[4])> fSim;
+		uintptr_t pSim = (uintptr_t)fSim.GetPtr(portal.pEnt);
+
+		Vector* f = (Vector*)(pSim + 52);
+		Vector* u = f + 1;
+		Vector* r = u + 1;
+		VPlane* plane = (VPlane*)(r + 1);
+
+		static utils::CachedField<matrix3x4_t, "CProp_Portal", "m_rgflCoordinateFrame", true> fMat;
+		static utils::CachedField<VMatrix, "CProp_Portal", "m_matrixThisToLinked", true> fThisToLinked;
+		static utils::CachedField<CBaseHandle, "CProp_Portal", "m_hLinkedPortal", true> fLinked;
+		static utils::CachedField<bool, "CProp_Portal", "m_bActivated", true> fActivated;
+		static utils::CachedField<bool, "CProp_Portal", "m_bIsPortal2", true> fIsPortal2;
+		static utils::CachedFields fs{fMat, fThisToLinked, fLinked, fActivated, fIsPortal2};
+		auto [mat, thisToLinked, linked, activated, isPortal2] =  fs.GetAllPtrs(portal.pEnt);
+
+		Msg("f: ");
+		PrintVec(*f);
+		Msg("\nr: ");
+		PrintVec(*r);
+		Msg("\nu: ");
+		PrintVec(*u);
+
+		
+		Msg("\nplane: n=(");
+		PrintVec(plane->m_Normal);
+		Msg("), d=" F_FMT, plane->m_Dist);
+
+		Msg("\nmat:\n");
+		PrintMatrix(mat->m_flMatVal);
+		Msg("\n\nmat to linked:\n");
+		PrintMatrix(thisToLinked->m);
+		Msg("\n");
 	}
+
 	if (portalList.empty())
 		Msg("SPT: No portals!\n");
 }
