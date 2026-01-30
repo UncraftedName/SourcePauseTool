@@ -670,7 +670,7 @@ CON_COMMAND(spt_setvel, "Sets the velocity of the player.")
 
 static void PrintVec(const Vector& v)
 {
-	Msg(F_FMT " " F_FMT " " F_FMT, v.x, v.y, v.z);
+	Msg(F_FMT ", " F_FMT ", " F_FMT, v.x, v.y, v.z);
 }
 
 template<size_t R, size_t C>
@@ -695,7 +695,7 @@ static void PrintMatrix(const float (&arr)[R][C])
 			    maxLens[i] - fmtLens[j][i],
 			    "",
 			    arr[j][i],
-			    i == C - 1 ? (j == R - 1 ? "" : "\n") : ", ");
+			    i == C - 1 ? (j == R - 1 ? "" : "\n") : " ");
 		}
 	}
 }
@@ -736,8 +736,17 @@ CON_COMMAND(y_spt_print_portals, "Prints info for all portals")
 		static utils::CachedField<bool, "CProp_Portal", "m_bActivated", true> fActivated;
 		static utils::CachedField<bool, "CProp_Portal", "m_bIsPortal2", true> fIsPortal2;
 		static utils::CachedFields fs{fMat, fThisToLinked, fLinked, fActivated, fIsPortal2};
-		auto [mat, thisToLinked, linked, activated, isPortal2] =  fs.GetAllPtrs(portal.pEnt);
+		auto [mat, thisToLinked, linked, activated, isPortal2] = fs.GetAllPtrs(portal.pEnt);
 
+		Msg("--------------------------------------------------------------------------------\n");
+		Msg("ent_fire \"%s\" newlocation \"" F_FMT " " F_FMT " " F_FMT " " F_FMT " " F_FMT " " F_FMT "\"\n",
+		    portal.isOrange ? "orange" : "blue",
+		    portal.pos.x,
+		    portal.pos.y,
+		    portal.pos.z,
+		    portal.ang.x,
+		    portal.ang.y,
+		    portal.ang.z);
 		Msg("f: ");
 		PrintVec(*f);
 		Msg("\nr: ");
@@ -745,14 +754,13 @@ CON_COMMAND(y_spt_print_portals, "Prints info for all portals")
 		Msg("\nu: ");
 		PrintVec(*u);
 
-		
-		Msg("\nplane: n=(");
+		Msg("\nplane: n: <");
 		PrintVec(plane->m_Normal);
-		Msg("), d=" F_FMT, plane->m_Dist);
+		Msg(">, d: " F_FMT, plane->m_Dist);
 
 		Msg("\nmat:\n");
 		PrintMatrix(mat->m_flMatVal);
-		Msg("\n\nmat to linked:\n");
+		Msg("\n\nmat_to_linked:\n");
 		PrintMatrix(thisToLinked->m);
 		Msg("\n");
 	}
