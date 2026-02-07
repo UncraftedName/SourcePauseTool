@@ -358,7 +358,8 @@ void MeshRendererInternal::OnRenderViewPre_Signal(void* thisptr, CViewSetup* cam
 	// ensure we only run once per frame
 	if (spt_overlay.renderingOverlay || !spt_meshRenderer.signal.Works)
 		return;
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	SPT_TRACY_MESH_SET_THREAD_NAME();
+	ZoneScoped;
 	FrameCleanup();
 	frameNum++;
 	inSignal = true;
@@ -390,7 +391,8 @@ void MeshRendererInternal::OnDrawOpaques(CRendering3dView* renderingView)
 	if (renderingSkyBox)
 		return;
 
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	SPT_TRACY_MESH_SET_THREAD_NAME();
+	ZoneScoped;
 	SetupViewInfo(renderingView);
 
 	// push a new debug slice, the corresponding pop is at the end of DrawTranslucents
@@ -408,7 +410,8 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 	if (renderingSkyBox)
 		return;
 
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	SPT_TRACY_MESH_SET_THREAD_NAME();
+	ZoneScoped;
 	SetupViewInfo(renderingView);
 
 	static std::vector<MeshComponent> components;
@@ -455,7 +458,8 @@ void MeshRendererInternal::OnDrawTranslucents(CRendering3dView* renderingView)
 
 void MeshRendererInternal::CollectRenderableComponents(std::vector<MeshComponent>& components, bool opaques)
 {
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	ZoneScoped;
+
 	// go through all components of all queued meshes and return those that are eligable for rendering right now
 	for (MeshUnitWrapper& unitWrapper : queuedUnitWrappers)
 	{
@@ -568,7 +572,8 @@ void MeshRendererInternal::DrawAll(std::span<const MeshComponent> span, bool add
 	if (span.empty())
 		return;
 
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
+	ZoneScoped;
+
 	/*
 	* We create a subspan of fullSpan: compatSpan. Our goal is to give spans to the builder that can be
 	* fused together. Static meshes can't be fused (they're already IMesh* objects), so we render those

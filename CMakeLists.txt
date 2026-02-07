@@ -1,4 +1,11 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.11)
+
+include(FetchContent)
+
+# let user override options in their own file
+if (EXISTS "${CMAKE_SOURCE_DIR}/CMakeLists.user.txt")
+	include("${CMAKE_SOURCE_DIR}/CMakeLists.user.txt")
+endif()
 
 project(SPT LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 20)
@@ -186,6 +193,22 @@ set(SPT_SOURCES
 	thirdparty/x86.c
 )
 
+FetchContent_Declare(
+	tracy
+	GIT_REPOSITORY https://github.com/wolfpld/tracy.git
+	GIT_TAG        05cceee0df3b8d7c6fa87e9638af311dbabc63cb  # tag v0.13.1
+	GIT_SHALLOW    TRUE
+	GIT_PROGRESS   TRUE
+)
+set(TRACY_ENABLE          OFF CACHE BOOL "")  # off by default, user can enable in CMakeLists.user.txt
+set(TRACY_ON_DEMAND       OFF CACHE BOOL "")
+set(TRACY_STATIC           ON CACHE BOOL "")
+set(TRACY_LTO              ON CACHE BOOL "")
+set(TRACY_ONLY_LOCALHOST   ON CACHE BOOL "")
+set(TRACY_NO_VSYNC_CAPTURE ON CACHE BOOL "")
+set(TRACY_NO_FRAME_IMAGE   ON CACHE BOOL "")
+FetchContent_MakeAvailable(tracy)
+
 function(add_engine_branch dllName sdkDir engineBranchDefines)
 	# SDK lib
 	set(sdk_target ${dllName}_sdk)
@@ -228,6 +251,7 @@ function(add_engine_branch dllName sdkDir engineBranchDefines)
 		xz
 		ws2_32
 		${sdk_target}
+		TracyClient
 	)
 endfunction()
 

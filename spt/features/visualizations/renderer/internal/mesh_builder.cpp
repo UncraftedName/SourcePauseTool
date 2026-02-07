@@ -107,8 +107,6 @@ IMeshWrapper MeshBuilderInternal::Fuser::CreateIMeshFromSpan(std::span<const Mes
 	if (totalVerts == 0 || totalIndices == 0)
 		return IMeshWrapper{};
 
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
-
 #ifdef DEBUG
 	Assert(totalVerts <= maxVerts);
 	Assert(totalIndices <= maxIndices);
@@ -378,7 +376,6 @@ MeshPositionInfo MeshBuilderInternal::TmpMesh::CalcPosInfo()
 
 StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 {
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	auto& tmpMesh = g_meshBuilderInternal.tmpMesh;
 	tmpMesh.Create(createFunc, false);
 	tmpMesh.PackVertices(); // compactify with MbCompactMesh
@@ -405,7 +402,6 @@ StaticMesh MeshBuilderPro::CreateStaticMesh(const MeshCreateFunc& createFunc)
 
 DynamicMesh MeshBuilderPro::CreateDynamicMesh(const MeshCreateFunc& createFunc)
 {
-	SPT_VPROF_BUDGET(__FUNCTION__, VPROF_BUDGETGROUP_MESH_RENDERER);
 	auto& tmpMesh = g_meshBuilderInternal.tmpMesh;
 	tmpMesh.Create(createFunc, true);
 

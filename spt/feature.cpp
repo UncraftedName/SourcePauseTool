@@ -11,6 +11,9 @@
 #include "SPTLib\Hooks.hpp"
 #include "cvars.hpp"
 
+#include <tracy\Tracy.hpp>
+#include <tracy\TracyC.h>
+
 static std::unordered_map<std::string, ModuleHookData> moduleHookData;
 static std::unordered_map<uintptr_t, int> patternIndices;
 static bool loadedOnce = false;
@@ -36,6 +39,8 @@ void Feature::ReloadFeatures()
 
 void Feature::LoadFeatures()
 {
+	ZoneScoped;
+
 	// This is a restart, reload the features
 	if (loadedOnce)
 	{
@@ -65,14 +70,18 @@ void Feature::LoadFeatures()
 
 	Hook();
 
+	TracyCZoneN(tracy_zone_load_features, "Load features", true);
 	for (auto feature : GetFeatures())
 	{
 		if (!feature->moduleLoaded && feature->startedLoading)
 		{
+			ZoneNamedN(tracy_zone_load_feature, "Feature::LoadFeature", true);
+			ZoneTextVF(tracy_zone_load_feature, "%s", typeid(*feature).name());
 			feature->LoadFeature();
 			feature->moduleLoaded = true;
 		}
 	}
+	TracyCZoneEnd(tracy_zone_load_features);
 
 	loadedOnce = true;
 }
@@ -123,22 +132,29 @@ Feature::Feature()
 
 void Feature::InitModules()
 {
+	ZoneScoped;
 	for (auto& pair : moduleHookData)
 	{
+		ZoneNamedN(tracy_zone_init_module, "ModuleHookData::InitModule", true);
+		ZoneTextV(tracy_zone_init_module, pair.first.c_str(), pair.first.size());
 		pair.second.InitModule(Convert(pair.first + ".dll"));
 	}
 }
 
 void Feature::Hook()
 {
+	ZoneScoped;
 	for (auto& pair : moduleHookData)
 	{
+		ZoneNamedN(tracy_zone_hook_module, "ModuleHookData::HookModule", true);
+		ZoneTextV(tracy_zone_hook_module, pair.first.c_str(), pair.first.size());
 		pair.second.HookModule(Convert(pair.first + ".dll"));
 	}
 }
 
 void Feature::Unhook()
 {
+	ZoneScoped;
 	for (auto& pair : moduleHookData)
 	{
 		pair.second.UnhookModule(Convert(pair.first + ".dll"));
@@ -181,9 +197,8 @@ void Feature::InitConcommandBase(ConCommandBase& convar)
 bool Feature::AddHudCallback(const char* key, std::function<void(std::string)> func, ConVar& convar)
 {
 #ifdef SPT_HUD_ENABLED
-	bool result = spt_hud_feat.AddHudCallback(key,
-	                                          HudCallback(
-	                                              func, [&convar]() { return convar.GetBool(); }, false));
+	bool result =
+	    spt_hud_feat.AddHudCallback(key, HudCallback(func, [&convar]() { return convar.GetBool(); }, false));
 
 	if (result)
 	{

@@ -5,6 +5,8 @@
 #include <future>
 #include <sstream>
 #include <time.h>
+#include <tracy\Tracy.hpp>
+#include <tracy\TracyC.h>
 
 #include "vstdlib\IKeyValuesSystem.h"
 #include <SPTLib\Hooks.hpp>
@@ -49,6 +51,8 @@
 #include "SPTLib\sptlib.hpp"
 #include "tier0\memdbgoff.h" // YaLTeR - switch off the memory debugging.
 using namespace std::literals;
+
+extern const char* SPT_DESCRIPTION;
 
 namespace interfaces
 {
@@ -243,6 +247,8 @@ static void SetFuncIfFound(void** pTarget, void* func, bool critical = false)
 
 static void GrabTier0Stuff()
 {
+	ZoneScoped;
+
 	HMODULE moduleHandle = GetModuleHandleA("tier0.dll");
 	HMODULE moduleHandleVstdlib = GetModuleHandleA("vstdlib.dll");
 	if (moduleHandle != NULL)
@@ -276,6 +282,9 @@ static void GrabTier0Stuff()
 bool CSourcePauseTool::Load(CreateInterfaceFn interfaceFactory, CreateInterfaceFn gameServerFactory)
 {
 	auto startTime = std::chrono::high_resolution_clock::now();
+	TracySetProgramName(SPT_DESCRIPTION);
+	TracyCSetThreadName("main");
+	ZoneScoped;
 	GrabTier0Stuff();
 
 	SDKVersion detectedVersion = CheckSDKVersion(interfaceFactory);
@@ -306,6 +315,8 @@ bool CSourcePauseTool::Load(CreateInterfaceFn interfaceFactory, CreateInterfaceF
 		return false;
 	}
 	pluginLoaded = true;
+
+	TracyCZoneN(tracy_zone_factories, "Grab interfaces", true);
 
 	interfaces::gm = (IGameMovement*)gameServerFactory(INTERFACENAME_GAMEMOVEMENT, NULL);
 	g_pCVar = (ICvar*)interfaceFactory(CVAR_INTERFACE_VERSION, NULL);
@@ -519,6 +530,8 @@ bool CSourcePauseTool::Load(CreateInterfaceFn interfaceFactory, CreateInterfaceF
 	_EngineWarning = Warning;
 	_EngineDevWarning = DevWarning;
 
+	TracyCZoneEnd(tracy_zone_factories);
+
 	// Start build number search for build number specific feature stuff
 	utils::StartBuildNumberSearch();
 	TickSignal.Works = true;
@@ -554,6 +567,8 @@ void CSourcePauseTool::Unload(void)
 		return;
 	}
 
+	ZoneScoped;
+
 #ifdef SSDK2007
 	// Replace the plugin handler with the real handle right before the engine tries to unload.
 	// This allows it to actually do so.
@@ -580,58 +595,76 @@ void CSourcePauseTool::Unload(void)
 	std::this_thread::sleep_for(std::chrono::milliseconds{0});
 	Hooks::Free();
 	pluginLoaded = false;
+	
 }
 
 const char* CSourcePauseTool::GetPluginDescription(void)
 {
-	extern const char* SPT_DESCRIPTION;
 	return SPT_DESCRIPTION;
 }
 
 void CSourcePauseTool::GameFrame(bool simulating)
 {
+	FrameMarkNamed("Tick");
+	ZoneScoped;
+	ZoneValue(simulating);
 	TickSignal(simulating);
 }
 
 void CSourcePauseTool::LevelInit(char const* pMapName)
 {
+	ZoneScoped;
+	ZoneTextF("%s", pMapName ? pMapName : "<NULL>");
 	LevelInitSignal(pMapName);
 }
 
 void CSourcePauseTool::ServerActivate(edict_t* pEdictList, int edictCount, int clientMax)
 {
+	ZoneScoped;
+	ZoneTextF("edicts: %p, count: %d, clientMax: %d", pEdictList, edictCount, clientMax);
 	ServerActivateSignal(pEdictList, edictCount, clientMax);
 }
 
 void CSourcePauseTool::LevelShutdown()
 {
+	ZoneScoped;
 	LevelShutdownSignal();
 }
 
 #ifndef OE
 void CSourcePauseTool::OnEdictAllocated(edict_t* edict)
 {
+	ZoneScoped;
+	ZoneTextF("edict: %p", edict);
 	OnEdictAllocatedSignal(edict);
 }
 #endif
 
 void CSourcePauseTool::ClientPutInServer(edict_t* pEntity, char const* playername)
 {
+	ZoneScoped;
+	ZoneTextF("entity: %p, playerName: %s", pEntity, playername ? playername : "<NULL>");
 	ClientPutInServerSignal(pEntity, playername);
 }
 
 void CSourcePauseTool::ClientActive(edict_t* pEntity)
 {
+	ZoneScoped;
+	ZoneTextF("entity: %p", pEntity);
 	ClientActiveSignal(pEntity);
 }
 
 void CSourcePauseTool::ClientDisconnect(edict_t* pEntity)
 {
+	ZoneScoped;
+	ZoneTextF("entity: %p", pEntity);
 	ClientDisconnectSignal(pEntity);
 }
 
 void CSourcePauseTool::ClientSettingsChanged(edict_t* pEdict)
 {
+	ZoneScoped;
+	ZoneTextF("edict: %p", pEdict);
 	ClientSettingsChangedSignal(pEdict);
 }
 
@@ -652,35 +685,45 @@ static void GetMemAlloc()
 void* __cdecl operator new(unsigned int nSize)
 {
 	GetMemAlloc();
-	return g_pMemAlloc->Alloc(nSize);
+	void* p = g_pMemAlloc->Alloc(nSize);
+	TracyAlloc(p, nSize);
+	return p;
 }
 
 void* __cdecl operator new[](unsigned int nSize)
 {
 	GetMemAlloc();
-	return g_pMemAlloc->Alloc(nSize);
+	void* p = g_pMemAlloc->Alloc(nSize);
+	TracyAlloc(p, nSize);
+	return p;
 }
 
 void* __cdecl operator new(unsigned int nSize, int nBlockUse, const char* pFileName, int nLine)
 {
 	GetMemAlloc();
-	return g_pMemAlloc->Alloc(nSize, pFileName, nLine);
+	void* p = g_pMemAlloc->Alloc(nSize, pFileName, nLine);
+	TracyAlloc(p, nSize);
+	return p;
 }
 
 void* __cdecl operator new[](unsigned int nSize, int nBlockUse, const char* pFileName, int nLine)
 {
 	GetMemAlloc();
-	return g_pMemAlloc->Alloc(nSize, pFileName, nLine);
+	void* p = g_pMemAlloc->Alloc(nSize, pFileName, nLine);
+	TracyAlloc(p, nSize);
+	return p;
 }
 
 void __cdecl operator delete(void* pMem)
 {
 	GetMemAlloc();
+	TracyFree(pMem);
 	g_pMemAlloc->Free(pMem);
 }
 
 void __cdecl operator delete[](void* pMem)
 {
 	GetMemAlloc();
+	TracyFree(pMem);
 	g_pMemAlloc->Free(pMem);
 }

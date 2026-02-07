@@ -12,6 +12,9 @@
 #include "..\cvars.hpp"
 #include "..\sptlib-wrapper.hpp"
 
+#include <tracy\Tracy.hpp>
+#include <tracy\TracyC.h>
+
 CON_COMMAND(y_spt_build, "Returns the build number of the game")
 {
 	Msg("The build is: %d\n", utils::GetBuildNumber());
@@ -242,6 +245,8 @@ void GenericFeature::PreHook()
 
 void __stdcall GenericFeature::HOOKED_HudUpdate(bool bActive)
 {
+	FrameMarkNamed("Frame");
+	ZoneScoped;
 	FrameSignal();
 	spt_generic.ORIG_HudUpdate(bActive);
 }

@@ -3,6 +3,7 @@
 
 #include <stdarg.h>
 #include <algorithm>
+#include <tracy\Tracy.hpp>
 
 #include "SPTLib\MemUtils.hpp"
 #include "thirdparty/x86.h"
@@ -185,6 +186,8 @@ void Cvar_RegisterSPTCvars()
 {
 	if (!g_pCVar)
 		return;
+
+	ZoneScoped;
 
 	ConCommandBase* cmd = ConCommandBase::s_pConCommandBases;
 

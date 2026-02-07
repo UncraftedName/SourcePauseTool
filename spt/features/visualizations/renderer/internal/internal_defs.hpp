@@ -12,12 +12,16 @@
 #include "materialsystem\imesh.h"
 #pragma warning(pop)
 
-#include "spt\utils\spt_vprof.hpp"
 #include "spt\utils\mesh_utils.hpp"
 
-#define VPROF_BUDGETGROUP_MESH_RENDERER _T("Mesh_Renderer")
-
 #include <stack>
+#include <tracy\Tracy.hpp>
+#include <tracy\TracyC.h>
+
+inline const char* SPT_TRACY_MESH_THREAD_GROUP_NAME = "mesh thread";
+#define SPT_TRACY_MESH_THREAD_GROUP_ID MAKEID('M', 'E', 'S', 'H')
+// #define SPT_TRACY_MESH_SET_THREAD_NAME() tracy::SetThreadNameWithHint(SPT_TRACY_MESH_THREAD_GROUP_NAME, SPT_TRACY_MESH_THREAD_GROUP_ID)
+#define SPT_TRACY_MESH_SET_THREAD_NAME() (void)0;
 
 using VertIndex = utils::MbCompactMesh::idx_type;
 using DynamicMeshToken = DynamicMesh;
