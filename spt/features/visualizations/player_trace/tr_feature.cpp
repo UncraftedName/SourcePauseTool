@@ -9,7 +9,7 @@
 
 #include "tr_record_cache.hpp"
 #include "tr_render_cache.hpp"
-#include "tr_imgui.hpp"
+#include "imgui/tr_imgui.hpp"
 
 #include "spt/feature.hpp"
 #include "signals.hpp"
@@ -375,7 +375,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 
 	renderCfg.playerPath.cones.draw = spt_trace_draw_path_cones.GetBool();
 	renderCfg.playerEye.style =
-	    (TrPlayerCameraDrawType)std::clamp(spt_trace_draw_cam_style.GetInt(), 0, (int)TR_PCDT_COUNT);
+	    (TrPlayerCameraDrawType)clamp(spt_trace_draw_cam_style.GetInt(), 0, (int)TR_PCDT_COUNT);
 	renderCfg.contactPoints.draw = spt_trace_draw_contact_points.GetBool();
 	renderCfg.entPhys.portalCollisionEnts.draw = spt_trace_draw_portal_collision_entities.GetBool();
 
