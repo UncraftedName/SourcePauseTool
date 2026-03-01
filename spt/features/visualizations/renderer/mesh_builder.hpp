@@ -116,6 +116,16 @@ inline color32 color32RgbLerp(color32 a, color32 b, float f)
 	};
 }
 
+inline color32 color32Mult(color32 a, color32 b)
+{
+	return color32{
+	    (byte)(a.r * b.r / 255),
+	    (byte)(a.g * b.g / 255),
+	    (byte)(a.b * b.b / 255),
+	    (byte)(a.a * b.a / 255),
+	};
+}
+
 /*
 * The game uses a CMeshBuilder to create meshes, but we can't use it directly because parts of its implementation
 * are private and/or not in the SDK. Not to worry - Introducing The MeshBuilderPro™! The MeshBuilderPro™ can be
