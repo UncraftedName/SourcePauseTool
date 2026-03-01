@@ -65,9 +65,12 @@ void TrPlayerTrace::StartRecording()
 void TrPlayerTrace::StopRecording()
 {
 	TrReadContextScope scope{*this};
-	recordingCache->StopRecording();
-	recordingCache.reset();
-	std::apply([](auto&... vecs) { (vecs.shrink_to_fit(), ...); }, storage);
+	if (recordingCache)
+	{
+		recordingCache->StopRecording();
+		recordingCache.reset();
+		std::apply([](auto&... vecs) { (vecs.shrink_to_fit(), ...); }, storage);
+	}
 }
 
 void TrPlayerTrace::HostTickCollect(bool simulated, TrSegmentReason segmentReason, float entCollectRadius)
