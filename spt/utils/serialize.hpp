@@ -56,6 +56,17 @@ namespace ser
 		{
 			return status.ok;
 		}
+
+		// appends the warnings and yoink the error from another status
+		void Concat(ser::StatusTracker&& other)
+		{
+			status.ok &= other.status.ok;
+			if (status.errMsg.empty())
+				status.errMsg.swap(other.status.errMsg);
+			status.warnings.insert(status.warnings.end(),
+			                       std::make_move_iterator(other.status.warnings.begin()),
+			                       std::make_move_iterator(other.status.warnings.end()));
+		}
 	};
 
 	/*
