@@ -221,35 +221,21 @@ private:
 			ImGui::SetItemTooltip("default group can't be renamed");
 		ImGui::EndDisabled();
 
-		bool isSolo = groupIt == tracePlayer.soloGroupIt;
-
 		ImGui::SameLine();
-		if (ImGui::SmallButton(group.visible ? VIS_LABEL_ON : VIS_LABEL_OFF))
-		{
-			group.visible ^= 1;
-			if (!group.visible && isSolo)
-			{
-				tracePlayer.soloGroupIt = tracePlayer.traceGroups.end();
-				isSolo = false;
-			}
-		}
+		TrTracePlayer::BoolOptInfo visibleOptInfo = tracePlayer.GroupVisibleOptInfo(groupIt);
+		ImGui::BeginDisabled(!visibleOptInfo.allowUiChange);
+		if (ImGui::SmallButton(visibleOptInfo.enabled ? VIS_LABEL_ON : VIS_LABEL_OFF))
+			tracePlayer.GroupVisibleOptSet(groupIt, !visibleOptInfo.enabled);
 		ImGui::SetItemTooltip("toggle group visibility");
+		ImGui::EndDisabled();
 
 		ImGui::SameLine();
-		if (ImGui::SmallButton(isSolo ? SOLO_LABEL_ON : SOLO_LABEL_OFF))
-		{
-			tracePlayer.soloGroupIt = isSolo ? tracePlayer.traceGroups.end() : groupIt;
-			if (!isSolo)
-			{
-				group.visible = true;
-				if (tracePlayer.soloTraceIt != tracePlayer.AllTraces().end()
-				    && tracePlayer.soloTraceIt->second.groupIt != groupIt)
-				{
-					tracePlayer.soloTraceIt = tracePlayer.AllTraces().end();
-				}
-			}
-		}
+		TrTracePlayer::BoolOptInfo soloOptInfo = tracePlayer.GroupSoloOptInfo(groupIt);
+		ImGui::BeginDisabled(!soloOptInfo.allowUiChange);
+		if (ImGui::SmallButton(soloOptInfo.enabled ? SOLO_LABEL_ON : SOLO_LABEL_OFF))
+			tracePlayer.GroupSoloOptSet(groupIt, !soloOptInfo.enabled);
 		ImGui::SetItemTooltip("solo group");
+		ImGui::EndDisabled();
 
 		if (!group.isDefault)
 		{
@@ -339,35 +325,23 @@ private:
 		ImGui::SameLine();
 		ImGui::TextUnformatted(utils::GetPathProximateToModDir(path).string().c_str());
 
-		bool isSolo = traceIt == tracePlayer.soloTraceIt;
+		// TODO account for spt_trace_draw_while_recording somewhere
 
 		ImGui::SameLine();
-		// TODO show that recording trace possible can't be made visible
-		if (ImGui::SmallButton(traceIt->second.visible ? VIS_LABEL_ON : VIS_LABEL_OFF))
-		{
-			traceIt->second.visible ^= 1;
-			if (!traceIt->second.visible && isSolo)
-			{
-				tracePlayer.soloTraceIt = tracePlayer.AllTraces().end();
-				isSolo = false;
-			}
-		}
+		TrTracePlayer::BoolOptInfo visibleOptInfo = tracePlayer.TraceVisibleOptInfo(traceIt);
+		ImGui::BeginDisabled(!visibleOptInfo.allowUiChange);
+		if (ImGui::SmallButton(visibleOptInfo.enabled ? VIS_LABEL_ON : VIS_LABEL_OFF))
+			tracePlayer.TraceVisibleOptSet(traceIt, !visibleOptInfo.enabled);
 		ImGui::SetItemTooltip("toggle trace visibility");
+		ImGui::EndDisabled();
 
 		ImGui::SameLine();
-		if (ImGui::SmallButton(isSolo ? SOLO_LABEL_ON : SOLO_LABEL_OFF))
-		{
-			// TODO comment this logic somewhere, just trying to force invariants
-			tracePlayer.soloTraceIt = isSolo ? tracePlayer.AllTraces().end() : traceIt;
-			if (!isSolo)
-			{
-				entry.visible = true;
-				groupIt->visible = true;
-				if (tracePlayer.soloGroupIt != groupIt)
-					tracePlayer.soloGroupIt = tracePlayer.traceGroups.end();
-			}
-		}
+		TrTracePlayer::BoolOptInfo soloOptInfo = tracePlayer.TraceSoloOptInfo(traceIt);
+		ImGui::BeginDisabled(!soloOptInfo.allowUiChange);
+		if (ImGui::SmallButton(soloOptInfo.enabled ? SOLO_LABEL_ON : SOLO_LABEL_OFF))
+			tracePlayer.TraceSoloOptSet(traceIt, !soloOptInfo.enabled);
 		ImGui::SetItemTooltip("solo trace");
+		ImGui::EndDisabled();
 
 		ImGui::SameLine();
 		ImGui::Dummy(ImVec2(ImGui::GetContentRegionAvail().x, 0));

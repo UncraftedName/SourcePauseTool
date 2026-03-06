@@ -43,6 +43,11 @@ namespace player_trace
 
 		using group_entries = std::list<traces_it>;
 
+		struct BoolOptInfo
+		{
+			bool enabled, allowUiChange;
+		};
+
 		// TODO readonly public?
 		trace_groups traceGroups;
 		group_it defaultGroupIt = traceGroups.end();
@@ -64,9 +69,10 @@ namespace player_trace
 
 		public:
 			std::string name;
+			// TODO all of these can be readonly public
 			bool visible = true;
 			bool isDefault = false;
-			group_entries entries; // TODO readonly public?
+			group_entries entries;
 
 			TraceGroup(std::string name, color32 tint) : name(std::move(name)), tint(tint) {}
 
@@ -109,8 +115,6 @@ namespace player_trace
 		// TODO highlight this in imgui
 		std::unique_ptr<RecordingTrace> recordingTrace;
 
-		tr_tick maxAbsTick = 0; // TODO
-
 		size_t nCustomGroupsAdded = 0;
 
 		void AddNewEntryToDefaultGroup(traces_it it) const;
@@ -123,6 +127,7 @@ namespace player_trace
 		traces_itc detailedImGuiTraceIt = traces.end();
 		// these are all public read/write listed in order of priority
 		traces_itc imguiHoveredTraceIt = traces.end();
+		// TODO readonly public
 		traces_itc soloTraceIt = traces.end();
 		group_it soloGroupIt = traceGroups.end();
 
@@ -139,10 +144,29 @@ namespace player_trace
 			return traces;
 		}
 
-		tr_tick GetMaxAbsTick() const
-		{
-			return maxAbsTick;
-		}
+		/*
+		* Bit of a hardcoded setup for solo/visibility options for traces/groups. These are set
+		* through here to try and enforce invariants. Assuming that:
+		* - spt_trace_draw_recording is true
+		* - spt_trace_draw_while_recording is true
+		* - spt_draw_trace is true
+		* - the user is not hovering over any traces
+		* Then:
+		* - the user should always be able to press all buttons
+		* - a trace is not visible if it is marked as invisible or is in an invisible group
+		* - a solo trace is always marked as visible and in a visible group
+		* - a solo trace or group is never marked as invisible
+		*/
+
+		BoolOptInfo GroupSoloOptInfo(group_it it);
+		void GroupSoloOptSet(group_it it, bool val);
+		BoolOptInfo GroupVisibleOptInfo(group_it it);
+		void GroupVisibleOptSet(group_it it, bool val);
+
+		BoolOptInfo TraceSoloOptInfo(traces_itc it);
+		void TraceSoloOptSet(traces_itc it, bool val);
+		BoolOptInfo TraceVisibleOptInfo(traces_itc it);
+		void TraceVisibleOptSet(traces_itc it, bool val);
 
 		group_it AddCustomGroup(color32 tint)
 		{

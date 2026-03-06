@@ -238,4 +238,96 @@ TrTracePlayer::~TrTracePlayer()
 	ClearTraces(true);
 }
 
+auto TrTracePlayer::GroupSoloOptInfo(group_it it) -> BoolOptInfo
+{
+	return BoolOptInfo{.enabled = it == soloGroupIt, .allowUiChange = true};
+}
+
+void TrTracePlayer::GroupSoloOptSet(group_it it, bool val)
+{
+	if (it == traceGroups.end())
+		return;
+	Assert(GroupSoloOptInfo(it).allowUiChange);
+	if (val)
+	{
+		soloGroupIt = it;
+		it->visible = true;
+		if (soloTraceIt != traces.end() && soloTraceIt->second.groupIt != it)
+			soloTraceIt = traces.end();
+	}
+	else
+	{
+		soloGroupIt = traceGroups.end();
+	}
+}
+
+auto TrTracePlayer::GroupVisibleOptInfo(group_it it) -> BoolOptInfo
+{
+	Assert(it != traceGroups.end());
+	return BoolOptInfo{.enabled = it->visible, .allowUiChange = true};
+}
+
+void TrTracePlayer::GroupVisibleOptSet(group_it it, bool val)
+{
+	if (it == traceGroups.end())
+		return;
+	Assert(GroupVisibleOptInfo(it).allowUiChange);
+	if (!val)
+	{
+		if (soloGroupIt == it)
+			soloGroupIt = traceGroups.end();
+		if (soloTraceIt != traces.end() && soloTraceIt->second.groupIt == it)
+			soloTraceIt = traces.end();
+	}
+	it->visible = val;
+}
+
+auto TrTracePlayer::TraceSoloOptInfo(traces_itc it) -> BoolOptInfo
+{
+	// spt_trace_draw_while_recording will disable the UI higher up
+	return BoolOptInfo{
+	    .enabled = it == soloTraceIt,
+	    .allowUiChange = !recordingTrace || it != recordingTrace->it || spt_trace_draw_recording.GetBool(),
+	};
+}
+
+void TrTracePlayer::TraceSoloOptSet(traces_itc it, bool val)
+{
+	if (it == traces.end())
+		return;
+	Assert(TraceSoloOptInfo(it).allowUiChange);
+	if (val)
+	{
+		it->second.visible = true;
+		it->second.groupIt->visible = true;
+		if (it->second.groupIt != soloGroupIt)
+			soloGroupIt = traceGroups.end();
+		soloTraceIt = it;
+	}
+	else if (soloTraceIt == it)
+	{
+		soloTraceIt = traces.end();
+	}
+}
+
+auto TrTracePlayer::TraceVisibleOptInfo(traces_itc it) -> BoolOptInfo
+{
+	// spt_trace_draw_while_recording will disable the UI higher up
+	Assert(it != traces.end());
+	return BoolOptInfo{
+	    .enabled = it->second.visible,
+	    .allowUiChange = !recordingTrace || it != recordingTrace->it || spt_trace_draw_recording.GetBool(),
+	};
+}
+
+void TrTracePlayer::TraceVisibleOptSet(traces_itc it, bool val)
+{
+	if (it == traces.end())
+		return;
+	Assert(TraceVisibleOptInfo(it).allowUiChange);
+	if (!val && it == soloTraceIt)
+		soloTraceIt = traces.end();
+	it->second.visible = val;
+}
+
 #endif
