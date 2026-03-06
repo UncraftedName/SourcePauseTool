@@ -10,14 +10,7 @@ using namespace player_trace;
 
 void tr_imgui::PortalTabCallback(tr_tick activeTick)
 {
-	if (!tr_imgui::DrawDetailedTraceSelect())
-		return;
-	tr_imgui::DrawDetailedInfoHeader(activeTick);
-
-	auto& tp = TrTracePlayer::Singleton();
-	auto& tr = tp.detailedImGuiTraceIt->second.tr;
-	TrReadContextScope scope{tr};
-
+	auto& tr = TrReadContextScope::Current();
 	auto portalSnap = tr.GetAtTick<TrPortalSnapshot>(activeTick);
 	auto portalSp = *portalSnap.GetOrDefault().portalsSp;
 

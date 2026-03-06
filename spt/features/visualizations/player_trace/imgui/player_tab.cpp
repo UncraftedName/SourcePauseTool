@@ -9,10 +9,9 @@
 
 using namespace player_trace;
 
-void tr_imgui::DrawDetailedInfoHeader(tr_tick activeTick)
+void tr_imgui::SingleTraceInfoTabHeader(tr_tick activeTick)
 {
-	auto& tp = TrTracePlayer::Singleton();
-	auto& tr = tp.detailedImGuiTraceIt->second.tr;
+	auto& tr = TrReadContextScope::Current();
 
 	if (tr.hasStartRecordingBeenCalled)
 	{
@@ -28,13 +27,7 @@ void tr_imgui::DrawDetailedInfoHeader(tr_tick activeTick)
 
 void tr_imgui::PlayerTabCallback(tr_tick activeTick)
 {
-	if (!tr_imgui::DrawDetailedTraceSelect())
-		return;
-	tr_imgui::DrawDetailedInfoHeader(activeTick);
-
-	auto& tp = TrTracePlayer::Singleton();
-	auto& tr = tp.detailedImGuiTraceIt->second.tr;
-	TrReadContextScope scope{tr};
+	auto& tr = TrReadContextScope::Current();
 
 	tr_struct_version playerExportVersion = tr.GetFirstExportVersion<TrPlayerData>();
 	auto plIdx = tr.GetAtTick<TrPlayerData>(activeTick);

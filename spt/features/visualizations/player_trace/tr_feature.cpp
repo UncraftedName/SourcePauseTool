@@ -453,6 +453,20 @@ bool PlayerTraceFeature::ShouldLoadFeature()
 	return TickSignal.Works && interfaces::engine_tool;
 }
 
+static void WrapSingleTraceInfoTab(SptImGuiGroup::Tab& imguiTab, tr_imgui::single_trace_info_tab_fn fn)
+{
+	imguiTab.RegisterUserCallback(
+	    [fn]()
+	    {
+		    if (!tr_imgui::DrawDetailedTraceSelect())
+			    return;
+		    TrReadContextScope scope{TrTracePlayer::Singleton().detailedImGuiTraceIt->second.tr};
+		    tr_tick tickToShow = spt_player_trace_feat.absDrawTick;
+		    tr_imgui::SingleTraceInfoTabHeader(tickToShow);
+		    fn(tickToShow);
+	    });
+}
+
 void PlayerTraceFeature::LoadFeature()
 {
 	if (!spt_meshRenderer.signal.Works)
@@ -493,14 +507,10 @@ void PlayerTraceFeature::LoadFeature()
 	InitConcommandBase(spt_trace_draw_cam_style);
 	InitConcommandBase(spt_trace_draw_contact_points);
 
-	SptImGuiGroup::PlayerTrace_Player.RegisterUserCallback([this]() { tr_imgui::PlayerTabCallback(absDrawTick); });
-	SptImGuiGroup::PlayerTrace_Entities.RegisterUserCallback([this]()
-	                                                         { tr_imgui::EntityTabCallback(absDrawTick); });
+	WrapSingleTraceInfoTab(SptImGuiGroup::PlayerTrace_Player, tr_imgui::PlayerTabCallback);
+	WrapSingleTraceInfoTab(SptImGuiGroup::PlayerTrace_Entities, tr_imgui::EntityTabCallback);
 	if (utils::DoesGameLookLikePortal())
-	{
-		SptImGuiGroup::PlayerTrace_Portals.RegisterUserCallback([this]()
-		                                                        { tr_imgui::PortalTabCallback(absDrawTick); });
-	}
+		WrapSingleTraceInfoTab(SptImGuiGroup::PlayerTrace_Portals, tr_imgui::PortalTabCallback);
 
 	SptImGuiGroup::PlayerTrace_Select.RegisterUserCallback([this]()
 	                                                       { tr_imgui::TraceFileSelectionTabCallback(igfd); });
