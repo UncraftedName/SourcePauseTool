@@ -91,7 +91,7 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 			}
 
 			if (ImGui::Button("Clear all traces"))
-				tp.Clear(false);
+				tp.ClearTraces(false);
 		}
 		else
 		{

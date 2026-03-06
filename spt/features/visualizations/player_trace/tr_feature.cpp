@@ -268,7 +268,7 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 
 CON_COMMAND_F(spt_trace_unload_all, "Unloads all non-recording traces", FCVAR_DONTRECORD)
 {
-	Msg("Deleted %u traces\n", TrTracePlayer::Singleton().Clear(false));
+	Msg("Deleted %u traces\n", TrTracePlayer::Singleton().ClearTraces(false));
 }
 
 CON_COMMAND_F(spt_trace_next_tick, "Increments the trace draw tick", FCVAR_DONTRECORD)
@@ -521,7 +521,7 @@ void PlayerTraceFeature::LoadFeature()
 
 void PlayerTraceFeature::UnloadFeature()
 {
-	TrTracePlayer::Singleton().Clear(true);
+	TrTracePlayer::Singleton().ClearTraces(true);
 	igfd.reset();
 }
 

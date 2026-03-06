@@ -103,15 +103,7 @@ namespace player_trace
 		TrRenderStyleConfig mainStyleConfig;
 
 	private:
-		struct RecordingTrace
-		{
-			traces_it it{}; // uninitialized
-			// TODO just make these pointers and make pimpl
-			ser::FileWriter fWr;
-			ser::XzWriter xzWr;
-
-			RecordingTrace(std::filesystem::path path) : fWr(std::move(path)), xzWr(fWr) {}
-		};
+		struct RecordingTrace;
 
 		trace_map traces;
 		// TODO highlight this in imgui
@@ -183,12 +175,9 @@ namespace player_trace
 		void Remove(traces_itc it);
 
 		// returns number of deleted elements
-		size_t Clear(bool clearRecording);
+		size_t ClearTraces(bool clearRecording);
 
-		~TrTracePlayer()
-		{
-			Clear(true);
-		}
+		~TrTracePlayer();
 	};
 } // namespace player_trace
 

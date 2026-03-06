@@ -21,6 +21,15 @@
 
 using namespace player_trace;
 
+struct TrTracePlayer::RecordingTrace
+{
+	traces_it it{}; // uninitialized
+	ser::FileWriter fWr;
+	ser::XzWriter xzWr;
+
+	RecordingTrace(std::filesystem::path path) : fWr(std::move(path)), xzWr(fWr) {}
+};
+
 void TrTracePlayer::AddNewEntryToDefaultGroup(traces_it it) const
 {
 	it->second.groupIt = defaultGroupIt;
@@ -150,11 +159,11 @@ void TrTracePlayer::Remove(traces_itc it)
 		StopAndFlushRecording(stat); // flush silently
 	}
 
-	if (imguiHoveredTraceIt == it)
+	if (imguiHoveredTraceIt == it) [[unlikely]]
 		imguiHoveredTraceIt = traces.end();
-	if (soloTraceIt == it)
+	if (soloTraceIt == it) [[unlikely]]
 		soloTraceIt = traces.end();
-	if (detailedImGuiTraceIt == it)
+	if (detailedImGuiTraceIt == it) [[unlikely]]
 		detailedImGuiTraceIt = traces.end();
 
 	// unlink from group
@@ -165,39 +174,68 @@ void TrTracePlayer::Remove(traces_itc it)
 	traces.erase(it);
 }
 
-size_t TrTracePlayer::Clear(bool clearRecording)
+size_t TrTracePlayer::ClearTraces(bool clearRecording)
 {
 	size_t oldSize = traces.size();
 
-	auto recordIt = recordingTrace ? recordingTrace->it : traces.end();
-	bool recordingTraceSelectedInImGui = recordingTrace ? imguiEntrySelect.Contains((ImGuiID)(&*recordIt)) : false;
-	if (clearRecording)
+	// save recording trace state if applicable
+
+	trace_map::node_type recordingNh;
+	bool recordingTraceSelectedInImGui = false;
+	bool recordingTraceSolo = false;
+
+	if (recordingTrace)
 	{
-		ser::StatusTracker stat;
-		StopAndFlushRecording(stat);
+		if (clearRecording)
+		{
+			ser::StatusTracker stat;
+			StopAndFlushRecording(stat);
+		}
+		else
+		{
+			auto recordIt = recordingTrace->it;
+			recordingTraceSelectedInImGui = imguiEntrySelect.Contains((ImGuiID)(&*recordIt));
+			recordingTraceSolo = recordIt == soloTraceIt;
+			recordingNh = traces.extract(recordIt);
+		}
 	}
 
-	// TODO clear solo traces and such
+	// clear all traces
+
+	imguiHoveredTraceIt = traces.end(); // no need to restore this
+	soloTraceIt = traces.end();
+	detailedImGuiTraceIt = traces.end(); // no need to restore this
 
 	imguiEntrySelect.Clear();
-
-	// clear all group entries
+	traces.clear();
 	for (auto& group : traceGroups)
 		group.entries.clear();
-	// re-insert recording trace into group
-	if (recordingTrace)
+
+	// re-insert recording trace if applicable
+
+	auto insertRet = traces.insert(std::move(recordingNh));
+
+	// restore recording trace state if applicable
+
+	Assert(insertRet.inserted == !!recordingTrace);
+
+	if (insertRet.inserted)
 	{
-		Entry& entry = recordIt->second;
-		auto& groupEntries = entry.groupIt->entries;
-		entry.entryInGroupIt = groupEntries.insert(groupEntries.end(), recordIt);
-		imguiEntrySelect.SetItemSelected((ImGuiID)(&*recordIt), recordingTraceSelectedInImGui);
+		auto recordIt = recordingTrace->it = insertRet.position;
+		if (recordingTraceSolo)
+			soloTraceIt = recordIt;
+		if (recordingTraceSelectedInImGui)
+			imguiEntrySelect.SetItemSelected((ImGuiID)(&*recordIt), true);
+		auto& groupEntries = recordIt->second.groupIt->entries;
+		recordIt->second.entryInGroupIt = groupEntries.insert(groupEntries.end(), recordIt);
 	}
 
-	// erase all traces except the recording trace
-	traces.erase(traces.begin(), recordIt);
-	if (recordingTrace)
-		traces.erase(std::next(recordingTrace->it), traces.end());
 	return oldSize - traces.size();
+}
+
+TrTracePlayer::~TrTracePlayer()
+{
+	ClearTraces(true);
 }
 
 #endif
