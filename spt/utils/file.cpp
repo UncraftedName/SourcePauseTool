@@ -111,3 +111,17 @@ std::filesystem::path utils::GetNextFileName(const std::filesystem::path& base, 
 		}
 	}
 }
+
+std::filesystem::path utils::GetPathProximateToModDir(const std::filesystem::path& p, std::error_code* ec)
+{
+	static std::filesystem::path modDir;
+	if (modDir.empty())
+	{
+		modDir = GetGameDir();
+		std::error_code tmpEc;
+		modDir = std::filesystem::absolute(modDir, tmpEc);
+		Assert(!tmpEc);
+	}
+	std::error_code tmpEc;
+	return std::filesystem::proximate(p, modDir, ec ? *ec : tmpEc);
+}

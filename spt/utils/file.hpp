@@ -37,4 +37,7 @@ namespace utils
 	*           exists, will start by checking file_8.txt and update counter; can be null
 	*/
 	std::filesystem::path GetNextFileName(const std::filesystem::path& base, const char* optExt, size_t* counter);
+
+	// a wrapper of std::filesystem::proximate with an optional error code return
+	std::filesystem::path GetPathProximateToModDir(const std::filesystem::path& p, std::error_code* ec = nullptr);
 } // namespace utils

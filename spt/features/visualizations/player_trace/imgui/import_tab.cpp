@@ -14,31 +14,6 @@ constexpr const char* TR_FILE_SELECT_WND_ID = "trace_file_select";
 static std::string g_importErrStr;
 static SptImGui::TimedToolTip g_importErrTip;
 
-std::string tr_imgui::TrGetDisplayPath(const std::filesystem::path& absPath)
-{
-	static std::filesystem::path modDir;
-	if (modDir.empty())
-	{
-		modDir = GetGameDir();
-		std::error_code ec;
-		modDir = std::filesystem::absolute(modDir, ec);
-		Assert(!ec);
-	}
-
-	// TODO handle UTF8 conversions
-
-	if (absPath.native().starts_with(modDir.native()))
-	{
-		std::string str = absPath.string();
-		str.erase(0, modDir.native().size() + 1);
-		return str;
-	}
-	else
-	{
-		return absPath.string();
-	}
-}
-
 void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& igfd)
 {
 	auto& tp = TrTracePlayer::Singleton();
@@ -90,7 +65,7 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 					// path
 					ImGui::TableSetColumnIndex(0);
 					ImGui::AlignTextToFramePadding();
-					ImGui::Text("%s", TrGetDisplayPath(path).c_str());
+					ImGui::Text("%s", utils::GetPathProximateToModDir(path).string().c_str());
 
 					// first map
 					ImGui::TableSetColumnIndex(1);
@@ -239,13 +214,17 @@ bool tr_imgui::DrawDetailedTraceSelect()
 	ImGui::BeginDisabled(!anyLoaded);
 
 	if (ImGui::BeginCombo("Trace selection",
-	                      anyLoaded ? tr_imgui::TrGetDisplayPath(it->first).c_str() : "no loaded traces"))
+	                      anyLoaded ? utils::GetPathProximateToModDir(it->first).string().c_str()
+	                                : "no loaded traces"))
 	{
 		for (auto newIt = traces.begin(); newIt != traces.end(); ++newIt)
 		{
 			bool isSelected = newIt == it;
-			if (ImGui::Selectable(tr_imgui::TrGetDisplayPath(newIt->first).c_str(), &isSelected))
+			if (ImGui::Selectable(utils::GetPathProximateToModDir(newIt->first).string().c_str(),
+			                      &isSelected))
+			{
 				it = newIt;
+			}
 			if (isSelected)
 				ImGui::SetItemDefaultFocus();
 		}

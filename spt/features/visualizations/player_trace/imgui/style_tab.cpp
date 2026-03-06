@@ -337,7 +337,7 @@ private:
 		ImGui::SetNextItemAllowOverlap();
 		ImGui::Selectable("##dummy", selected);
 		ImGui::SameLine();
-		ImGui::TextUnformatted(tr_imgui::TrGetDisplayPath(path).c_str());
+		ImGui::TextUnformatted(utils::GetPathProximateToModDir(path).string().c_str());
 
 		bool isSolo = traceIt == tracePlayer.soloTraceIt;
 
