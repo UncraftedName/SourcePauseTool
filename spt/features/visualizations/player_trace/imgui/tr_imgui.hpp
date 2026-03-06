@@ -17,23 +17,22 @@ namespace player_trace::tr_imgui
 {
 	struct ImGuiDetailedInfoTraceSelection
 	{
-		TrTracePlayer* tp;
 		tr_tick activeTick;
 	};
 
 	std::string TrGetDisplayPath(const std::filesystem::path& absPath);
 
-	void TraceFileSelectionTabCallback(TrTracePlayer& tfm, std::unique_ptr<ImGuiFileDialog>& igfd);
-	void TraceFileSelectionWindowCallback(TrTracePlayer& tfm, std::unique_ptr<ImGuiFileDialog>& igfd);
+	void TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& igfd);
+	void TraceFileSelectionWindowCallback(std::unique_ptr<ImGuiFileDialog>& igfd);
 
-	bool DrawDetailedTraceSelect(ImGuiDetailedInfoTraceSelection& info);
-	void DrawDetailedInfoHeader(ImGuiDetailedInfoTraceSelection& info);
+	bool DrawDetailedTraceSelect();
+	void DrawDetailedInfoHeader(tr_tick activeTick);
 
-	void PlayerTabCallback(ImGuiDetailedInfoTraceSelection& info);
-	void EntityTabCallback(ImGuiDetailedInfoTraceSelection& info);
-	void PortalTabCallback(ImGuiDetailedInfoTraceSelection& info);
+	void PlayerTabCallback(tr_tick activeTick);
+	void EntityTabCallback(tr_tick activeTick);
+	void PortalTabCallback(tr_tick activeTick);
 
-	void RenderStyleTab(TrTracePlayer& tracePlayer);
+	void RenderStyleTab();
 } // namespace player_trace::tr_imgui
 
 #endif

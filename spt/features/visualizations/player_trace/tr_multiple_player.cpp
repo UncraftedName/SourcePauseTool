@@ -27,6 +27,17 @@ void TrTracePlayer::AddNewEntryToDefaultGroup(traces_it it) const
 	it->second.entryInGroupIt = defaultGroupIt->entries.emplace(defaultGroupIt->entries.end(), it);
 }
 
+TrTracePlayer::TrTracePlayer()
+{
+	defaultGroupIt = traceGroups.emplace(traceGroups.end(), "default", color32(255, 255, 255, 255));
+	defaultGroupIt->name = "default";
+	defaultGroupIt->isDefault = true;
+
+	imguiEntrySelect.AdapterIndexToStorageId = nullptr;
+	imguiEntrySelect.UserData = nullptr;
+	imguiEntrySelect.PreserveOrder = true; // possibly bugged
+}
+
 auto TrTracePlayer::GetRecordingTrace() -> traces_it
 {
 	return recordingTrace ? recordingTrace->it : traces.end();

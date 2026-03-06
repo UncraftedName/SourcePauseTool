@@ -393,11 +393,11 @@ private:
 	}
 };
 
-void tr_imgui::RenderStyleTab(TrTracePlayer& tracePlayer)
+void tr_imgui::RenderStyleTab()
 {
 	if (ImGui::TreeNode("Trace groups"))
 	{
-		GroupTintCallback cb(tracePlayer);
+		GroupTintCallback cb(TrTracePlayer::Singleton());
 		cb.Draw();
 		ImGui::TreePop();
 	}

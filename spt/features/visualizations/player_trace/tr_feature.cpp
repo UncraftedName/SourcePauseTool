@@ -70,7 +70,6 @@ public:
 	void ChangeDisplayTick(int diff);
 	void SetDisplayTick(tr_tick val);
 
-	std::unique_ptr<TrTracePlayer> tracePlayer;
 	std::unique_ptr<ImGuiFileDialog> igfd;
 
 	// TODO this should really be moved into the player huh
@@ -99,9 +98,9 @@ static PlayerTraceFeature spt_player_trace_feat;
 
 static void CC_Trace_Start(const std::filesystem::path& fsPath)
 {
-	auto& tp = spt_player_trace_feat.tracePlayer;
-	auto rt = tp->GetRecordingTrace();
-	if (rt != tp->AllTraces().end())
+	auto& tp = TrTracePlayer::Singleton();
+	auto rt = tp.GetRecordingTrace();
+	if (rt != tp.AllTraces().end())
 	{
 		if (TrTracePlayer::trace_map::key_compare{}.Compare3Way(rt->first, fsPath) == 0)
 		{
@@ -115,11 +114,11 @@ static void CC_Trace_Start(const std::filesystem::path& fsPath)
 
 		// flush silently
 		ser::StatusTracker stat;
-		tp->StopAndFlushRecording(stat);
+		tp.StopAndFlushRecording(stat);
 	}
 
 	ser::StatusTracker stat;
-	tp->TryStartRecording(fsPath, stat);
+	tp.TryStartRecording(fsPath, stat);
 	if (stat.Ok())
 	{
 		spt_player_trace_feat.deferredSegmentReason = TR_SR_NONE;
@@ -178,16 +177,16 @@ CON_COMMAND_F(spt_trace_stop,
               "Stops recording the current player trace, writes it to disk, and draws it",
               FCVAR_DONTRECORD)
 {
-	auto& tp = spt_player_trace_feat.tracePlayer;
-	auto recordingIt = tp->GetRecordingTrace();
-	if (recordingIt == tp->AllTraces().end())
+	auto& tp = TrTracePlayer::Singleton();
+	auto recordingIt = tp.GetRecordingTrace();
+	if (recordingIt == tp.AllTraces().end())
 	{
 		Warning("SPT: No active trace!\n");
 		return;
 	}
 
 	ser::StatusTracker stat;
-	auto it = tp->StopAndFlushRecording(stat);
+	auto it = tp.StopAndFlushRecording(stat);
 
 	if (stat.Ok())
 		Msg("Done, recorded for %d ticks.\n", it->second.tr.numRecordedTicks);
@@ -197,15 +196,15 @@ CON_COMMAND_F(spt_trace_stop,
 
 CON_COMMAND_F(spt_trace_list, "List all loaded traces", FCVAR_DONTRECORD)
 {
-	auto& tp = spt_player_trace_feat.tracePlayer;
-	auto& traces = tp->AllTraces();
+	auto& tp = TrTracePlayer::Singleton();
+	auto& traces = tp.AllTraces();
 	if (traces.empty())
 	{
 		Msg("No loaded traces\n");
 		return;
 	}
 
-	TrTracePlayer::traces_itc rt = tp->GetRecordingTrace();
+	TrTracePlayer::traces_itc rt = tp.GetRecordingTrace();
 
 	// TODO use BufferedCmdWriter from fcps
 
@@ -244,9 +243,9 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 		}
 	}
 
-	auto& tp = spt_player_trace_feat.tracePlayer;
-	auto& traces = tp->AllTraces();
-	TrTracePlayer::traces_itc rt = tp->GetRecordingTrace();
+	auto& tp = TrTracePlayer::Singleton();
+	auto& traces = tp.AllTraces();
+	TrTracePlayer::traces_itc rt = tp.GetRecordingTrace();
 
 	size_t nDeleted = 0;
 	for (auto it = traces.begin(); it != traces.end();)
@@ -255,7 +254,7 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 			continue;
 		if (PathMatchSpecW(it->first.c_str(), pathSpec.c_str()))
 		{
-			tp->Remove(it++);
+			tp.Remove(it++);
 			++nDeleted;
 		}
 		else
@@ -269,7 +268,7 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 
 CON_COMMAND_F(spt_trace_unload_all, "Unloads all non-recording traces", FCVAR_DONTRECORD)
 {
-	Msg("Deleted %u traces\n", spt_player_trace_feat.tracePlayer->Clear(false));
+	Msg("Deleted %u traces\n", TrTracePlayer::Singleton().Clear(false));
 }
 
 CON_COMMAND_F(spt_trace_next_tick, "Increments the trace draw tick", FCVAR_DONTRECORD)
@@ -320,8 +319,8 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 
 	size_t nNewImports = 0, nAlreadyImported = 0;
 	bool anyErrors = false;
-	auto& tp = spt_player_trace_feat.tracePlayer;
-	TrTracePlayer::traces_itc lastAddedIt = tp->AllTraces().end();
+	auto& tp = TrTracePlayer::Singleton();
+	TrTracePlayer::traces_itc lastAddedIt = tp.AllTraces().end();
 	std::filesystem::path parentPath = pathSpec.parent_path();
 	std::filesystem::path fileSpec = pathSpec.filename();
 
@@ -335,7 +334,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 		if (!PathMatchSpecW(newPath.filename().c_str(), fileSpec.c_str()))
 			continue;
 		status = ser::StatusTracker{};
-		auto [it, isNew] = tp->TryLoadFromDisk(newPath, status);
+		auto [it, isNew] = tp.TryLoadFromDisk(newPath, status);
 		if (!status.Ok())
 		{
 			Warning("Error importing file '%s': %s\n",
@@ -459,8 +458,6 @@ void PlayerTraceFeature::LoadFeature()
 	if (!spt_meshRenderer.signal.Works)
 		return;
 
-	tracePlayer = std::make_unique<TrTracePlayer>();
-
 	TickSignal.Connect(this, &PlayerTraceFeature::OnTickSignal);
 	FinishRestoreSignal.Connect(this, &PlayerTraceFeature::OnFinishRestoreSignal);
 	spt_meshRenderer.signal.Connect(this, &PlayerTraceFeature::OnMeshRenderSignal);
@@ -496,36 +493,25 @@ void PlayerTraceFeature::LoadFeature()
 	InitConcommandBase(spt_trace_draw_cam_style);
 	InitConcommandBase(spt_trace_draw_contact_points);
 
-	// TODO jank I really should pulled the shared logic out
-	auto fillAndGetDetailedSelection = []() -> tr_imgui::ImGuiDetailedInfoTraceSelection&
-	{
-		static tr_imgui::ImGuiDetailedInfoTraceSelection info;
-		info.tp = spt_player_trace_feat.tracePlayer.get();
-		info.activeTick = spt_player_trace_feat.absDrawTick;
-		return info;
-	};
-
-	SptImGuiGroup::PlayerTrace_Player.RegisterUserCallback(
-	    [this, &fillAndGetDetailedSelection]() { tr_imgui::PlayerTabCallback(fillAndGetDetailedSelection()); });
-	SptImGuiGroup::PlayerTrace_Entities.RegisterUserCallback(
-	    [this, &fillAndGetDetailedSelection]() { tr_imgui::EntityTabCallback(fillAndGetDetailedSelection()); });
+	SptImGuiGroup::PlayerTrace_Player.RegisterUserCallback([this]() { tr_imgui::PlayerTabCallback(absDrawTick); });
+	SptImGuiGroup::PlayerTrace_Entities.RegisterUserCallback([this]()
+	                                                         { tr_imgui::EntityTabCallback(absDrawTick); });
 	if (utils::DoesGameLookLikePortal())
 	{
-		SptImGuiGroup::PlayerTrace_Portals.RegisterUserCallback(
-		    [this, &fillAndGetDetailedSelection]()
-		    { tr_imgui::PortalTabCallback(fillAndGetDetailedSelection()); });
+		SptImGuiGroup::PlayerTrace_Portals.RegisterUserCallback([this]()
+		                                                        { tr_imgui::PortalTabCallback(absDrawTick); });
 	}
 
-	SptImGuiGroup::PlayerTrace_Select.RegisterUserCallback(
-	    [this]() { tr_imgui::TraceFileSelectionTabCallback(*tracePlayer, igfd); });
-	SptImGui::RegisterWindowCallback([this]() { tr_imgui::TraceFileSelectionWindowCallback(*tracePlayer, igfd); });
+	SptImGuiGroup::PlayerTrace_Select.RegisterUserCallback([this]()
+	                                                       { tr_imgui::TraceFileSelectionTabCallback(igfd); });
+	SptImGui::RegisterWindowCallback([this]() { tr_imgui::TraceFileSelectionWindowCallback(igfd); });
 
-	SptImGuiGroup::PlayerTrace_DrawStyle.RegisterUserCallback([this]() { tr_imgui::RenderStyleTab(*tracePlayer); });
+	SptImGuiGroup::PlayerTrace_DrawStyle.RegisterUserCallback([this]() { tr_imgui::RenderStyleTab(); });
 }
 
 void PlayerTraceFeature::UnloadFeature()
 {
-	spt_player_trace_feat.tracePlayer.reset();
+	TrTracePlayer::Singleton().Clear(true);
 	igfd.reset();
 }
 
@@ -544,8 +530,9 @@ void PlayerTraceFeature::SetDisplayTick(tr_tick val)
 
 void PlayerTraceFeature::OnTickSignal(bool simulating)
 {
-	auto it = tracePlayer->GetRecordingTrace();
-	if (it != tracePlayer->AllTraces().end())
+	auto& tp = TrTracePlayer::Singleton();
+	auto it = tp.GetRecordingTrace();
+	if (it != tp.AllTraces().end())
 		it->second.tr.HostTickCollect(true, deferredSegmentReason, spt_trace_ent_collect_radius.GetFloat());
 	deferredSegmentReason = TR_SR_NONE;
 	if (spt_trace_autoplay.GetBool())
@@ -562,20 +549,21 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	if (!spt_draw_trace.GetBool())
 		return;
 
-	auto& traces = tracePlayer->AllTraces();
-	if (!spt_trace_draw_while_recording.GetBool() && tracePlayer->GetRecordingTrace() != traces.end())
+	auto& tp = TrTracePlayer::Singleton();
+	auto& traces = tp.AllTraces();
+	if (!spt_trace_draw_while_recording.GetBool() && tp.GetRecordingTrace() != traces.end())
 		return;
 
 	// TODO - these cvars will only change the main style but non of the other ones
 
-	auto& majorStyle = tracePlayer->mainStyleConfig;
+	auto& majorStyle = tp.mainStyleConfig;
 	majorStyle.playerPath.cones.draw = spt_trace_draw_path_cones.GetBool();
 	majorStyle.playerEye.style =
 	    (TrPlayerCameraDrawType)std::clamp(spt_trace_draw_cam_style.GetInt(), 0, (int)TR_PCDT_COUNT);
 	majorStyle.contactPoints.draw = spt_trace_draw_contact_points.GetBool();
 	majorStyle.entPhys.portalCollisionEnts.draw = spt_trace_draw_portal_collision_entities.GetBool();
 
-	TrTracePlayer::traces_itc rt = tracePlayer->GetRecordingTrace();
+	TrTracePlayer::traces_itc rt = tp.GetRecordingTrace();
 	bool drawRecordingTrace = spt_trace_draw_recording.GetBool();
 	drawRecordingTrace |= rt == traces.end(); // bit of a hack to make the logic below slightly easier
 
@@ -583,17 +571,16 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	static std::vector<const TrTracePlayer::Entry*> entriesToDraw;
 	entriesToDraw.clear();
 
-	TrTracePlayer::traces_itc priorityTraceIt = tracePlayer->imguiHoveredTraceIt == traces.end()
-	                                                ? tracePlayer->soloTraceIt
-	                                                : tracePlayer->imguiHoveredTraceIt;
+	TrTracePlayer::traces_itc priorityTraceIt =
+	    tp.imguiHoveredTraceIt == traces.end() ? tp.soloTraceIt : tp.imguiHoveredTraceIt;
 
 	if (priorityTraceIt != traces.end())
 	{
 		entriesToDraw.push_back(&priorityTraceIt->second);
 	}
-	else if (tracePlayer->soloGroupIt != tracePlayer->traceGroups.end())
+	else if (tp.soloGroupIt != tp.traceGroups.end())
 	{
-		for (auto& traceIt : tracePlayer->soloGroupIt->entries)
+		for (auto& traceIt : tp.soloGroupIt->entries)
 			if (traceIt->second.visible && (drawRecordingTrace || traceIt != rt))
 				entriesToDraw.push_back(&traceIt->second);
 	}
@@ -609,7 +596,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 		TrReadContextScope scope{pEntry->tr};
 		auto& renderCache = pEntry->tr.GetRenderingCache();
 
-		auto& style = pEntry->groupIt->GetCfg(tracePlayer->mainStyleConfig);
+		auto& style = pEntry->groupIt->GetCfg(tp.mainStyleConfig);
 		if (entriesToDraw.size() == 1)
 		{
 			renderCache.RenderAll(mr, style, absDrawTick);
@@ -623,7 +610,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	}
 
 	// imgui will set this
-	tracePlayer->imguiHoveredTraceIt = traces.end();
+	tp.imguiHoveredTraceIt = traces.end();
 }
 
 #ifdef SPT_HUD_ENABLED

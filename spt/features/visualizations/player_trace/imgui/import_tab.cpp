@@ -39,9 +39,10 @@ std::string tr_imgui::TrGetDisplayPath(const std::filesystem::path& absPath)
 	}
 }
 
-void tr_imgui::TraceFileSelectionTabCallback(TrTracePlayer& tfm, std::unique_ptr<ImGuiFileDialog>& igfd)
+void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& igfd)
 {
-	auto& traces = tfm.AllTraces();
+	auto& tp = TrTracePlayer::Singleton();
+	auto& traces = tp.AllTraces();
 
 	ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
 	if (ImGui::TreeNode("Loaded traces"))
@@ -109,13 +110,13 @@ void tr_imgui::TraceFileSelectionTabCallback(TrTracePlayer& tfm, std::unique_ptr
 				}
 
 				if (itToDelete != traces.end())
-					tfm.Remove(itToDelete);
+					tp.Remove(itToDelete);
 
 				ImGui::EndTable();
 			}
 
 			if (ImGui::Button("Clear all traces"))
-				tfm.Clear(false);
+				tp.Clear(false);
 		}
 		else
 		{
@@ -140,13 +141,13 @@ void tr_imgui::TraceFileSelectionTabCallback(TrTracePlayer& tfm, std::unique_ptr
 
 			// NOTE: capturing the TrTracePlayer by reference for the lifetime of the ImGuiFileDialog
 			igfd->SetFileStyle(
-			    [&tfm](const IGFD::FileInfos& info, IGFD::FileStyle& outStyle) -> bool
+			    [](const IGFD::FileInfos& info, IGFD::FileStyle& outStyle) -> bool
 			    {
 				    if (!info.fileType.isFile())
 					    return false;
 				    std::filesystem::path fullPath =
 				        std::filesystem::path(info.filePath) / info.fileNameExt;
-				    if (tfm.AllTraces().contains(fullPath))
+				    if (TrTracePlayer::Singleton().AllTraces().contains(fullPath))
 				    {
 					    outStyle.color = {
 					        traceFileColor.x * 0.5f,
@@ -166,7 +167,7 @@ void tr_imgui::TraceFileSelectionTabCallback(TrTracePlayer& tfm, std::unique_ptr
 		    .flags = ImGuiFileDialogFlags_NaturalSorting | ImGuiFileDialogFlags_Modal
 		             | ImGuiFileDialogFlags_DisableCreateDirectoryButton
 		             | ImGuiFileDialogFlags_DisableThumbnailMode | ImGuiFileDialogFlags_ShowDevicesButton,
-		    .userFileAttributes = [&tfm](IGFD::FileInfos* info, IGFD::UserDatas) -> bool
+		    .userFileAttributes = [](IGFD::FileInfos* info, IGFD::UserDatas) -> bool
 		    {
 			    // still show the the files if they're already loaded, but let the user know
 			    if (!info)
@@ -174,7 +175,7 @@ void tr_imgui::TraceFileSelectionTabCallback(TrTracePlayer& tfm, std::unique_ptr
 			    if (!info->fileType.isFile())
 				    return true;
 			    std::filesystem::path fullPath = std::filesystem::path(info->filePath) / info->fileNameExt;
-			    if (tfm.AllTraces().contains(fullPath))
+			    if (TrTracePlayer::Singleton().AllTraces().contains(fullPath))
 			    {
 				    info->tooltipMessage = "Already loaded";
 				    // TODO this should work if tooltipColumn==-1, submit a bug
@@ -193,11 +194,12 @@ void tr_imgui::TraceFileSelectionTabCallback(TrTracePlayer& tfm, std::unique_ptr
 	// g_importErrTip.Show(SPT_IMGUI_WARN_COLOR_YELLOW, 5.);
 }
 
-void tr_imgui::TraceFileSelectionWindowCallback(TrTracePlayer& tfm, std::unique_ptr<ImGuiFileDialog>& igfd)
+void tr_imgui::TraceFileSelectionWindowCallback(std::unique_ptr<ImGuiFileDialog>& igfd)
 {
 	if (!igfd || !igfd->IsOpened(TR_FILE_SELECT_WND_ID))
 		return;
 
+	auto& tp = TrTracePlayer::Singleton();
 	Vector2D viewPortSize = ImGui::GetMainViewport()->Size;
 
 	if (igfd->Display(TR_FILE_SELECT_WND_ID, ImGuiWindowFlags_NoCollapse, viewPortSize * 0.25f))
@@ -209,7 +211,7 @@ void tr_imgui::TraceFileSelectionWindowCallback(TrTracePlayer& tfm, std::unique_
 			for (auto& [_, pathStr] : igfd->GetSelection())
 			{
 				ser::StatusTracker status;
-				tfm.TryLoadFromDisk(pathStr, status);
+				tp.TryLoadFromDisk(pathStr, status);
 				if (!status.Ok())
 				{
 					if (g_importErrStr.empty())
@@ -224,34 +226,14 @@ void tr_imgui::TraceFileSelectionWindowCallback(TrTracePlayer& tfm, std::unique_
 	}
 }
 
-bool tr_imgui::DrawDetailedTraceSelect(ImGuiDetailedInfoTraceSelection& info)
+bool tr_imgui::DrawDetailedTraceSelect()
 {
-	auto& traces = info.tp->AllTraces();
-	auto& it = info.tp->detailedImGuiTraceIt;
+	auto& tp = TrTracePlayer::Singleton();
+	auto& traces = tp.AllTraces();
+	auto& it = tp.detailedImGuiTraceIt;
 
 	if (it == traces.end())
 		it = traces.begin();
-
-	/*if (onlyTracesForTick && it != traces.end())
-	{
-		auto [_, tickClamped] = it->second->RemapTick(activeTick);
-		if (tickClamped)
-		{
-			// the trace that we're selecting is not active at this tick, find a different one!
-			auto newIt = std::ranges::find_if(traces,
-			                                  [activeTick](const TrTracePlayer::traces_it::value_type& newOpt)
-			                                  {
-				                                  auto [_, newTickClamped] =
-				                                      newOpt.second->RemapTick(activeTick);
-				                                  return !newTickClamped;
-			                                  });
-			if (newIt != traces.end())
-			{
-				it = newIt;
-				ret = true;
-			}
-		}
-	}*/
 
 	bool anyLoaded = it != traces.end();
 	ImGui::BeginDisabled(!anyLoaded);
@@ -262,13 +244,6 @@ bool tr_imgui::DrawDetailedTraceSelect(ImGuiDetailedInfoTraceSelection& info)
 		for (auto newIt = traces.begin(); newIt != traces.end(); ++newIt)
 		{
 			bool isSelected = newIt == it;
-			/*ImGuiSelectableFlags flags = ImGuiSelectableFlags_None;
-			if (onlyTracesForTick)
-			{
-				auto [_, tickClamped] = newIt->second->RemapTick(activeTick);
-				if (tickClamped)
-					flags |= ImGuiSelectableFlags_Disabled;
-			}*/
 			if (ImGui::Selectable(tr_imgui::TrGetDisplayPath(newIt->first).c_str(), &isSelected))
 				it = newIt;
 			if (isSelected)

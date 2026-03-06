@@ -12,15 +12,15 @@
 
 using namespace player_trace;
 
-void tr_imgui::EntityTabCallback(ImGuiDetailedInfoTraceSelection& info)
+void tr_imgui::EntityTabCallback(tr_tick activeTick)
 {
-	if (!tr_imgui::DrawDetailedTraceSelect(info))
+	if (!tr_imgui::DrawDetailedTraceSelect())
 		return;
-	tr_imgui::DrawDetailedInfoHeader(info);
+	tr_imgui::DrawDetailedInfoHeader(activeTick);
 
-	auto& tr = info.tp->detailedImGuiTraceIt->second.tr;
+	auto& tp = TrTracePlayer::Singleton();
+	auto& tr = tp.detailedImGuiTraceIt->second.tr;
 	TrReadContextScope scope{tr};
-	tr_tick activeTick = info.activeTick;
 
 	auto& entCache = tr.GetEntityCache();
 	auto& entMap = entCache.GetEnts(activeTick);

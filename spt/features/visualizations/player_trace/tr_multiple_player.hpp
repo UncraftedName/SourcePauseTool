@@ -123,6 +123,10 @@ namespace player_trace
 
 		void AddNewEntryToDefaultGroup(traces_it it) const;
 
+		TrTracePlayer();
+		TrTracePlayer(TrTracePlayer&) = delete;
+		TrTracePlayer(TrTracePlayer&&) = delete;
+
 	public:
 		traces_itc detailedImGuiTraceIt = traces.end();
 		// these are all public read/write listed in order of priority
@@ -132,19 +136,11 @@ namespace player_trace
 
 		ImGuiSelectionBasicStorage imguiEntrySelect;
 
-		TrTracePlayer()
+		static TrTracePlayer& Singleton()
 		{
-			defaultGroupIt = traceGroups.emplace(traceGroups.end(), "default", color32(255, 255, 255, 255));
-			defaultGroupIt->name = "default";
-			defaultGroupIt->isDefault = true;
-
-			imguiEntrySelect.AdapterIndexToStorageId = nullptr;
-			imguiEntrySelect.UserData = nullptr;
-			imguiEntrySelect.PreserveOrder = true; // possibly bugged
+			static TrTracePlayer tp;
+			return tp;
 		}
-
-		TrTracePlayer(TrTracePlayer&) = delete;
-		TrTracePlayer(TrTracePlayer&&) = delete;
 
 		const auto& AllTraces() const
 		{
