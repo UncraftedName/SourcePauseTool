@@ -578,7 +578,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	drawRecordingTrace |= rt == traces.end(); // bit of a hack to make the logic below slightly easier
 
 	// TODO display the count in imgui somehow
-	static std::vector<const TrTracePlayer::Entry*> entriesToDraw;
+	static std::vector<const TrTracePlayer::TraceEntry*> entriesToDraw;
 	entriesToDraw.clear();
 
 	TrTracePlayer::trace_itc priorityTraceIt =
@@ -588,7 +588,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	{
 		entriesToDraw.push_back(&priorityTraceIt->second);
 	}
-	else if (tp.soloGroupIt != tp.traceGroups.end())
+	else if (tp.soloGroupIt != tp.groups.end())
 	{
 		for (auto& traceIt : tp.soloGroupIt->entries)
 			if (traceIt->second.visible && (drawRecordingTrace || traceIt != rt))

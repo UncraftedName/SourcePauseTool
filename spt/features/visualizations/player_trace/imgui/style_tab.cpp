@@ -24,7 +24,7 @@ class GroupTintCallback
 
 	// these are set as we iterate over groups and the entries in them
 	TrTracePlayer::group_it groupIt{};
-	TrTracePlayer::group_entry_itc entryIt{};
+	TrTracePlayer::group_entry_it entryIt{};
 
 	static constexpr const char* GROUP_DRAG_DROP_ID = "TRACE_GROUP_DD";
 	static constexpr const char* ENTRY_DRAG_DROP_ID = "TRACE_GROUP_ENTRIES_DD";
@@ -40,7 +40,7 @@ public:
 	{
 #ifndef NDEBUG
 		// sanity check
-		for (auto& group : tracePlayer.traceGroups)
+		for (auto& group : tracePlayer.groups)
 		{
 			for (auto& traceIt : group.entries)
 			{
@@ -75,7 +75,8 @@ public:
 		imguiEntrySelection.ApplyRequests(msIo);
 
 		// iterate over each group
-		for (groupIt = tracePlayer.traceGroups.begin(); groupIt != tracePlayer.traceGroups.end();)
+		auto& groups = tracePlayer.Groups();
+		for (groupIt = groups.begin(); groupIt != groups.end();)
 		{
 			auto& group = *groupIt;
 			ImGui::PushID(&*groupIt);
@@ -172,7 +173,7 @@ private:
 	static void GroupDragDropTargetCallback(const ImGuiPayload* payload, void* userData)
 	{
 		auto thisptr = ((GroupTintCallback*)userData);
-		auto& groups = thisptr->tracePlayer.traceGroups;
+		auto& groups = thisptr->tracePlayer.Groups();
 		auto fromIt = (TrTracePlayer::group_it*)payload->Data;
 		groups.splice(thisptr->groupIt, groups, *fromIt);
 	}
@@ -189,18 +190,12 @@ private:
 		while (thisptr->imguiEntrySelection.GetNextSelectedItem(&imguiIt, &id))
 		{
 			auto pTraceEntry = (TrTracePlayer::trace_map::pointer)id;
-			TrTracePlayer::Entry& entry = pTraceEntry->second;
+			TrTracePlayer::TraceEntry& entry = pTraceEntry->second;
 
 			if (groupIt == entry.groupIt && targetEntryItTo == entry.entryInGroupIt)
-			{
-				// without this if you try to drop entries into the slot they're in they'll get reversed
-				++targetEntryItTo;
-			}
+				++targetEntryItTo; // without this if you try to drop entries into the slot they're in they'll get reversed
 			else
-			{
-				groupIt->entries.splice(targetEntryItTo, entry.groupIt->entries, entry.entryInGroupIt);
-				entry.groupIt = thisptr->groupIt;
-			}
+				thisptr->tracePlayer.MoveTraceToGroup(*entry.entryInGroupIt, groupIt, targetEntryItTo);
 		}
 	}
 
@@ -218,12 +213,13 @@ private:
 
 		ImGui::SameLine();
 
-		ImGui::BeginDisabled(group.isDefault);
+		bool isDefault = groupIt == tracePlayer.GetDefaultGroup();
+		ImGui::BeginDisabled(isDefault);
 		ImGuiInputTextFlags groupNameFlags = ImGuiInputFlags_None;
-		if (groupIt == tracePlayer.defaultGroupIt)
+		if (isDefault)
 			groupNameFlags |= ImGuiInputTextFlags_ReadOnly;
 		ImGui::InputTextWithHint("##group_name", "enter group name", &group.name, groupNameFlags);
-		if (group.isDefault)
+		if (isDefault)
 			ImGui::SetItemTooltip("default group can't be renamed");
 		ImGui::EndDisabled();
 
@@ -243,7 +239,7 @@ private:
 		ImGui::SetItemTooltip("solo group");
 		ImGui::EndDisabled();
 
-		if (!group.isDefault)
+		if (!isDefault)
 		{
 			ImGui::SameLine();
 			deleteThisGroup = ImGui::SmallButton(ICON_CI_TRASH);

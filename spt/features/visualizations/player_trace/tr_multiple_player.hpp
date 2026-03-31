@@ -35,14 +35,14 @@ namespace player_trace
 	public:
 		inline static const char* COMPRESSED_FILE_EXT = ".sptr.xz";
 
-		class TraceGroup;
-		struct Entry;
+		class Group;
+		struct TraceEntry;
 
-		using trace_map = std::map<std::filesystem::path, Entry, utils::NaturalCompare>;
+		using trace_map = std::map<std::filesystem::path, TraceEntry, utils::NaturalCompare>;
 		using trace_it = trace_map::iterator;
 		using trace_itc = trace_map::const_iterator;
 
-		using trace_groups = std::list<TraceGroup>;
+		using trace_groups = std::list<Group>;
 		using group_it = trace_groups::iterator;
 		using group_itc = trace_groups::const_iterator;
 
@@ -50,11 +50,7 @@ namespace player_trace
 		using group_entry_it = group_entries::iterator;
 		using group_entry_itc = group_entries::const_iterator;
 
-		// TODO readonly public?
-		trace_groups traceGroups;
-		group_it defaultGroupIt = traceGroups.end();
-
-		struct Entry
+		struct TraceEntry
 		{
 			TrPlayerTrace tr;
 			mutable bool visible = true;
@@ -64,7 +60,7 @@ namespace player_trace
 			std::list<trace_it>::iterator entryInGroupIt;
 		};
 
-		class TraceGroup
+		class Group
 		{
 			std::optional<TrRenderStyleConfig> cfg; // if not set, re-init from main style with tint
 			color32 tint;
@@ -73,10 +69,9 @@ namespace player_trace
 			std::string name;
 			// TODO all of these can be readonly public
 			bool visible = true;
-			bool isDefault = false;
 			group_entries entries;
 
-			TraceGroup(std::string name, color32 tint) : name(std::move(name)), tint(tint) {}
+			Group(std::string name, color32 tint) : name(std::move(name)), tint(tint) {}
 
 			color32 GetTint() const
 			{
@@ -92,7 +87,7 @@ namespace player_trace
 				}
 			}
 
-			TrRenderStyleConfig& GetCfg(const TrRenderStyleConfig& majorCfg)
+			const TrRenderStyleConfig& GetCfg(const TrRenderStyleConfig& majorCfg)
 			{
 				if (!cfg.has_value())
 				{
@@ -114,6 +109,8 @@ namespace player_trace
 		struct RecordingTrace;
 
 		trace_map traces;
+		trace_groups groups;
+		group_it defaultGroupIt = groups.end();
 		// TODO highlight this in imgui
 		std::unique_ptr<RecordingTrace> recordingTrace;
 
@@ -133,7 +130,7 @@ namespace player_trace
 		*/
 		trace_itc imguiHoveredTraceIt = traces.end();
 		trace_itc soloTraceIt = traces.end();
-		group_itc soloGroupIt = traceGroups.end();
+		group_itc soloGroupIt = groups.end();
 
 		// ImGui structure that allows for entry multi-selection
 		ImGuiSelectionBasicStorage imguiEntrySelect;
@@ -147,6 +144,17 @@ namespace player_trace
 		const auto& AllTraces() const
 		{
 			return traces;
+		}
+
+		const auto& Groups() const
+		{
+			return groups;
+		}
+
+		// this is the group that new traces are added to by default, and also the only group that can't be deleted
+		group_itc GetDefaultGroup() const
+		{
+			return defaultGroupIt;
 		}
 
 		/*
@@ -178,9 +186,7 @@ namespace player_trace
 		BoolOptInfo GetTraceVisibleOpt(trace_itc it) const;
 		void SetTraceVisibleOpt(trace_it it, bool val);
 
-		group_itc AddGroup(color32 tint);
-		group_entry_itc MoveTraceToGroup(group_it gIt, group_entry_it where, trace_it tIt);
-
+		// only use to record additional info to the trace or compare with, do not tinker with the entry fields
 		trace_it GetRecordingTrace();
 
 		trace_itc TryStartRecording(std::filesystem::path path, ser::StatusTracker& stat);
@@ -188,6 +194,10 @@ namespace player_trace
 
 		// load trace from disk, return <iterator, isNew>
 		std::pair<trace_itc, bool> TryLoadFromDisk(const std::filesystem::path& path, ser::StatusTracker& stat);
+
+		group_itc AddGroup(color32 tint);
+		group_entry_itc MoveTraceToGroup(trace_it traceIt, group_it groupIt, group_entry_it entryIt);
+		group_it ReorderGroup(group_itc from, group_itc to);
 
 		void Remove(trace_itc it);
 		void Remove(group_itc it);
