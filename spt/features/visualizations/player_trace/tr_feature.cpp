@@ -28,15 +28,12 @@
 #include <ShlObj_core.h>
 #include <Shlwapi.h>
 
-#include <ranges>
-
 #ifdef clamp
 #undef clamp
 #endif
 
 using namespace player_trace;
 
-#define DEFAULT_TRACE_PATH "trace/default"
 
 // RAII context to disable certain render options while drawing multiple traces
 class TrMultiTraceRenderContext
@@ -66,7 +63,6 @@ public:
 class PlayerTraceFeature : public FeatureWrapper<PlayerTraceFeature>
 {
 public:
-	TrTracePlayer::trace_it StopRecording();
 	void ChangeDisplayTick(int diff);
 	void SetDisplayTick(tr_tick val);
 
@@ -99,7 +95,7 @@ static PlayerTraceFeature spt_player_trace_feat;
 static void CC_Trace_Start(const std::filesystem::path& fsPath)
 {
 	auto& tp = TrTracePlayer::Singleton();
-	auto rt = tp.GetRecordingTrace();
+	auto rt = tp.GetRecordingTraceHandle();
 	if (rt != tp.AllTraces().end())
 	{
 		if (TrTracePlayer::trace_map::key_compare{}.Compare3Way(rt->first, fsPath) == 0)
@@ -108,8 +104,7 @@ static void CC_Trace_Start(const std::filesystem::path& fsPath)
 		}
 		else
 		{
-			Warning("Trace recording to '%s' already in progress, stopping\n",
-			        rt->first.u8string().c_str());
+			Warning("Trace recording to '%s' already in progress, stopping\n", rt->first.string().c_str());
 		}
 
 		// flush silently
@@ -124,7 +119,7 @@ static void CC_Trace_Start(const std::filesystem::path& fsPath)
 		spt_player_trace_feat.deferredSegmentReason = TR_SR_NONE;
 		Msg("Started recording trace, '%s' will stop recording and write to '%s'\n",
 		    "spt_trace_stop",
-		    fsPath.u8string().c_str());
+		    fsPath.string().c_str());
 	}
 	else
 	{
@@ -134,12 +129,12 @@ static void CC_Trace_Start(const std::filesystem::path& fsPath)
 
 CON_COMMAND_F(spt_trace_start,
               "Creates a file and starts recording the player trace;"
-              " if no file is specified, uses '" DEFAULT_TRACE_PATH "'",
+              " if no file is specified, uses '" TR_DEFAULT_PATH "'",
               FCVAR_DONTRECORD)
 {
-	const char* userStrPath = args.ArgC() < 2 ? DEFAULT_TRACE_PATH : args.Arg(1);
+	const char* userStrPath = args.ArgC() < 2 ? TR_DEFAULT_PATH : args.Arg(1);
 	std::error_code ec;
-	std::filesystem::path fsPath = utils::ResolveUserPath(userStrPath, TrTracePlayer::COMPRESSED_FILE_EXT, ec);
+	std::filesystem::path fsPath = utils::ResolveUserPath(userStrPath, TR_COMPRESSED_FILE_EXT, ec);
 	if (ec)
 	{
 		Warning("Failed to resolve '%s' to a valid path: %s\n", userStrPath, ec.message().c_str());
@@ -153,9 +148,9 @@ CON_COMMAND_F(spt_trace_start_auto_increment,
               " if the given path exists, creates a new one",
               FCVAR_DONTRECORD)
 {
-	const char* userStrPath = args.ArgC() < 2 ? DEFAULT_TRACE_PATH : args.Arg(1);
+	const char* userStrPath = args.ArgC() < 2 ? TR_DEFAULT_PATH : args.Arg(1);
 	std::error_code ec;
-	std::filesystem::path fsPath = utils::ResolveUserPath(userStrPath, TrTracePlayer::COMPRESSED_FILE_EXT, ec);
+	std::filesystem::path fsPath = utils::ResolveUserPath(userStrPath, TR_COMPRESSED_FILE_EXT, ec);
 	if (ec)
 	{
 		Warning("Failed to resolve '%s' to a valid path: %s\n", userStrPath, ec.message().c_str());
@@ -165,11 +160,11 @@ CON_COMMAND_F(spt_trace_start_auto_increment,
 	static std::unordered_map<std::filesystem::path, size_t> counterLookup;
 	auto [it, _] = counterLookup.emplace(fsPath, 1);
 
-	Assert(fsPath.string().ends_with(TrTracePlayer::COMPRESSED_FILE_EXT));
+	Assert(fsPath.string().ends_with(TR_COMPRESSED_FILE_EXT));
 	auto basePathView = std::wstring_view(fsPath.c_str());
-	basePathView.remove_suffix(strlen(TrTracePlayer::COMPRESSED_FILE_EXT));
+	basePathView.remove_suffix(strlen(TR_COMPRESSED_FILE_EXT));
 
-	fsPath = utils::GetNextFileName(basePathView, TrTracePlayer::COMPRESSED_FILE_EXT, &it->second);
+	fsPath = utils::GetNextFileName(basePathView, TR_COMPRESSED_FILE_EXT, &it->second);
 	CC_Trace_Start(fsPath);
 }
 
@@ -178,8 +173,7 @@ CON_COMMAND_F(spt_trace_stop,
               FCVAR_DONTRECORD)
 {
 	auto& tp = TrTracePlayer::Singleton();
-	auto recordingIt = tp.GetRecordingTrace();
-	if (recordingIt == tp.AllTraces().end())
+	if (!tp.GetRecordingTrace())
 	{
 		Warning("SPT: No active trace!\n");
 		return;
@@ -204,14 +198,14 @@ CON_COMMAND_F(spt_trace_list, "List all loaded traces", FCVAR_DONTRECORD)
 		return;
 	}
 
-	TrTracePlayer::trace_it rt = tp.GetRecordingTrace();
+	auto rt = tp.GetRecordingTraceHandle();
 
 	// TODO use BufferedCmdWriter from fcps
 
 	for (auto it = traces.begin(); it != traces.end(); ++it)
 	{
 		Msg("\"%s\" %u ticks%s\n",
-		    it->first.u8string().c_str(),
+		    it->first.string().c_str(),
 		    it->second.tr.numRecordedTicks,
 		    it == rt ? " - RECORDING" : "");
 	}
@@ -235,7 +229,7 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 	else
 	{
 		std::error_code ec;
-		pathSpec = utils::ResolveUserPath(args.Arg(1), TrTracePlayer::COMPRESSED_FILE_EXT, ec);
+		pathSpec = utils::ResolveUserPath(args.Arg(1), TR_COMPRESSED_FILE_EXT, ec);
 		if (ec)
 		{
 			Warning("Failed to resolve '%s' to a valid path: %s\n", args.Arg(1), ec.message().c_str());
@@ -245,10 +239,10 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 
 	auto& tp = TrTracePlayer::Singleton();
 	auto& traces = tp.AllTraces();
-	TrTracePlayer::trace_it rt = tp.GetRecordingTrace();
+	auto rt = tp.GetRecordingTraceHandle();
 
 	size_t nDeleted = 0;
-	for (auto it = traces.begin(); it != traces.end();)
+	for (auto it = TrTracePlayer::entry_handle::Begin(traces); it != TrTracePlayer::entry_handle::End(traces);)
 	{
 		if (it == rt)
 			continue;
@@ -263,7 +257,7 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 		}
 	}
 
-	Msg("%u traces unloaded using path spec '%s'\n", nDeleted, pathSpec.u8string().c_str());
+	Msg("%u traces unloaded using path spec '%s'\n", nDeleted, pathSpec.string().c_str());
 }
 
 CON_COMMAND_F(spt_trace_unload_all, "Unloads all non-recording traces", FCVAR_DONTRECORD)
@@ -295,7 +289,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
                              "Load trace(s) from binary file(s), supports wildcards",
                              FCVAR_DONTRECORD,
                              "",
-                             TrTracePlayer::COMPRESSED_FILE_EXT)
+                             TR_COMPRESSED_FILE_EXT)
 {
 	if (args.ArgC() < 2)
 	{
@@ -304,7 +298,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 	}
 
 	std::error_code ec;
-	std::filesystem::path pathSpec = utils::ResolveUserPath(args.Arg(1), TrTracePlayer::COMPRESSED_FILE_EXT, ec);
+	std::filesystem::path pathSpec = utils::ResolveUserPath(args.Arg(1), TR_COMPRESSED_FILE_EXT, ec);
 	if (ec)
 	{
 		Warning("Failed to resolve '%s' to a valid path: %s\n", args.Arg(1), ec.message().c_str());
@@ -320,7 +314,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 	size_t nNewImports = 0, nAlreadyImported = 0;
 	bool anyErrors = false;
 	auto& tp = TrTracePlayer::Singleton();
-	TrTracePlayer::trace_itc lastAddedIt = tp.AllTraces().end();
+	TrTracePlayer::entry_handle lastAddedTrace{};
 	std::filesystem::path parentPath = pathSpec.parent_path();
 	std::filesystem::path fileSpec = pathSpec.filename();
 
@@ -334,18 +328,18 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 		if (!PathMatchSpecW(newPath.filename().c_str(), fileSpec.c_str()))
 			continue;
 		status = ser::StatusTracker{};
-		auto [it, isNew] = tp.TryLoadFromDisk(newPath, status);
+		auto [handle, isNew] = tp.TryLoadFromDisk(newPath, status);
 		if (!status.Ok())
 		{
 			Warning("Error importing file '%s': %s\n",
-			        newPath.u8string().c_str(),
+			        newPath.string().c_str(),
 			        status.GetStatus().errMsg.c_str());
 			anyErrors = true;
 		}
 		else if (isNew)
 		{
 			++nNewImports;
-			lastAddedIt = it;
+			lastAddedTrace = handle;
 		}
 		else
 		{
@@ -356,7 +350,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 	if (ec)
 	{
 		Warning("Failed to iterate over directories in '%s': %s\n",
-		        parentPath.u8string().c_str(),
+		        parentPath.string().c_str(),
 		        ec.message().c_str());
 		return;
 	}
@@ -365,7 +359,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 
 	if (nNewImports == 1 && !anyErrors)
 	{
-		auto& newTr = lastAddedIt->second.tr;
+		auto& newTr = lastAddedTrace->second.tr;
 		TrReadContextScope scope{newTr};
 		auto& maps = newTr.Get<TrMap>();
 		Msg("Loaded trace '%s' with %d ticks\n"
@@ -373,7 +367,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 		    " - mod name: '%s'\n"
 		    " - player name: '%s'\n"
 		    " - start map: '%s'\n",
-		    lastAddedIt->first.u8string().c_str(),
+		    lastAddedTrace->first.string().c_str(),
 		    newTr.numRecordedTicks,
 		    newTr.firstRecordedInfo.gameName.c_str(),
 		    newTr.firstRecordedInfo.gameVersion,
@@ -396,7 +390,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 		Msg("Imported %u trace(s) %swith path spec '%s'\n",
 		    nNewImports,
 		    nAlreadyImported > 0 ? buf : "",
-		    pathSpec.u8string().c_str());
+		    pathSpec.string().c_str());
 	}
 }
 
@@ -460,7 +454,7 @@ static void WrapSingleTraceInfoTab(SptImGuiGroup::Tab& imguiTab, tr_imgui::singl
 	    {
 		    if (!tr_imgui::DrawDetailedTraceSelect())
 			    return;
-		    TrReadContextScope scope{TrTracePlayer::Singleton().detailedImGuiTraceIt->second.tr};
+		    TrReadContextScope scope{TrTracePlayer::Singleton().detailedImGuiTrace->second.tr};
 		    tr_tick tickToShow = spt_player_trace_feat.absDrawTick;
 		    tr_imgui::SingleTraceInfoTabHeader(tickToShow);
 		    fn(tickToShow);
@@ -541,9 +535,9 @@ void PlayerTraceFeature::SetDisplayTick(tr_tick val)
 void PlayerTraceFeature::OnTickSignal(bool simulating)
 {
 	auto& tp = TrTracePlayer::Singleton();
-	auto it = tp.GetRecordingTrace();
-	if (it != tp.AllTraces().end())
-		it->second.tr.HostTickCollect(true, deferredSegmentReason, spt_trace_ent_collect_radius.GetFloat());
+	auto rt = tp.GetRecordingTrace();
+	if (!!rt)
+		rt->HostTickCollect(true, deferredSegmentReason, spt_trace_ent_collect_radius.GetFloat());
 	deferredSegmentReason = TR_SR_NONE;
 	if (spt_trace_autoplay.GetBool())
 		ChangeDisplayTick(1);
@@ -561,7 +555,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 
 	auto& tp = TrTracePlayer::Singleton();
 	auto& traces = tp.AllTraces();
-	if (!spt_trace_draw_while_recording.GetBool() && tp.GetRecordingTrace() != traces.end())
+	if (!spt_trace_draw_while_recording.GetBool() && tp.GetRecordingTraceHandle() != traces.end())
 		return;
 
 	// TODO - these cvars will only change the main style but non of the other ones
@@ -573,7 +567,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	majorStyle.contactPoints.draw = spt_trace_draw_contact_points.GetBool();
 	majorStyle.entPhys.portalCollisionEnts.draw = spt_trace_draw_portal_collision_entities.GetBool();
 
-	TrTracePlayer::trace_itc rt = tp.GetRecordingTrace();
+	TrTracePlayer::entry_handle rt = tp.GetRecordingTraceHandle();
 	bool drawRecordingTrace = spt_trace_draw_recording.GetBool();
 	drawRecordingTrace |= rt == traces.end(); // bit of a hack to make the logic below slightly easier
 
@@ -581,23 +575,23 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	static std::vector<const TrTracePlayer::TraceEntry*> entriesToDraw;
 	entriesToDraw.clear();
 
-	TrTracePlayer::trace_itc priorityTraceIt =
-	    tp.imguiHoveredTraceIt == traces.end() ? tp.soloTraceIt : tp.imguiHoveredTraceIt;
+	TrTracePlayer::entry_handle priorityTrace =
+	    tp.imguiHoveredTrace == traces.end() ? tp.soloTrace : tp.imguiHoveredTrace;
 
-	if (priorityTraceIt != traces.end())
+	if (priorityTrace != traces.end())
 	{
-		entriesToDraw.push_back(&priorityTraceIt->second);
+		entriesToDraw.push_back(&priorityTrace->second);
 	}
-	else if (tp.soloGroupIt != tp.groups.end())
+	else if (tp.soloGroup != tp.Groups().end())
 	{
-		for (auto& traceIt : tp.soloGroupIt->entries)
+		for (auto& traceIt : tp.soloGroup->entries)
 			if (traceIt->second.visible && (drawRecordingTrace || traceIt != rt))
 				entriesToDraw.push_back(&traceIt->second);
 	}
 	else
 	{
 		for (auto& [_, entry] : traces)
-			if (entry.visible && entry.groupIt->visible && (drawRecordingTrace || &entry == &rt->second))
+			if (entry.visible && entry.myGroup->visible && (drawRecordingTrace || &entry == &rt->second))
 				entriesToDraw.push_back(&entry);
 	}
 
@@ -606,7 +600,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 		TrReadContextScope scope{pEntry->tr};
 		auto& renderCache = pEntry->tr.GetRenderingCache();
 
-		auto& style = pEntry->groupIt->GetCfg(tp.mainStyleConfig);
+		auto& style = pEntry->myGroup->GetCfg(tp.mainStyleConfig);
 		if (entriesToDraw.size() == 1)
 		{
 			renderCache.RenderAll(mr, style, absDrawTick);
@@ -620,7 +614,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	}
 
 	// imgui will set this
-	tp.imguiHoveredTraceIt = traces.end();
+	tp.imguiHoveredTrace = TrTracePlayer::entry_handle::End(traces);
 }
 
 #ifdef SPT_HUD_ENABLED

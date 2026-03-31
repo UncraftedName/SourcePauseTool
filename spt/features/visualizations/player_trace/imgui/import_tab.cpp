@@ -7,6 +7,8 @@
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "thirdparty/imgui/imgui_stdlib.h"
 
+#include <optional>
+
 using namespace player_trace;
 
 constexpr const char* TR_FILE_SELECT_WND_ID = "trace_file_select";
@@ -52,10 +54,13 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 				ImGui::TableAngledHeadersRow();
 				ImGui::TableHeadersRow();
 				int i = 0;
-				auto itToDelete = traces.end();
-				for (auto it = traces.begin(); it != traces.end(); ++it)
+				std::optional<TrTracePlayer::entry_handle> entryToDelete;
+
+				for (auto entry = TrTracePlayer::entry_handle::Begin(traces);
+				     entry != TrTracePlayer::entry_handle::End(traces);
+				     ++entry)
 				{
-					auto& [path, ev] = *it;
+					auto& [path, ev] = *entry;
 
 					TrReadContextScope scope{ev.tr};
 
@@ -80,12 +85,12 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 					// delete button
 					ImGui::TableSetColumnIndex(3);
 					if (SptImGui::SmallIconButton(ICON_CI_TRASH))
-						itToDelete = it;
+						entryToDelete = entry;
 					ImGui::PopID();
 				}
 
-				if (itToDelete != traces.end())
-					tp.Remove(itToDelete);
+				if (entryToDelete.has_value())
+					tp.Remove(entryToDelete.value());
 
 				ImGui::EndTable();
 			}
@@ -163,7 +168,7 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 
 		// TODO move this button into the tree node?
 		// TODO remember last used path?
-		igfd->OpenDialog(TR_FILE_SELECT_WND_ID, "Select traces", TrTracePlayer::COMPRESSED_FILE_EXT, cfg);
+		igfd->OpenDialog(TR_FILE_SELECT_WND_ID, "Select traces", TR_COMPRESSED_FILE_EXT, cfg);
 	}
 
 	// g_importErrTip.Show(SPT_IMGUI_WARN_COLOR_YELLOW, 5.);
@@ -205,25 +210,27 @@ bool tr_imgui::DrawDetailedTraceSelect()
 {
 	auto& tp = TrTracePlayer::Singleton();
 	auto& traces = tp.AllTraces();
-	auto it = tp.detailedImGuiTraceIt;
+	auto& handle = tp.detailedImGuiTrace;
 
-	if (it == traces.end())
-		it = traces.begin();
+	if (handle == traces.end())
+		handle = TrTracePlayer::entry_handle::Begin(traces);
 
-	bool anyLoaded = it != traces.end();
+	bool anyLoaded = handle != traces.end();
 	ImGui::BeginDisabled(!anyLoaded);
 
 	if (ImGui::BeginCombo("Trace selection",
-	                      anyLoaded ? utils::GetPathProximateToModDir(it->first).string().c_str()
+	                      anyLoaded ? utils::GetPathProximateToModDir(handle->first).string().c_str()
 	                                : "no loaded traces"))
 	{
-		for (auto newIt = traces.begin(); newIt != traces.end(); ++newIt)
+		for (auto newHandle = TrTracePlayer::entry_handle::Begin(traces);
+		     newHandle != TrTracePlayer::entry_handle::End(traces);
+		     ++newHandle)
 		{
-			bool isSelected = newIt == it;
-			if (ImGui::Selectable(utils::GetPathProximateToModDir(newIt->first).string().c_str(),
+			bool isSelected = newHandle == handle;
+			if (ImGui::Selectable(utils::GetPathProximateToModDir(newHandle->first).string().c_str(),
 			                      &isSelected))
 			{
-				it = newIt;
+				handle = newHandle;
 			}
 			if (isSelected)
 				ImGui::SetItemDefaultFocus();
