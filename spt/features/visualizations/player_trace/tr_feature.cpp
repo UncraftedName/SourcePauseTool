@@ -66,7 +66,7 @@ public:
 class PlayerTraceFeature : public FeatureWrapper<PlayerTraceFeature>
 {
 public:
-	TrTracePlayer::traces_it StopRecording();
+	TrTracePlayer::trace_it StopRecording();
 	void ChangeDisplayTick(int diff);
 	void SetDisplayTick(tr_tick val);
 
@@ -204,7 +204,7 @@ CON_COMMAND_F(spt_trace_list, "List all loaded traces", FCVAR_DONTRECORD)
 		return;
 	}
 
-	TrTracePlayer::traces_itc rt = tp.GetRecordingTrace();
+	TrTracePlayer::trace_it rt = tp.GetRecordingTrace();
 
 	// TODO use BufferedCmdWriter from fcps
 
@@ -245,7 +245,7 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 
 	auto& tp = TrTracePlayer::Singleton();
 	auto& traces = tp.AllTraces();
-	TrTracePlayer::traces_itc rt = tp.GetRecordingTrace();
+	TrTracePlayer::trace_it rt = tp.GetRecordingTrace();
 
 	size_t nDeleted = 0;
 	for (auto it = traces.begin(); it != traces.end();)
@@ -320,7 +320,7 @@ CON_COMMAND_AUTOCOMPLETEFILE(spt_trace_import,
 	size_t nNewImports = 0, nAlreadyImported = 0;
 	bool anyErrors = false;
 	auto& tp = TrTracePlayer::Singleton();
-	TrTracePlayer::traces_itc lastAddedIt = tp.AllTraces().end();
+	TrTracePlayer::trace_itc lastAddedIt = tp.AllTraces().end();
 	std::filesystem::path parentPath = pathSpec.parent_path();
 	std::filesystem::path fileSpec = pathSpec.filename();
 
@@ -573,7 +573,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	majorStyle.contactPoints.draw = spt_trace_draw_contact_points.GetBool();
 	majorStyle.entPhys.portalCollisionEnts.draw = spt_trace_draw_portal_collision_entities.GetBool();
 
-	TrTracePlayer::traces_itc rt = tp.GetRecordingTrace();
+	TrTracePlayer::trace_itc rt = tp.GetRecordingTrace();
 	bool drawRecordingTrace = spt_trace_draw_recording.GetBool();
 	drawRecordingTrace |= rt == traces.end(); // bit of a hack to make the logic below slightly easier
 
@@ -581,7 +581,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	static std::vector<const TrTracePlayer::Entry*> entriesToDraw;
 	entriesToDraw.clear();
 
-	TrTracePlayer::traces_itc priorityTraceIt =
+	TrTracePlayer::trace_itc priorityTraceIt =
 	    tp.imguiHoveredTraceIt == traces.end() ? tp.soloTraceIt : tp.imguiHoveredTraceIt;
 
 	if (priorityTraceIt != traces.end())

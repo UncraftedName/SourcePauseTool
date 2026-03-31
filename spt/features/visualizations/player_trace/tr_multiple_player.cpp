@@ -23,18 +23,12 @@ using namespace player_trace;
 
 struct TrTracePlayer::RecordingTrace
 {
-	traces_it it{}; // uninitialized
+	trace_it it{}; // uninitialized
 	ser::FileWriter fWr;
 	ser::XzWriter xzWr;
 
 	RecordingTrace(std::filesystem::path path) : fWr(std::move(path)), xzWr(fWr) {}
 };
-
-void TrTracePlayer::AddNewEntryToDefaultGroup(traces_it it) const
-{
-	it->second.groupIt = defaultGroupIt;
-	it->second.entryInGroupIt = defaultGroupIt->entries.emplace(defaultGroupIt->entries.end(), it);
-}
 
 TrTracePlayer::TrTracePlayer()
 {
@@ -47,12 +41,12 @@ TrTracePlayer::TrTracePlayer()
 	imguiEntrySelect.PreserveOrder = true; // possibly bugged
 }
 
-auto TrTracePlayer::GetRecordingTrace() -> traces_it
+auto TrTracePlayer::GetRecordingTrace() -> trace_it
 {
 	return recordingTrace ? recordingTrace->it : traces.end();
 }
 
-auto TrTracePlayer::TryStartRecording(std::filesystem::path path, ser::StatusTracker& stat) -> traces_itc
+auto TrTracePlayer::TryStartRecording(std::filesystem::path path, ser::StatusTracker& stat) -> trace_itc
 {
 	Assert(path.is_absolute());
 
@@ -82,7 +76,7 @@ auto TrTracePlayer::TryStartRecording(std::filesystem::path path, ser::StatusTra
 	{
 		// new entries - add them to the default group
 		// old entries - keep all settings the same
-		AddNewEntryToDefaultGroup(rt->it);
+		MoveTraceToGroup(defaultGroupIt, defaultGroupIt->entries.end(), rt->it);
 	}
 
 	recordingTrace = std::move(rt);
@@ -90,7 +84,7 @@ auto TrTracePlayer::TryStartRecording(std::filesystem::path path, ser::StatusTra
 	return recordingTrace->it;
 }
 
-auto TrTracePlayer::StopAndFlushRecording(ser::StatusTracker& stat) -> traces_itc
+auto TrTracePlayer::StopAndFlushRecording(ser::StatusTracker& stat) -> trace_itc
 {
 	if (!recordingTrace)
 	{
@@ -111,11 +105,11 @@ auto TrTracePlayer::StopAndFlushRecording(ser::StatusTracker& stat) -> traces_it
 }
 
 auto TrTracePlayer::TryLoadFromDisk(const std::filesystem::path& path, ser::StatusTracker& stat)
-    -> std::pair<traces_itc, bool>
+    -> std::pair<trace_itc, bool>
 {
 	Assert(path.is_absolute());
 
-	std::pair<traces_itc, bool> failRet(traces.end(), false);
+	std::pair<trace_it, bool> failRet(traces.end(), false);
 
 	if (!stat.Ok())
 		return failRet;
@@ -143,12 +137,12 @@ auto TrTracePlayer::TryLoadFromDisk(const std::filesystem::path& path, ser::Stat
 
 	// only now do we add to the map
 	it = traces.emplace_hint(it, path, std::move(newTr));
-	AddNewEntryToDefaultGroup(it);
+	MoveTraceToGroup(defaultGroupIt, defaultGroupIt->entries.end(), it);
 
 	return {it, true};
 }
 
-void TrTracePlayer::Remove(traces_itc it)
+void TrTracePlayer::Remove(trace_itc it)
 {
 	if (it == traces.end())
 		return;
@@ -172,6 +166,22 @@ void TrTracePlayer::Remove(traces_itc it)
 	imguiEntrySelect.SetItemSelected((ImGuiID)(&*it), false);
 
 	traces.erase(it);
+}
+
+void TrTracePlayer::Remove(group_itc it)
+{
+	// never delete the default group
+	Assert(it != defaultGroupIt);
+	if (it == defaultGroupIt || it == traceGroups.end())
+		return;
+	// move all entries to default group
+	for (auto& entryIt : it->entries)
+		entryIt->second.groupIt = defaultGroupIt;
+	defaultGroupIt->entries.splice(defaultGroupIt->entries.end(), const_cast<group_entries&>(it->entries));
+	// if the solo group is being deleted, then no solo group anymore
+	if (soloGroupIt == it)
+		soloGroupIt = traceGroups.end();
+	traceGroups.erase(it);
 }
 
 size_t TrTracePlayer::ClearTraces(bool clearRecording)
@@ -238,16 +248,16 @@ TrTracePlayer::~TrTracePlayer()
 	ClearTraces(true);
 }
 
-auto TrTracePlayer::GroupSoloOptInfo(group_it it) -> BoolOptInfo
+auto TrTracePlayer::GetGroupSoloOpt(group_itc it) const -> BoolOptInfo
 {
 	return BoolOptInfo{.enabled = it == soloGroupIt, .allowUiChange = true};
 }
 
-void TrTracePlayer::GroupSoloOptSet(group_it it, bool val)
+void TrTracePlayer::SetGroupSoloOpt(group_it it, bool val)
 {
 	if (it == traceGroups.end())
 		return;
-	Assert(GroupSoloOptInfo(it).allowUiChange);
+	Assert(GetGroupSoloOpt(it).allowUiChange);
 	if (val)
 	{
 		soloGroupIt = it;
@@ -261,17 +271,17 @@ void TrTracePlayer::GroupSoloOptSet(group_it it, bool val)
 	}
 }
 
-auto TrTracePlayer::GroupVisibleOptInfo(group_it it) -> BoolOptInfo
+auto TrTracePlayer::GetGroupVisibleOpt(group_itc it) const -> BoolOptInfo
 {
 	Assert(it != traceGroups.end());
 	return BoolOptInfo{.enabled = it->visible, .allowUiChange = true};
 }
 
-void TrTracePlayer::GroupVisibleOptSet(group_it it, bool val)
+void TrTracePlayer::SetGroupVisibleOpt(group_it it, bool val)
 {
 	if (it == traceGroups.end())
 		return;
-	Assert(GroupVisibleOptInfo(it).allowUiChange);
+	Assert(GetGroupVisibleOpt(it).allowUiChange);
 	if (!val)
 	{
 		if (soloGroupIt == it)
@@ -282,7 +292,7 @@ void TrTracePlayer::GroupVisibleOptSet(group_it it, bool val)
 	it->visible = val;
 }
 
-auto TrTracePlayer::TraceSoloOptInfo(traces_itc it) -> BoolOptInfo
+auto TrTracePlayer::GetTraceSoloOpt(trace_itc it) const -> BoolOptInfo
 {
 	// spt_trace_draw_while_recording will disable the UI higher up
 	return BoolOptInfo{
@@ -291,11 +301,11 @@ auto TrTracePlayer::TraceSoloOptInfo(traces_itc it) -> BoolOptInfo
 	};
 }
 
-void TrTracePlayer::TraceSoloOptSet(traces_itc it, bool val)
+void TrTracePlayer::SetTraceSoloOpt(trace_it it, bool val)
 {
 	if (it == traces.end())
 		return;
-	Assert(TraceSoloOptInfo(it).allowUiChange);
+	Assert(GetTraceSoloOpt(it).allowUiChange);
 	if (val)
 	{
 		it->second.visible = true;
@@ -310,7 +320,7 @@ void TrTracePlayer::TraceSoloOptSet(traces_itc it, bool val)
 	}
 }
 
-auto TrTracePlayer::TraceVisibleOptInfo(traces_itc it) -> BoolOptInfo
+auto TrTracePlayer::GetTraceVisibleOpt(trace_itc it) const -> BoolOptInfo
 {
 	// spt_trace_draw_while_recording will disable the UI higher up
 	Assert(it != traces.end());
@@ -320,14 +330,36 @@ auto TrTracePlayer::TraceVisibleOptInfo(traces_itc it) -> BoolOptInfo
 	};
 }
 
-void TrTracePlayer::TraceVisibleOptSet(traces_itc it, bool val)
+void TrTracePlayer::SetTraceVisibleOpt(trace_it it, bool val)
 {
 	if (it == traces.end())
 		return;
-	Assert(TraceVisibleOptInfo(it).allowUiChange);
+	Assert(GetTraceVisibleOpt(it).allowUiChange);
 	if (!val && it == soloTraceIt)
 		soloTraceIt = traces.end();
 	it->second.visible = val;
+}
+
+auto TrTracePlayer::AddGroup(color32 tint) -> group_itc
+{
+	std::string name = "custom_" + std::to_string(++nCustomGroupsAdded);
+	return traceGroups.emplace(traceGroups.end(), std::move(name), tint);
+}
+
+auto TrTracePlayer::MoveTraceToGroup(group_it gIt, group_entry_it where, trace_it tIt) -> group_entry_itc
+{
+	Assert(tIt != traces.end());
+	Assert(gIt != trace_groups.end());
+	auto& entry = tIt->second;
+	if (entry.groupIt != traceGroups.end())
+	{
+		// unlink from old list
+		Assert(entry.entryInGroupIt != traceGroups.end());
+		entry.groupIt->entries.erase(entry.entryInGroupIt);
+	}
+	// link into new list
+	entry.groupIt = gIt;
+	return entry.entryInGroupIt = gIt->entries.insert(where, tIt);
 }
 
 #endif

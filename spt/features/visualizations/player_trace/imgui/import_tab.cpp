@@ -205,7 +205,7 @@ bool tr_imgui::DrawDetailedTraceSelect()
 {
 	auto& tp = TrTracePlayer::Singleton();
 	auto& traces = tp.AllTraces();
-	auto& it = tp.detailedImGuiTraceIt;
+	auto it = tp.detailedImGuiTraceIt;
 
 	if (it == traces.end())
 		it = traces.begin();

@@ -23,8 +23,12 @@ namespace player_trace
 	* double loading a file, each path should be "as canonical as possible", which in practice
 	* means std::filesystem::absolute is probably good enough?
 	* 
-	* This class is also responsible for keeping track of trace-specific rendering info for
-	* multiple traces.
+	* For ImGui purposes, we also store color settings and visibility options for each trace and
+	* allow the grouping of traces. To allow O(1) insertion/deletion of all of these, we store a LL
+	* of groups each of which also has an LL of trace entries pointing back to the main map. On top
+	* of that, we need to store which entries are selected in ImGui to let the user rearrange them.
+	* All in all that results in 3 collections that need to be kept in sync, so I try to enforce
+	* const-ness and use setters where invariants need to be maintained.
 	*/
 	class TrTracePlayer
 	{
@@ -35,18 +39,16 @@ namespace player_trace
 		struct Entry;
 
 		using trace_map = std::map<std::filesystem::path, Entry, utils::NaturalCompare>;
-		using traces_it = trace_map::iterator;
-		using traces_itc = trace_map::const_iterator;
+		using trace_it = trace_map::iterator;
+		using trace_itc = trace_map::const_iterator;
 
 		using trace_groups = std::list<TraceGroup>;
 		using group_it = trace_groups::iterator;
+		using group_itc = trace_groups::const_iterator;
 
-		using group_entries = std::list<traces_it>;
-
-		struct BoolOptInfo
-		{
-			bool enabled, allowUiChange;
-		};
+		using group_entries = std::list<trace_it>;
+		using group_entry_it = group_entries::iterator;
+		using group_entry_itc = group_entries::const_iterator;
 
 		// TODO readonly public?
 		trace_groups traceGroups;
@@ -59,7 +61,7 @@ namespace player_trace
 			mutable bool selectedInImgui = false;
 
 			group_it groupIt;
-			std::list<traces_it>::iterator entryInGroupIt;
+			std::list<trace_it>::iterator entryInGroupIt;
 		};
 
 		class TraceGroup
@@ -117,20 +119,23 @@ namespace player_trace
 
 		size_t nCustomGroupsAdded = 0;
 
-		void AddNewEntryToDefaultGroup(traces_it it) const;
-
 		TrTracePlayer();
 		TrTracePlayer(TrTracePlayer&) = delete;
 		TrTracePlayer(TrTracePlayer&&) = delete;
 
 	public:
-		traces_itc detailedImGuiTraceIt = traces.end();
-		// these are all public read/write listed in order of priority
-		traces_itc imguiHoveredTraceIt = traces.end();
-		// TODO readonly public
-		traces_itc soloTraceIt = traces.end();
-		group_it soloGroupIt = traceGroups.end();
+		// this is the trace that's selected for viewing detailed info in the UI (e.g. player pos/vel, entity info, etc.)
+		trace_itc detailedImGuiTraceIt = traces.end();
+		/*
+		* These are all public read/write in order of priority:
+		* - a solo trace/group is the only one that is shown
+		* - the ImGui hovered trace is highlighted in the UI (TODO) and is basically a "super-solo" trace
+		*/
+		trace_itc imguiHoveredTraceIt = traces.end();
+		trace_itc soloTraceIt = traces.end();
+		group_itc soloGroupIt = traceGroups.end();
 
+		// ImGui structure that allows for entry multi-selection
 		ImGuiSelectionBasicStorage imguiEntrySelect;
 
 		static TrTracePlayer& Singleton()
@@ -158,45 +163,34 @@ namespace player_trace
 		* - a solo trace or group is never marked as invisible
 		*/
 
-		BoolOptInfo GroupSoloOptInfo(group_it it);
-		void GroupSoloOptSet(group_it it, bool val);
-		BoolOptInfo GroupVisibleOptInfo(group_it it);
-		void GroupVisibleOptSet(group_it it, bool val);
-
-		BoolOptInfo TraceSoloOptInfo(traces_itc it);
-		void TraceSoloOptSet(traces_itc it, bool val);
-		BoolOptInfo TraceVisibleOptInfo(traces_itc it);
-		void TraceVisibleOptSet(traces_itc it, bool val);
-
-		group_it AddCustomGroup(color32 tint)
+		struct BoolOptInfo
 		{
-			std::string name = "custom_" + std::to_string(++nCustomGroupsAdded);
-			return traceGroups.emplace(traceGroups.end(), std::move(name), tint);
-		}
+			bool enabled, allowUiChange;
+		};
 
-		void DeleteGroup(group_it it)
-		{
-			Assert(it != defaultGroupIt);
-			if (it == defaultGroupIt || it == traceGroups.end())
-				return;
-			for (auto& entryIt : it->entries)
-				entryIt->second.groupIt = defaultGroupIt;
-			defaultGroupIt->entries.splice(defaultGroupIt->entries.end(), it->entries);
-			if (soloGroupIt == it)
-				soloGroupIt = traceGroups.end();
-			traceGroups.erase(it);
-		}
+		BoolOptInfo GetGroupSoloOpt(group_itc it) const;
+		void SetGroupSoloOpt(group_it it, bool val);
+		BoolOptInfo GetGroupVisibleOpt(group_itc it) const;
+		void SetGroupVisibleOpt(group_it it, bool val);
 
-		traces_it GetRecordingTrace();
+		BoolOptInfo GetTraceSoloOpt(trace_itc it) const;
+		void SetTraceSoloOpt(trace_it it, bool val);
+		BoolOptInfo GetTraceVisibleOpt(trace_itc it) const;
+		void SetTraceVisibleOpt(trace_it it, bool val);
 
-		traces_itc TryStartRecording(std::filesystem::path path, ser::StatusTracker& stat);
-		traces_itc StopAndFlushRecording(ser::StatusTracker& stat);
+		group_itc AddGroup(color32 tint);
+		group_entry_itc MoveTraceToGroup(group_it gIt, group_entry_it where, trace_it tIt);
+
+		trace_it GetRecordingTrace();
+
+		trace_itc TryStartRecording(std::filesystem::path path, ser::StatusTracker& stat);
+		trace_itc StopAndFlushRecording(ser::StatusTracker& stat);
 
 		// load trace from disk, return <iterator, isNew>
-		std::pair<traces_itc, bool> TryLoadFromDisk(const std::filesystem::path& path,
-		                                            ser::StatusTracker& stat);
+		std::pair<trace_itc, bool> TryLoadFromDisk(const std::filesystem::path& path, ser::StatusTracker& stat);
 
-		void Remove(traces_itc it);
+		void Remove(trace_itc it);
+		void Remove(group_itc it);
 
 		// returns number of deleted elements
 		size_t ClearTraces(bool clearRecording);

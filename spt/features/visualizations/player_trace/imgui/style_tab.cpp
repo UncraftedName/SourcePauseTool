@@ -10,18 +10,21 @@
 using namespace player_trace;
 
 /*
-* Terminology:
-* - group: (usually) a tint group in the trace player
-* - entry: an element in a tint group
+* Iterate over traces groups and entries as we draw them, handle drag/drop behavior along the way.
+* The drag/drop behavior is currently pretty gross because of imgui API limitations - normally you
+* drag over an imgui *item*. In this case I want the whole window to act as a target and manually
+* reorder the internal linked lists. This means this code must manually track positions of items,
+* which looks pretty gross.
 */
 class GroupTintCallback
 {
 	TrTracePlayer& tracePlayer;
-	ImGuiSelectionBasicStorage& entrySelection;
+	ImGuiSelectionBasicStorage& imguiEntrySelection;
 	inline static std::vector<ImGuiID> selectionList;
 
-	TrTracePlayer::group_it groupIt{};                // current group
-	TrTracePlayer::group_entries::iterator entryIt{}; // current entry in group
+	// these are set as we iterate over groups and the entries in them
+	TrTracePlayer::group_it groupIt{};
+	TrTracePlayer::group_entry_itc entryIt{};
 
 	static constexpr const char* GROUP_DRAG_DROP_ID = "TRACE_GROUP_DD";
 	static constexpr const char* ENTRY_DRAG_DROP_ID = "TRACE_GROUP_ENTRIES_DD";
@@ -33,7 +36,7 @@ class GroupTintCallback
 
 public:
 	GroupTintCallback(TrTracePlayer& tracePlayer)
-	    : tracePlayer(tracePlayer), entrySelection(tracePlayer.imguiEntrySelect)
+	    : tracePlayer(tracePlayer), imguiEntrySelection(tracePlayer.imguiEntrySelect)
 	{
 #ifndef NDEBUG
 		// sanity check
@@ -48,64 +51,30 @@ public:
 #endif
 		selectionList.clear();
 		selectionList.reserve(tracePlayer.AllTraces().size());
-		entrySelection.UserData = &selectionList;
-		entrySelection.AdapterIndexToStorageId = [](ImGuiSelectionBasicStorage* self, int idx)
+		imguiEntrySelection.UserData = &selectionList;
+		imguiEntrySelection.AdapterIndexToStorageId = [](ImGuiSelectionBasicStorage* self, int idx)
 		{ return (*((std::vector<ImGuiID>*)self->UserData))[idx]; };
 	}
 
 	~GroupTintCallback()
 	{
-		entrySelection.UserData = nullptr;
-		entrySelection.AdapterIndexToStorageId = nullptr;
+		imguiEntrySelection.UserData = nullptr;
+		imguiEntrySelection.AdapterIndexToStorageId = nullptr;
 	}
 
 	void Draw()
 	{
-		auto groupDragDropTargetFn = [](const ImGuiPayload* payload, void* userData)
-		{
-			auto thisptr = ((GroupTintCallback*)userData);
-			auto& groups = thisptr->tracePlayer.traceGroups;
-			auto fromIt = (TrTracePlayer::group_it*)payload->Data;
-			groups.splice(thisptr->groupIt, groups, *fromIt);
-		};
-
-		auto entryDragDropTargetFn = [](const ImGuiPayload* payload, void* userData)
-		{
-			auto thisptr = ((GroupTintCallback*)userData);
-			auto groupIt = thisptr->groupIt;
-			auto targetEntryItTo = thisptr->entryIt;
-
-			void* imguiIt = NULL;
-			ImGuiID id;
-			while (thisptr->entrySelection.GetNextSelectedItem(&imguiIt, &id))
-			{
-				auto pTraceEntry = (TrTracePlayer::trace_map::pointer)id;
-				TrTracePlayer::Entry& entry = pTraceEntry->second;
-
-				if (groupIt == entry.groupIt && targetEntryItTo == entry.entryInGroupIt)
-				{
-					// without this if you try to drop entries into the slot they're in they'll get reversed
-					++targetEntryItTo;
-				}
-				else
-				{
-					groupIt->entries.splice(targetEntryItTo,
-					                        entry.groupIt->entries,
-					                        entry.entryInGroupIt);
-					entry.groupIt = thisptr->groupIt;
-				}
-			}
-		};
-
 		// top left corner of the group drag/drop target
 		float curGroupDragDropMinY = ImGui::GetCursorScreenPos().y;
 		ImVec2 groupItemBoundsX(-1, -1);
 
+		// multi-select logic copied from imgui demo
 		ImGuiMultiSelectIO* msIo = ImGui::BeginMultiSelect(ImGuiMultiSelectFlags_None,
-		                                                   entrySelection.Size,
+		                                                   imguiEntrySelection.Size,
 		                                                   tracePlayer.AllTraces().size());
-		entrySelection.ApplyRequests(msIo);
+		imguiEntrySelection.ApplyRequests(msIo);
 
+		// iterate over each group
 		for (groupIt = tracePlayer.traceGroups.begin(); groupIt != tracePlayer.traceGroups.end();)
 		{
 			auto& group = *groupIt;
@@ -124,7 +93,7 @@ public:
 			               curGroupDragDropMinY,
 			               curGroupItemMins,
 			               curGroupItemMaxs,
-			               groupDragDropTargetFn,
+			               GroupDragDropTargetCallback,
 			               this);
 
 			ImGui::Indent();
@@ -132,6 +101,7 @@ public:
 			float curEntryDragDropMinY = curGroupItemMins.y;
 			ImVec2 entryItemBoundsX(curGroupItemMins.x, curGroupItemMaxs.x);
 
+			// iterate over each entry in the group
 			for (entryIt = group.entries.begin(); entryIt != group.entries.end(); ++entryIt)
 			{
 				auto& traceIt = *entryIt;
@@ -140,13 +110,13 @@ public:
 				ImVec2 curEntryItemMins = ImGui::GetItemRectMin();
 				ImVec2 curEntryItemMaxs = ImGui::GetItemRectMax();
 				entryItemBoundsX = {curEntryItemMins.x, curEntryItemMaxs.x};
-				if (entrySelection.Contains((ImGuiID)(&*traceIt)))
+				if (imguiEntrySelection.Contains((ImGuiID)(&*traceIt)))
 					EntryDragDropSource();
 				DragDropTarget(ENTRY_DRAG_DROP_ID,
 				               curEntryDragDropMinY,
 				               curEntryItemMins,
 				               curEntryItemMaxs,
-				               entryDragDropTargetFn,
+				               EntryDragDropTargetCallback,
 				               this);
 				ImGui::PopID();
 
@@ -158,7 +128,7 @@ public:
 			               curEntryDragDropMinY,
 			               ImVec2(entryItemBoundsX.x, y),
 			               ImVec2(entryItemBoundsX.y, y),
-			               entryDragDropTargetFn,
+			               EntryDragDropTargetCallback,
 			               this);
 
 			ImGui::Unindent();
@@ -170,20 +140,20 @@ public:
 
 			auto prev = groupIt++;
 			if (deleteThisGroup)
-				tracePlayer.DeleteGroup(prev);
+				tracePlayer.Remove(prev);
 
 			ImGui::PopID();
 		}
 
 		msIo = ImGui::EndMultiSelect();
-		entrySelection.ApplyRequests(msIo);
+		imguiEntrySelection.ApplyRequests(msIo);
 
 		float y = ImGui::GetCursorScreenPos().y;
 		DragDropTarget(GROUP_DRAG_DROP_ID,
 		               curGroupDragDropMinY,
 		               ImVec2(groupItemBoundsX.x, y),
 		               ImVec2(groupItemBoundsX.y, y),
-		               groupDragDropTargetFn,
+		               GroupDragDropTargetCallback,
 		               this);
 
 		// needed for the target cursor readjusting hack
@@ -192,12 +162,48 @@ public:
 		if (ImGui::SmallButton(ICON_CI_PLUS))
 		{
 			color32 c(std::rand(), std::rand(), std::rand(), 255);
-			tracePlayer.AddCustomGroup(c);
+			tracePlayer.AddGroup(c);
 		}
 		ImGui::SetItemTooltip("add new group");
 	}
 
 private:
+	// dragging groups is easy - just reorder them
+	static void GroupDragDropTargetCallback(const ImGuiPayload* payload, void* userData)
+	{
+		auto thisptr = ((GroupTintCallback*)userData);
+		auto& groups = thisptr->tracePlayer.traceGroups;
+		auto fromIt = (TrTracePlayer::group_it*)payload->Data;
+		groups.splice(thisptr->groupIt, groups, *fromIt);
+	}
+
+	// dragging entries is more complicated - iterate over each selected entry and splice it into the group's list
+	static void EntryDragDropTargetCallback(const ImGuiPayload* payload, void* userData)
+	{
+		auto thisptr = ((GroupTintCallback*)userData);
+		auto groupIt = thisptr->groupIt;
+		auto targetEntryItTo = thisptr->entryIt;
+
+		void* imguiIt = NULL;
+		ImGuiID id;
+		while (thisptr->imguiEntrySelection.GetNextSelectedItem(&imguiIt, &id))
+		{
+			auto pTraceEntry = (TrTracePlayer::trace_map::pointer)id;
+			TrTracePlayer::Entry& entry = pTraceEntry->second;
+
+			if (groupIt == entry.groupIt && targetEntryItTo == entry.entryInGroupIt)
+			{
+				// without this if you try to drop entries into the slot they're in they'll get reversed
+				++targetEntryItTo;
+			}
+			else
+			{
+				groupIt->entries.splice(targetEntryItTo, entry.groupIt->entries, entry.entryInGroupIt);
+				entry.groupIt = thisptr->groupIt;
+			}
+		}
+	}
+
 	void DrawGroupItem(bool& deleteThisGroup)
 	{
 		auto& group = *groupIt;
@@ -222,18 +228,18 @@ private:
 		ImGui::EndDisabled();
 
 		ImGui::SameLine();
-		TrTracePlayer::BoolOptInfo visibleOptInfo = tracePlayer.GroupVisibleOptInfo(groupIt);
+		TrTracePlayer::BoolOptInfo visibleOptInfo = tracePlayer.GetGroupVisibleOpt(groupIt);
 		ImGui::BeginDisabled(!visibleOptInfo.allowUiChange);
 		if (ImGui::SmallButton(visibleOptInfo.enabled ? VIS_LABEL_ON : VIS_LABEL_OFF))
-			tracePlayer.GroupVisibleOptSet(groupIt, !visibleOptInfo.enabled);
+			tracePlayer.SetGroupVisibleOpt(groupIt, !visibleOptInfo.enabled);
 		ImGui::SetItemTooltip("toggle group visibility");
 		ImGui::EndDisabled();
 
 		ImGui::SameLine();
-		TrTracePlayer::BoolOptInfo soloOptInfo = tracePlayer.GroupSoloOptInfo(groupIt);
+		TrTracePlayer::BoolOptInfo soloOptInfo = tracePlayer.GetGroupSoloOpt(groupIt);
 		ImGui::BeginDisabled(!soloOptInfo.allowUiChange);
 		if (ImGui::SmallButton(soloOptInfo.enabled ? SOLO_LABEL_ON : SOLO_LABEL_OFF))
-			tracePlayer.GroupSoloOptSet(groupIt, !soloOptInfo.enabled);
+			tracePlayer.SetGroupSoloOpt(groupIt, !soloOptInfo.enabled);
 		ImGui::SetItemTooltip("solo group");
 		ImGui::EndDisabled();
 
@@ -318,7 +324,7 @@ private:
 		selectionList.push_back(entrySelectionId);
 
 		auto& [path, entry] = *traceIt;
-		bool selected = entrySelection.Contains(entrySelectionId);
+		bool selected = imguiEntrySelection.Contains(entrySelectionId);
 		ImGui::SetNextItemSelectionUserData(entryIdx);
 		ImGui::SetNextItemAllowOverlap();
 		ImGui::Selectable("##dummy", selected);
@@ -328,18 +334,18 @@ private:
 		// TODO account for spt_trace_draw_while_recording somewhere
 
 		ImGui::SameLine();
-		TrTracePlayer::BoolOptInfo visibleOptInfo = tracePlayer.TraceVisibleOptInfo(traceIt);
+		TrTracePlayer::BoolOptInfo visibleOptInfo = tracePlayer.GetTraceVisibleOpt(traceIt);
 		ImGui::BeginDisabled(!visibleOptInfo.allowUiChange);
 		if (ImGui::SmallButton(visibleOptInfo.enabled ? VIS_LABEL_ON : VIS_LABEL_OFF))
-			tracePlayer.TraceVisibleOptSet(traceIt, !visibleOptInfo.enabled);
+			tracePlayer.SetTraceVisibleOpt(traceIt, !visibleOptInfo.enabled);
 		ImGui::SetItemTooltip("toggle trace visibility");
 		ImGui::EndDisabled();
 
 		ImGui::SameLine();
-		TrTracePlayer::BoolOptInfo soloOptInfo = tracePlayer.TraceSoloOptInfo(traceIt);
+		TrTracePlayer::BoolOptInfo soloOptInfo = tracePlayer.GetTraceSoloOpt(traceIt);
 		ImGui::BeginDisabled(!soloOptInfo.allowUiChange);
 		if (ImGui::SmallButton(soloOptInfo.enabled ? SOLO_LABEL_ON : SOLO_LABEL_OFF))
-			tracePlayer.TraceSoloOptSet(traceIt, !soloOptInfo.enabled);
+			tracePlayer.SetTraceSoloOpt(traceIt, !soloOptInfo.enabled);
 		ImGui::SetItemTooltip("solo trace");
 		ImGui::EndDisabled();
 
@@ -360,7 +366,7 @@ private:
 		    ImGuiDragDropFlags_SourceAllowNullID | ImGuiDragDropFlags_PayloadAutoExpire;
 		if (ImGui::BeginDragDropSource(sourceDdFlags))
 		{
-			ImGui::Text("Move %d trace(s)", entrySelection.Size);
+			ImGui::Text("Move %d trace(s)", imguiEntrySelection.Size);
 			ImGui::SetDragDropPayload(ENTRY_DRAG_DROP_ID, nullptr, 0);
 			ImGui::EndDragDropSource();
 		}
