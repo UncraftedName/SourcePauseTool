@@ -20,8 +20,8 @@ namespace player_trace::tr_imgui
 		tr_tick activeTick;
 	};
 
-	void TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& igfd);
-	void TraceFileSelectionWindowCallback(std::unique_ptr<ImGuiFileDialog>& igfd);
+	void TraceFileSelectionTabCallback();
+	void TraceFileSelectionWindowCallback();
 
 	bool DrawDetailedTraceSelect();
 	// called before every single_trace_info_tab_fn

@@ -9,6 +9,7 @@
 #include "spt/utils/serialize.hpp"
 
 #include "thirdparty/imgui/imgui.h"
+#include "thirdparty/imgui/ImGuiFileDialog/ImGuiFileDialog.h"
 
 #include <memory>
 #include <map>
@@ -143,11 +144,11 @@ namespace player_trace
 				}
 			}
 
-			TrRenderStyleConfig& GetCfg(const TrRenderStyleConfig& majorCfg) const
+			TrRenderStyleConfig& GetCfg(const TrRenderStyleConfig& mainCfg) const
 			{
 				if (!cfg.has_value())
 				{
-					cfg = majorCfg;
+					cfg = mainCfg;
 					cfg->Multiply(tint);
 				}
 				return *cfg;
@@ -159,7 +160,20 @@ namespace player_trace
 			}
 		};
 
+		/*
+		* The main style config is not passed directly to any traces. Instead, each group copies the main
+		* style and applies its tint to it. Whenever anything is changed in this style, make sure to call
+		* MarkGroupStylesDirty().
+		*/
 		TrRenderStyleConfig mainStyleConfig;
+
+		void MarkGroupStylesDirty()
+		{
+			for (auto& group : groups)
+				group.InvalidateCfg();
+		}
+
+		std::unique_ptr<ImGuiFileDialog> igfd;
 
 	private:
 		struct RecordingTrace;

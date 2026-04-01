@@ -17,9 +17,10 @@ static std::string g_importErrStr;
 static SptImGui::TimedToolTip g_importErrTip;
 
 // TODO pretty this up
-void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& igfd)
+void tr_imgui::TraceFileSelectionTabCallback()
 {
 	auto& tp = TrTracePlayer::Singleton();
+	auto& igfd = tp.igfd;
 	auto& traces = tp.Traces();
 
 	ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
@@ -175,8 +176,10 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 	// g_importErrTip.Show(SPT_IMGUI_WARN_COLOR_YELLOW, 5.);
 }
 
-void tr_imgui::TraceFileSelectionWindowCallback(std::unique_ptr<ImGuiFileDialog>& igfd)
+void tr_imgui::TraceFileSelectionWindowCallback()
 {
+	auto& igfd = TrTracePlayer::Singleton().igfd;
+
 	if (!igfd || !igfd->IsOpened(TR_FILE_SELECT_WND_ID))
 		return;
 

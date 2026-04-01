@@ -402,6 +402,12 @@ void tr_imgui::RenderStyleTab()
 	}
 
 	ImGui::Text("Drawing %u trace%s", tp.nDrawnTracesLastFrame, tp.nDrawnTracesLastFrame == 1 ? "" : "s");
+
+	ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+	if (ImGui::TreeNode("Multiple trace options"))
+	{
+
+	}
 }
 
 #endif

@@ -65,8 +65,6 @@ public:
 	void ChangeDisplayTick(int diff);
 	void SetDisplayTick(tr_tick val);
 
-	std::unique_ptr<ImGuiFileDialog> igfd;
-
 	// TODO this should really be moved into the player huh
 	tr_tick absDrawTick = 0;
 
@@ -507,17 +505,15 @@ void PlayerTraceFeature::LoadFeature()
 	if (utils::DoesGameLookLikePortal())
 		WrapSingleTraceInfoTab(SptImGuiGroup::PlayerTrace_Portals, tr_imgui::PortalTabCallback);
 
-	SptImGuiGroup::PlayerTrace_Select.RegisterUserCallback([this]()
-	                                                       { tr_imgui::TraceFileSelectionTabCallback(igfd); });
-	SptImGui::RegisterWindowCallback([this]() { tr_imgui::TraceFileSelectionWindowCallback(igfd); });
+	SptImGuiGroup::PlayerTrace_Select.RegisterUserCallback(tr_imgui::TraceFileSelectionTabCallback);
+	SptImGui::RegisterWindowCallback(tr_imgui::TraceFileSelectionWindowCallback);
 
-	SptImGuiGroup::PlayerTrace_DrawStyle.RegisterUserCallback([this]() { tr_imgui::RenderStyleTab(); });
+	SptImGuiGroup::PlayerTrace_DrawStyle.RegisterUserCallback(tr_imgui::RenderStyleTab);
 }
 
 void PlayerTraceFeature::UnloadFeature()
 {
 	TrTracePlayer::Singleton().ClearTraces(true);
-	igfd.reset();
 }
 
 // TODO don't allow scrolling past end of the trace
