@@ -4,6 +4,7 @@
 
 #ifdef SPT_PLAYER_TRACE_ENABLED
 
+#include "spt/utils/game_detection.hpp"
 #include "spt/features/visualizations/imgui/imgui_interface.hpp"
 #include "thirdparty/imgui/imgui_stdlib.h"
 
@@ -390,24 +391,82 @@ private:
 	}
 };
 
-void tr_imgui::RenderStyleTab()
+static bool inheritSingleTraceFlags = true;
+
+static void DrawMultiTraceEnableFlag(TrRenderEnableOpt opt, const char* label)
 {
 	auto& tp = TrTracePlayer::Singleton();
+	TrRenderEnableFlag multiFlag = tp.multiTraceRenderEnableCfg[opt];
 
-	if (ImGui::TreeNode("Trace groups"))
+	if (inheritSingleTraceFlags)
+	{
+		TrRenderEnableFlag singleFlag = tp.singleTraceRenderEnableCfg[opt];
+		ImGui::BeginDisabled(!singleFlag);
+		bool val = multiFlag;
+		if (ImGui::Checkbox(label, &val))
+			multiFlag = val;
+		if (!singleFlag)
+			ImGui::SetItemTooltip("Disabled in general settings");
+		ImGui::EndDisabled();
+	}
+	else
+	{
+		bool val = multiFlag;
+		if (ImGui::Checkbox(label, &val))
+			multiFlag = val;
+	}
+}
+
+static void DrawMultiTraceEnableConfig()
+{
+	ImGui::Checkbox("Inherit disabled single trace flags", &inheritSingleTraceFlags);
+	ImGui::SameLine();
+	SptImGui::HelpMarker(
+	    "If a setting is disabled in the general settings,\n"
+	    "it will also be disabled when drawing multiple traces.");
+
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_PLAYER_PATH, "Draw player path");
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_PLAYER_PATH_CONES, "Draw player path cones");
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_PLAYER_PATH_ENDPOINTS, "Draw player path endpoints");
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_PLAYER_HULL, "Draw player hull");
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_PLAYER_CONTACT_POINTS, "Draw player contact points");
+	if (utils::DoesGameLookLikePortal())
+	{
+		DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_PORTALS, "Draw portals");
+		DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_PORTAL_COLLISION_ENTS, "Draw portal collision entities");
+	}
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_ENT_PHYS, "Draw entity physics models");
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_ENT_OBB, "Draw entity OBBs");
+	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_ENT_COLLECT_AABB, "Draw entity collection volume");
+}
+
+static void DrawSingleTraceConfig() {}
+
+void tr_imgui::RenderStyleTab()
+{
+	// TODO add the other convars here
+	bool draw = SptImGui::CvarCheckbox(spt_draw_trace, "Draw trace(s)");
+	ImGui::BeginDisabled(!draw);
+
+	auto& tp = TrTracePlayer::Singleton();
+
+	if (ImGui::CollapsingHeader("Trace groups"))
 	{
 		GroupTintCallback groupTints(tp);
 		groupTints.Draw();
-		ImGui::TreePop();
 	}
 
 	ImGui::Text("Drawing %u trace%s", tp.nDrawnTracesLastFrame, tp.nDrawnTracesLastFrame == 1 ? "" : "s");
 
-	ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
-	if (ImGui::TreeNode("Multiple trace options"))
-	{
+	if (ImGui::CollapsingHeader("Style settings"))
+		DrawSingleTraceConfig();
 
-	}
+	ImGui::BeginDisabled(tp.nDrawnTracesLastFrame < 2);
+	if (ImGui::CollapsingHeader("Multi-trace options"))
+		DrawMultiTraceEnableConfig();
+	ImGui::EndDisabled();
+
+	ImGui::EndDisabled();
 }
 
 #endif

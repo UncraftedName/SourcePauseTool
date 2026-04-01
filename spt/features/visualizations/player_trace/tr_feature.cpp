@@ -34,31 +34,6 @@
 
 using namespace player_trace;
 
-// RAII context to disable certain render options while drawing multiple traces
-class TrMultiTraceRenderContext
-{
-	// clang-format off
-	struct DisableContext
-	{
-		bool& ref;
-		bool oldVal;
-		DisableContext(bool& b) : oldVal(b), ref(b) { ref = false; }
-		~DisableContext() { ref = oldVal; }
-	};
-	// clang-format on
-
-	DisableContext dcEntPhys, dcEntObb, dcEntCollect, dcPortals;
-
-public:
-	TrMultiTraceRenderContext(TrRenderStyleConfig& renderCfg)
-	    : dcEntPhys(renderCfg.entPhys.draw)
-	    , dcEntObb(renderCfg.entObb.draw)
-	    , dcEntCollect(renderCfg.entCollectAabb.draw)
-	    , dcPortals(renderCfg.portals.draw)
-	{
-	}
-};
-
 class PlayerTraceFeature : public FeatureWrapper<PlayerTraceFeature>
 {
 public:
@@ -417,26 +392,6 @@ namespace player_trace
 	                                   "1",
 	                                   FCVAR_DONTRECORD,
 	                                   "If disabled, will not draw any traces while a trace is being recorded to."};
-	ConVar spt_trace_draw_portal_collision_entities(
-	    "spt_trace_draw_portal_collision_entities",
-	    "0",
-	    FCVAR_DONTRECORD,
-	    "If enabled, draws all portalsimulator_collisionentity when drawing the trace.");
-	ConVar spt_trace_draw_path_cones(
-	    "spt_trace_draw_path_cones",
-	    "1",
-	    FCVAR_DONTRECORD,
-	    "If enabled, draws cones along the player path to indicate the player travel direction.");
-	ConVar spt_trace_draw_cam_style("spt_trace_draw_cam_style",
-	                                "0",
-	                                FCVAR_DONTRECORD,
-	                                "Player trace camera type:\n"
-	                                "  0 = camera frustum\n"
-	                                "  1 = box and line\n");
-	ConVar spt_trace_draw_contact_points("spt_trace_draw_contact_points",
-	                                     "1",
-	                                     FCVAR_DONTRECORD,
-	                                     "If enabled, draws recorded contact points for the player.");
 } // namespace player_trace
 
 bool PlayerTraceFeature::ShouldLoadFeature()
@@ -494,11 +449,6 @@ void PlayerTraceFeature::LoadFeature()
 	InitConcommandBase(spt_trace_draw_while_recording);
 	InitConcommandBase(spt_trace_autoplay);
 	InitConcommandBase(spt_trace_ent_collect_radius);
-	if (utils::DoesGameLookLikePortal())
-		InitConcommandBase(spt_trace_draw_portal_collision_entities);
-	InitConcommandBase(spt_trace_draw_path_cones);
-	InitConcommandBase(spt_trace_draw_cam_style);
-	InitConcommandBase(spt_trace_draw_contact_points);
 
 	WrapSingleTraceInfoTab(SptImGuiGroup::PlayerTrace_Player, tr_imgui::PlayerTabCallback);
 	WrapSingleTraceInfoTab(SptImGuiGroup::PlayerTrace_Entities, tr_imgui::EntityTabCallback);
@@ -553,17 +503,9 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 
 	auto& tp = TrTracePlayer::Singleton();
 	auto& traces = tp.Traces();
+
 	if (!spt_trace_draw_while_recording.GetBool() && tp.GetRecordingTraceHandle() != traces.end())
 		return;
-
-	// TODO - these cvars will only change the main style but non of the other ones
-
-	auto& majorStyle = tp.mainStyleConfig;
-	majorStyle.playerPath.cones.draw = spt_trace_draw_path_cones.GetBool();
-	majorStyle.playerEye.style =
-	    (TrPlayerCameraDrawType)std::clamp(spt_trace_draw_cam_style.GetInt(), 0, (int)TR_PCDT_COUNT);
-	majorStyle.contactPoints.draw = spt_trace_draw_contact_points.GetBool();
-	majorStyle.entPhys.portalCollisionEnts.draw = spt_trace_draw_portal_collision_entities.GetBool();
 
 	TrTracePlayer::entry_handle rt = tp.GetRecordingTraceHandle();
 	bool drawRecordingTrace = spt_trace_draw_recording.GetBool();
@@ -611,19 +553,11 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	{
 		auto& trEntry = entry->second;
 		TrReadContextScope scope{trEntry.tr};
-		auto& renderCache = trEntry.tr.GetRenderingCache();
+		TrRenderEnableConfig enableCfg =
+		    entriesToDraw.size() == 1 ? tp.singleTraceRenderEnableCfg : tp.multiTraceRenderEnableCfg;
 		auto& style = trEntry.group->GetCfg(tp.mainStyleConfig);
-
-		if (entriesToDraw.size() == 1)
-		{
-			renderCache.RenderAll(mr, style, absDrawTick);
-		}
-		else
-		{
-			// TODO enable entity traces and such
-			TrMultiTraceRenderContext mtrc{style};
-			renderCache.RenderAll(mr, style, absDrawTick);
-		}
+		auto& renderCache = trEntry.tr.GetRenderingCache();
+		renderCache.RenderAll(mr, enableCfg, style, absDrawTick);
 	}
 
 	tp.nDrawnTracesLastFrame = entriesToDraw.size();

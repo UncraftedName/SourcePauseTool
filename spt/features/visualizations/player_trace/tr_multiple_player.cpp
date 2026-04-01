@@ -36,6 +36,18 @@ TrTracePlayer::TrTracePlayer()
 {
 	defaultGroup = groups.emplace(groups.end(), "default", color32(255, 255, 255, 255));
 
+	// when rendering a single trace - enable everything except for portal collision entities
+	singleTraceRenderEnableCfg.flip();
+	singleTraceRenderEnableCfg[TR_RENDER_ENABLE_PORTAL_COLLISION_ENTS] = false;
+
+	// for multiple traces avoid drawing entities by default
+	multiTraceRenderEnableCfg = singleTraceRenderEnableCfg;
+	multiTraceRenderEnableCfg[TR_RENDER_ENABLE_ENT_PHYS] = false;
+	multiTraceRenderEnableCfg[TR_RENDER_ENABLE_ENT_OBB] = false;
+	multiTraceRenderEnableCfg[TR_RENDER_ENABLE_ENT_COLLECT_AABB] = false;
+	multiTraceRenderEnableCfg[TR_RENDER_ENABLE_PORTALS] = false;
+
+	// the multi-select adapter requires a list of of all the element IDs, but the list is only used when rendering the tab so set it there
 	imguiEntrySelect.AdapterIndexToStorageId = nullptr;
 	imguiEntrySelect.UserData = nullptr;
 	imguiEntrySelect.PreserveOrder = true;

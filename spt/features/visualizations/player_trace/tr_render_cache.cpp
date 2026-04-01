@@ -197,6 +197,13 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 	bool clearStatics = CheckUpdateCache(cfg.playerPath, pNewCfg->playerPath);
 	if (!clearStatics)
 		clearStatics = !StaticMesh::AllValid(meshes.playerPath.staticMeshes);
+	if (!clearStatics)
+	{
+		clearStatics = (*pNewEnableCfg)[TR_RENDER_ENABLE_PLAYER_PATH_CONES]
+		                   != enableCfg[TR_RENDER_ENABLE_PLAYER_PATH_CONES]
+		               || (*pNewEnableCfg)[TR_RENDER_ENABLE_PLAYER_PATH_ENDPOINTS]
+		                      != enableCfg[TR_RENDER_ENABLE_PLAYER_PATH_ENDPOINTS];
+	}
 
 	if (clearStatics)
 		meshes.playerPath.staticMeshes.clear();
@@ -256,7 +263,7 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 
 		Vector p2 = **pdIdx->qPosIdx + landmarkOff;
 
-		bool drawCones = pathCfg.cones.draw;
+		bool drawCones = (*pNewEnableCfg)[TR_RENDER_ENABLE_PLAYER_PATH_CONES];
 		bool drawPath = true;
 		TrSegmentReason segmentReason = TR_SR_NONE;
 
@@ -301,7 +308,7 @@ void TrRenderingCache::RebuildPlayerPathMeshes()
 				return false;
 		}
 
-		if (pathCfg.endpoints.draw)
+		if ((*pNewEnableCfg)[TR_RENDER_ENABLE_PLAYER_PATH_ENDPOINTS])
 			segmentReason = TR_SR_NONE;
 
 		if (drawCones && segmentReason == TR_SR_NONE && ticksWithoutCone++ > pathCfg.cones.tickInterval)
@@ -539,7 +546,7 @@ void TrRenderingCache::RenderPlayerHull(MeshRendererDelegate& mr,
 		            { AngleMatrix(ang, pos, infoOut.mat); });
 	}
 
-	if (pNewCfg->contactPoints.draw)
+	if ((*pNewEnableCfg)[TR_RENDER_ENABLE_PLAYER_CONTACT_POINTS])
 	{
 		for (auto contactPtIdx : *pd.contactPtsSp)
 		{
@@ -590,7 +597,7 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 {
 	auto& tr = TrReadContextScope::Current();
 
-	if (pNewCfg->entCollectAabb.draw)
+	if ((*pNewEnableCfg)[TR_RENDER_ENABLE_ENT_COLLECT_AABB])
 	{
 		auto traceStateIdx = tr.GetAtTick<TrTraceState>(atTick);
 		auto plDataIdx = tr.GetAtTick<TrPlayerData>(atTick);
@@ -608,10 +615,10 @@ void TrRenderingCache::RenderEntities(MeshRendererDelegate& mr, const Vector& la
 		}
 	}
 
-	if (pNewCfg->entObb.draw)
+	if ((*pNewEnableCfg)[TR_RENDER_ENABLE_ENT_OBB])
 		RenderEntObbs(mr, landmarkDeltaToMapAtTick, atTick);
 
-	if (pNewCfg->entPhys.draw)
+	if ((*pNewEnableCfg)[TR_RENDER_ENABLE_ENT_PHYS])
 	{
 		RebuildPhysMeshes(atTick);
 		RenderEntPhysMeshes(mr, landmarkDeltaToMapAtTick, atTick);
@@ -700,7 +707,7 @@ void TrRenderingCache::RenderEntPhysMeshes(MeshRendererDelegate& mr,
 	for (auto [entIdx, transIdx] : entMap)
 	{
 		bool isPortalCollisionEnt = !strcmp(*entIdx->classNameIdx, "portalsimulator_collisionentity");
-		if (isPortalCollisionEnt && !pNewCfg->entPhys.portalCollisionEnts.draw)
+		if (isPortalCollisionEnt && !(*pNewEnableCfg)[TR_RENDER_ENABLE_PORTAL_COLLISION_ENTS])
 			continue;
 
 		auto physMeshTransIdxSp = *transIdx->physTransSp;
@@ -793,10 +800,15 @@ void TrRenderingCache::CacheLandmarkOffsetsToFirstMapFromTraceData()
 	}
 }
 
-void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, const TrRenderStyleConfig& newCfg, tr_tick atTick)
+void TrRenderingCache::RenderAll(MeshRendererDelegate& mr,
+                                 const TrRenderEnableConfig& newEnableCfg,
+                                 const TrRenderStyleConfig& newCfg,
+                                 tr_tick atTick)
 {
 	auto& tr = TrReadContextScope::Current();
+
 	pNewCfg = &newCfg;
+	pNewEnableCfg = &newEnableCfg;
 
 	if (renderedLastTimeOnMap != utils::GetLoadedMap())
 	{
@@ -806,15 +818,15 @@ void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, const TrRenderStyleCo
 
 	atTick = tr.numRecordedTicks == 0 ? 0 : clamp(atTick, 0, tr.numRecordedTicks - 1);
 	Vector landmarkdelta = GetLandmarkOffsetToFirstMap(utils::GetLoadedMap());
-	if (newCfg.playerPath.draw)
+	if (newEnableCfg[TR_RENDER_ENABLE_PLAYER_PATH])
 		RenderPlayerPath(mr, landmarkdelta);
 	TrIdx<TrMap> atMap = tr.GetMapAtTick(atTick);
 	if (atMap.IsValid())
 	{
 		landmarkdelta -= GetLandmarkOffsetToFirstMap(*atMap->nameIdx);
-		if (newCfg.playerHull.draw)
+		if (newEnableCfg[TR_RENDER_ENABLE_PLAYER_HULL])
 			RenderPlayerHull(mr, landmarkdelta, atTick);
-		if (newCfg.portals.draw)
+		if (newEnableCfg[TR_RENDER_ENABLE_PORTALS])
 			RenderPortals(mr, landmarkdelta, atTick);
 		RenderEntities(mr, landmarkdelta, atTick);
 	}
@@ -822,6 +834,8 @@ void TrRenderingCache::RenderAll(MeshRendererDelegate& mr, const TrRenderStyleCo
 	tr.GetEntityCache().hoveredEnt.Invalidate();
 
 	pNewCfg = nullptr;
+	pNewEnableCfg = nullptr;
+	enableCfg = newEnableCfg;
 }
 
 #endif

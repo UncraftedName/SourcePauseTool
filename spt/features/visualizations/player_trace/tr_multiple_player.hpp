@@ -18,7 +18,7 @@
 #include <list>
 
 #define TR_COMPRESSED_FILE_EXT ".sptr.xz"
-#define TR_DEFAULT_PATH "trace/default"
+#define TR_DEFAULT_PATH "traces/default"
 
 namespace player_trace
 {
@@ -172,6 +172,9 @@ namespace player_trace
 			for (auto& group : groups)
 				group.InvalidateCfg();
 		}
+
+		TrRenderEnableConfig singleTraceRenderEnableCfg;
+		TrRenderEnableConfig multiTraceRenderEnableCfg;
 
 		std::unique_ptr<ImGuiFileDialog> igfd;
 

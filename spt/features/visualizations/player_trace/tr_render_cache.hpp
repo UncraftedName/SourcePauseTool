@@ -9,6 +9,7 @@
 
 #include <unordered_set>
 #include <unordered_map>
+#include <bitset>
 
 class MeshRendererDelegate;
 
@@ -43,13 +44,8 @@ namespace player_trace
 	{
 		struct PlayerPath
 		{
-			bool draw = true;
-			char _pad0[3]{0};
-
 			struct Cones
 			{
-				bool draw = true;
-				char _pad0[3]{0};
 				float opacity = .2f;
 				int nCirclePoints = 5;
 				float length = 3.f;
@@ -63,8 +59,6 @@ namespace player_trace
 				int nCirclePoints = 20;
 				float radius = 4.f;
 
-				bool draw = true;
-
 				std::array<ShapeColor, TR_SR_COLORED_COUNT> colors{
 				    ShapeColor{C_OUTLINE(200, 100, 100, 255), true, true, WD_BOTH},
 				    ShapeColor{C_OUTLINE(100, 100, 200, 255), true, true, WD_BOTH},
@@ -72,6 +66,7 @@ namespace player_trace
 				    ShapeColor{C_OUTLINE(200, 200, 100, 255), true, true, WD_BOTH},
 				    ShapeColor{C_OUTLINE(200, 200, 200, 255), true, true, WD_BOTH},
 				};
+				char _pad0[1]{0};
 			} endpoints;
 
 			struct Segments
@@ -109,8 +104,7 @@ namespace player_trace
 			float qPhysCenterCrossRadius = 5.f;
 			bool drawOriginCube = true;
 			bool drawQPhysCenter = true;
-			bool draw = true;
-			char _pad0[1]{0};
+			char _pad0[2]{0};
 
 			struct
 			{
@@ -136,8 +130,8 @@ namespace player_trace
 		struct ContactPoint
 		{
 			float normalLength = 20.f;
-			bool draw = true;
 			ShapeColor color{C_OUTLINE(0, 255, 0, 32)};
+			char _pad0[1]{0};
 		} contactPoints;
 
 #define TR_RSC_ENUMERATE_CONTACTS_COLS_X(X) _TR_RSC_EXPAND_SC_X(X, contactPoints.color)
@@ -191,8 +185,6 @@ namespace player_trace
 
 		struct Portals
 		{
-			bool draw = true;
-			char _pad0[3]{0};
 			float portalThickness = 4.f;
 			ArrowParams arrowParams{5, 10.f, 1.f, .3f, 2.f};
 			float hatFloat = 3.f;
@@ -214,13 +206,13 @@ namespace player_trace
 		struct EntPhys
 		{
 			int nBallMeshSubdivisions = 4;
-			bool draw = true;
 			ShapeColor color{C_OUTLINE(200, 60, 100, 20)};
+			char _pad0[1]{0};
 
 			struct
 			{
-				bool draw = false;
 				ShapeColor color{C_OUTLINE(200, 20, 200, 50)};
+				char _pad0[1]{0};
 			} portalCollisionEnts;
 		} entPhys;
 
@@ -230,10 +222,9 @@ namespace player_trace
 
 		struct EntObb
 		{
-			bool draw = true;
 			bool enableCenterCross = true;
 			bool enableTriggers = true;
-			char _pad0[1]{0};
+			char _pad0[2]{0};
 
 			float centerCrossRadius = 4.f;
 
@@ -250,8 +241,8 @@ namespace player_trace
 
 		struct EntCollectAabb
 		{
-			bool draw = true;
 			ShapeColor color{C_WIRE(150, 100, 100, 255)};
+			char _pad1[1]{0};
 		} entCollectAabb;
 
 #define TR_RSC_ENUMERATE_ENT_COLLECT_COLS_X(X) _TR_RSC_EXPAND_SC_X(X, entCollectAabb.color)
@@ -276,6 +267,26 @@ namespace player_trace
 
 #pragma warning(pop)
 
+	// default settings are in the multi-trace player constructor
+	enum TrRenderEnableOpt : size_t
+	{
+		TR_RENDER_ENABLE_PLAYER_PATH,
+		TR_RENDER_ENABLE_PLAYER_PATH_CONES,
+		TR_RENDER_ENABLE_PLAYER_PATH_ENDPOINTS,
+		TR_RENDER_ENABLE_PLAYER_HULL,
+		TR_RENDER_ENABLE_PLAYER_CONTACT_POINTS,
+		TR_RENDER_ENABLE_PORTALS,
+		TR_RENDER_ENABLE_PORTAL_COLLISION_ENTS,
+		TR_RENDER_ENABLE_ENT_PHYS,
+		TR_RENDER_ENABLE_ENT_OBB,
+		TR_RENDER_ENABLE_ENT_COLLECT_AABB,
+
+		TR_RENDER_ENABLE_COUNT,
+	};
+
+	using TrRenderEnableConfig = std::bitset<TR_RENDER_ENABLE_COUNT>;
+	using TrRenderEnableFlag = TrRenderEnableConfig::reference;
+
 	/*
 	* This is the thing which renders the trace. Each trace has an associated rendering cache as a
 	* field. This builds up mostly static meshes and caches them for future calls. If the style of
@@ -287,8 +298,10 @@ namespace player_trace
 		std::unordered_map<std::string, Vector> mapToFirstMapLandmarkOffset;
 		// we keep a copy of the config and memcmp/memcpy against the one passed in to DrawAll
 		TrRenderStyleConfig cfg{};
+		TrRenderEnableConfig enableCfg{};
 
 		const TrRenderStyleConfig* pNewCfg = nullptr; // the current cfg passed to DrawAll
+		const TrRenderEnableConfig* pNewEnableCfg = nullptr; // the current enable cfg passed to DrawAll
 
 		void RebuildPlayerHullMeshes();
 		void RebuildEyeMeshes(float fov);
@@ -365,7 +378,11 @@ namespace player_trace
 	public:
 		TrRenderingCache() = default;
 		TrRenderingCache(const TrRenderingCache&) = delete;
-		void RenderAll(MeshRendererDelegate& mr, const TrRenderStyleConfig& newCfg, tr_tick atTick);
+
+		void RenderAll(MeshRendererDelegate& mr,
+		               const TrRenderEnableConfig& newEnableCfg,
+		               const TrRenderStyleConfig& newCfg,
+		               tr_tick atTick);
 	};
 
 } // namespace player_trace
