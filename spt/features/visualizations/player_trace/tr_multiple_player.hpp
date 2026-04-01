@@ -88,9 +88,11 @@ namespace player_trace
 	* of groups each of which also has an LL of trace entries pointing back to the main map. On top
 	* of that, we need to store which entries are selected in ImGui to let the user rearrange them.
 	* 
-	* All in all that results in 3 collections that need to be kept in sync. I also wish to keep
-	* insertions/deletions O(1), so everything is stored in std::map/std::list, and handles (which
-	* are just iterators) are passed to the user which provide const access.
+	* All in all that results in 4 collections that need to be kept in sync. I also wish to keep
+	* insertions/deletions O(1), so everything is stored in std::map/std::list; handles (which are
+	* just iterators) are passed to the user which provide const access. The const access is to
+	* prevent users from editing the underlying data structures directly, but some stuff (e.g.
+	* colors & group names) is fine for users to edit directly.
 	*/
 	class TrTracePlayer
 	{
@@ -110,12 +112,9 @@ namespace player_trace
 		struct TraceEntry
 		{
 			TrPlayerTrace tr;
-			mutable bool visible = true;
-			mutable bool selectedInImgui = false;
-
-			// todo rename these?
-			group_handle myGroup;
-			group_entry_handle myGroupPos;
+			bool visible = true;
+			group_handle group;
+			group_entry_handle groupPos;
 		};
 
 		class Group
@@ -124,9 +123,8 @@ namespace player_trace
 			mutable color32 tint;
 
 		public:
-			mutable std::string name;
-			// TODO all of these can be readonly public
 			bool visible = true;
+			mutable std::string name;
 			group_entries entries;
 
 			Group(std::string name, color32 tint) : name(std::move(name)), tint(tint) {}
@@ -186,16 +184,21 @@ namespace player_trace
 		/*
 		* These are all public read/write in order of priority:
 		* - a solo trace/group is the only one that is shown
-		* - the ImGui hovered trace is highlighted in the UI (TODO) and is basically a "super-solo" trace
+		* - the ImGui hovered trace is basically a "super-solo" trace
 		*/
 		entry_handle imguiHoveredTrace = traces.end();
 		entry_handle soloTrace = traces.end();
 		group_handle soloGroup = groups.end();
 
-		// ImGui structure that allows for entry multi-selection
+		size_t nDrawnTracesLastFrame = 0; // user global
+
+		/*
+		* ImGui structure that allows for entry multi-selection. Use the functions below to convert
+		* to and from entry handles. Since I don't convert to handles/iterators directly, the
+		* conversion is lossy, but a workaround is to get the group_entry_handle and from the entry.
+		*/
 		ImGuiSelectionBasicStorage imguiEntrySelect;
 
-		// we can't get the handle back from the ID, so this is a lossy conversion ://
 		ImGuiID HandleToMultiSelectId(entry_handle entry) const
 		{
 			return reinterpret_cast<ImGuiID>(&*entry);
@@ -212,7 +215,7 @@ namespace player_trace
 			return tp;
 		}
 
-		const auto& AllTraces() const
+		const auto& Traces() const
 		{
 			return traces;
 		}

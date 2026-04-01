@@ -34,6 +34,11 @@ class GroupTintCallback
 	static constexpr const char* SOLO_LABEL_ON = ICON_CI_STAR_FULL "###solo";
 	static constexpr const char* SOLO_LABEL_OFF = ICON_CI_STAR "###solo";
 
+	struct
+	{
+		bool superSoloHoveredTrace = true;
+	} inline static imguiPersist;
+
 public:
 	GroupTintCallback(TrTracePlayer& tracePlayer)
 	    : tracePlayer(tracePlayer), imguiEntrySelection(tracePlayer.imguiEntrySelect)
@@ -42,10 +47,10 @@ public:
 		// sanity check
 		for (auto& group : tracePlayer.Groups())
 			for (auto& entry : group.entries)
-				Assert(&*entry->second.myGroup == &group && &*entry->second.myGroupPos == &entry);
+				Assert(&*entry->second.group == &group && &*entry->second.groupPos == &entry);
 #endif
 		selectionList.clear();
-		selectionList.reserve(tracePlayer.AllTraces().size());
+		selectionList.reserve(tracePlayer.Traces().size());
 		imguiEntrySelection.UserData = &selectionList;
 		imguiEntrySelection.AdapterIndexToStorageId = [](ImGuiSelectionBasicStorage* self, int idx)
 		{ return (*((std::vector<ImGuiID>*)self->UserData))[idx]; };
@@ -59,6 +64,20 @@ public:
 
 	void Draw()
 	{
+		SptImGui::HelpMarker(
+		    "You can organize traces into color-coded groups.\n"
+		    "After importing/recording your traces, create groups\n"
+		    "and drag/drop traces into them (you can drag/drop\n"
+		    "multiple traces at a time with ctrl/shift click).\n"
+		    "The names of the groups can be called whatever you\n"
+		    "want - they are just for organization.");
+
+		ImGui::Checkbox("Solo hovered trace", &imguiPersist.superSoloHoveredTrace);
+		ImGui::SameLine();
+		SptImGui::HelpMarker(
+		    "Only draw the trace that the mouse is hovered\n"
+		    "over, ignoring solo/visible settings.");
+
 		// top left corner of the group drag/drop target
 		float curGroupDragDropMinY = ImGui::GetCursorScreenPos().y;
 		ImVec2 groupItemBoundsX(-1, -1);
@@ -66,7 +85,7 @@ public:
 		// multi-select logic copied from imgui demo
 		ImGuiMultiSelectIO* msIo = ImGui::BeginMultiSelect(ImGuiMultiSelectFlags_None,
 		                                                   imguiEntrySelection.Size,
-		                                                   tracePlayer.AllTraces().size());
+		                                                   tracePlayer.Traces().size());
 		imguiEntrySelection.ApplyRequests(msIo);
 
 		// iterate over each group
@@ -187,7 +206,7 @@ private:
 		{
 			auto pTraceEntry = thisptr->tracePlayer.MultiSelectIdToPtr(id);
 			const TrTracePlayer::TraceEntry& entry = pTraceEntry->second;
-			auto fromEntryHandle = *entry.myGroupPos;
+			auto fromEntryHandle = *entry.groupPos;
 
 			/*
 			* When using drag/drop for multiple entries across multiple groups, the entries
@@ -195,7 +214,7 @@ private:
 			* that seems to preserve select order, not submit order. Probably fine :).
 			*/
 
-			if (toGroup == entry.myGroup && toGroupPos == entry.myGroupPos)
+			if (toGroup == entry.group && toGroupPos == entry.groupPos)
 				++toGroupPos; // without this if you try to drop entries into the slot they're in they'll get reversed
 			else
 				thisptr->tracePlayer.MoveTraceToGroup(fromEntryHandle, toGroup, toGroupPos);
@@ -353,8 +372,7 @@ private:
 
 		ImGui::EndGroup();
 
-		// TODO inform the user that hovering selects a specific trace! at least make a checkbox!
-		if (ImGui::IsItemHovered())
+		if (imguiPersist.superSoloHoveredTrace && ImGui::IsItemHovered())
 			tracePlayer.imguiHoveredTrace = entryHandle;
 	}
 
@@ -374,12 +392,16 @@ private:
 
 void tr_imgui::RenderStyleTab()
 {
+	auto& tp = TrTracePlayer::Singleton();
+
 	if (ImGui::TreeNode("Trace groups"))
 	{
-		GroupTintCallback cb(TrTracePlayer::Singleton());
-		cb.Draw();
+		GroupTintCallback groupTints(tp);
+		groupTints.Draw();
 		ImGui::TreePop();
 	}
+
+	ImGui::Text("Drawing %u trace%s", tp.nDrawnTracesLastFrame, tp.nDrawnTracesLastFrame == 1 ? "" : "s");
 }
 
 #endif

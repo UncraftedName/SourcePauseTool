@@ -45,8 +45,8 @@ void TrTracePlayer::InitTraceGroup(entry_handle entry)
 {
 	Assert(entry != traces.end());
 	// assume the entry is not in a group yet, put it in the default one
-	entry.it->second.myGroup = defaultGroup;
-	entry.it->second.myGroupPos = defaultGroup.it->entries.insert(defaultGroup->entries.end(), entry);
+	entry.it->second.group = defaultGroup;
+	entry.it->second.groupPos = defaultGroup.it->entries.insert(defaultGroup->entries.end(), entry);
 }
 
 auto TrTracePlayer::GetRecordingTraceHandle() -> entry_handle
@@ -92,7 +92,7 @@ auto TrTracePlayer::TryStartRecording(std::filesystem::path path, ser::StatusTra
 	}
 
 	recordingTrace = std::move(rt);
-	rt->handle.it->second.tr.StartRecording();
+	recordingTrace->handle.it->second.tr.StartRecording();
 	return recordingTrace->handle;
 }
 
@@ -172,7 +172,7 @@ void TrTracePlayer::Remove(entry_handle entry)
 		detailedImGuiTrace = traces.end();
 
 	// unlink from group
-	entry->second.myGroup.it->entries.erase(entry->second.myGroupPos.it);
+	entry->second.group.it->entries.erase(entry->second.groupPos.it);
 	// deselect in imgui
 	imguiEntrySelect.SetItemSelected(HandleToMultiSelectId(entry), false);
 
@@ -187,7 +187,7 @@ void TrTracePlayer::Remove(group_handle group)
 		return;
 	// move all entries to default group
 	for (auto& entryHandle : group->entries)
-		entryHandle.it->second.myGroup = defaultGroup;
+		entryHandle.it->second.group = defaultGroup;
 	defaultGroup.it->entries.splice(defaultGroup->entries.end(), group.it->entries);
 	// if the solo group is being deleted, then no solo group anymore
 	if (soloGroup == group)
@@ -247,8 +247,8 @@ size_t TrTracePlayer::ClearTraces(bool clearRecording)
 			soloTrace = rtHandle;
 		if (recordingTraceSelectedInImGui)
 			imguiEntrySelect.SetItemSelected(HandleToMultiSelectId(rtHandle), true);
-		auto& groupEntries = rtHandle->second.myGroup.it->entries;
-		rtHandle.it->second.myGroupPos = groupEntries.insert(groupEntries.end(), rtHandle.it);
+		auto& groupEntries = rtHandle->second.group.it->entries;
+		rtHandle.it->second.groupPos = groupEntries.insert(groupEntries.end(), rtHandle.it);
 	}
 
 	return oldSize - traces.size();
@@ -273,7 +273,7 @@ void TrTracePlayer::SetGroupSoloOpt(group_handle group, bool val)
 	{
 		soloGroup = group;
 		group.it->visible = true;
-		if (soloTrace != traces.end() && soloTrace->second.myGroup != group)
+		if (soloTrace != traces.end() && soloTrace->second.group != group)
 			soloTrace = traces.end();
 	}
 	else
@@ -297,7 +297,7 @@ void TrTracePlayer::SetGroupVisibleOpt(group_handle group, bool val)
 	{
 		if (soloGroup == group)
 			soloGroup = groups.end();
-		if (soloTrace != traces.end() && soloTrace->second.myGroup == group)
+		if (soloTrace != traces.end() && soloTrace->second.group == group)
 			soloTrace = traces.end();
 	}
 	group.it->visible = val;
@@ -319,9 +319,9 @@ void TrTracePlayer::SetTraceSoloOpt(entry_handle entry, bool val)
 	Assert(GetTraceSoloOpt(entry).allowUiChange);
 	if (val)
 	{
-		entry->second.visible = true;
-		entry->second.myGroup.it->visible = true;
-		if (entry->second.myGroup != soloGroup)
+		entry.it->second.visible = true;
+		entry->second.group.it->visible = true;
+		if (entry->second.group != soloGroup)
 			soloGroup = groups.end();
 		soloTrace = entry;
 	}
@@ -348,7 +348,7 @@ void TrTracePlayer::SetTraceVisibleOpt(entry_handle entry, bool val)
 	Assert(GetTraceVisibleOpt(entry).allowUiChange);
 	if (!val && entry == soloTrace)
 		soloTrace = traces.end();
-	entry->second.visible = val;
+	entry.it->second.visible = val;
 }
 
 auto TrTracePlayer::AddGroup(color32 tint) -> group_handle
@@ -360,9 +360,9 @@ auto TrTracePlayer::AddGroup(color32 tint) -> group_handle
 void TrTracePlayer::MoveTraceToGroup(entry_handle entry, group_handle toGroup, group_entry_handle toPos)
 {
 	auto& trEntry = entry.it->second;
-	trEntry.myGroup.it->entries.erase(trEntry.myGroupPos.it);
-	trEntry.myGroupPos = toGroup.it->entries.insert(toPos.it, entry.it);
-	trEntry.myGroup = toGroup;
+	trEntry.group.it->entries.erase(trEntry.groupPos.it);
+	trEntry.groupPos = toGroup.it->entries.insert(toPos.it, entry.it);
+	trEntry.group = toGroup;
 }
 
 void TrTracePlayer::ReorderGroup(group_handle from, group_handle to)

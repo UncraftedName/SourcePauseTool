@@ -24,7 +24,7 @@ namespace player_trace::tr_imgui
 	void TraceFileSelectionWindowCallback(std::unique_ptr<ImGuiFileDialog>& igfd);
 
 	bool DrawDetailedTraceSelect();
-	// called before any single_trace_info_tab_fn
+	// called before every single_trace_info_tab_fn
 	void SingleTraceInfoTabHeader(tr_tick activeTick);
 
 	// a tab that shows detailed info for a single trace at a single tick, assumes TrReadContentScope is already set

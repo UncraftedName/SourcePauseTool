@@ -16,10 +16,11 @@ constexpr const char* TR_FILE_SELECT_WND_ID = "trace_file_select";
 static std::string g_importErrStr;
 static SptImGui::TimedToolTip g_importErrTip;
 
+// TODO pretty this up
 void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& igfd)
 {
 	auto& tp = TrTracePlayer::Singleton();
-	auto& traces = tp.AllTraces();
+	auto& traces = tp.Traces();
 
 	ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
 	if (ImGui::TreeNode("Loaded traces"))
@@ -127,7 +128,7 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 					    return false;
 				    std::filesystem::path fullPath =
 				        std::filesystem::path(info.filePath) / info.fileNameExt;
-				    if (TrTracePlayer::Singleton().AllTraces().contains(fullPath))
+				    if (TrTracePlayer::Singleton().Traces().contains(fullPath))
 				    {
 					    outStyle.color = {
 					        traceFileColor.x * 0.5f,
@@ -155,7 +156,7 @@ void tr_imgui::TraceFileSelectionTabCallback(std::unique_ptr<ImGuiFileDialog>& i
 			    if (!info->fileType.isFile())
 				    return true;
 			    std::filesystem::path fullPath = std::filesystem::path(info->filePath) / info->fileNameExt;
-			    if (TrTracePlayer::Singleton().AllTraces().contains(fullPath))
+			    if (TrTracePlayer::Singleton().Traces().contains(fullPath))
 			    {
 				    info->tooltipMessage = "Already loaded";
 				    // TODO this should work if tooltipColumn==-1, submit a bug
@@ -209,7 +210,7 @@ void tr_imgui::TraceFileSelectionWindowCallback(std::unique_ptr<ImGuiFileDialog>
 bool tr_imgui::DrawDetailedTraceSelect()
 {
 	auto& tp = TrTracePlayer::Singleton();
-	auto& traces = tp.AllTraces();
+	auto& traces = tp.Traces();
 	auto& handle = tp.detailedImGuiTrace;
 
 	if (handle == traces.end())

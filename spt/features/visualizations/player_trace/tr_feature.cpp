@@ -34,7 +34,6 @@
 
 using namespace player_trace;
 
-
 // RAII context to disable certain render options while drawing multiple traces
 class TrMultiTraceRenderContext
 {
@@ -96,7 +95,7 @@ static void CC_Trace_Start(const std::filesystem::path& fsPath)
 {
 	auto& tp = TrTracePlayer::Singleton();
 	auto rt = tp.GetRecordingTraceHandle();
-	if (rt != tp.AllTraces().end())
+	if (rt != tp.Traces().end())
 	{
 		if (TrTracePlayer::trace_map::key_compare{}.Compare3Way(rt->first, fsPath) == 0)
 		{
@@ -191,7 +190,7 @@ CON_COMMAND_F(spt_trace_stop,
 CON_COMMAND_F(spt_trace_list, "List all loaded traces", FCVAR_DONTRECORD)
 {
 	auto& tp = TrTracePlayer::Singleton();
-	auto& traces = tp.AllTraces();
+	auto& traces = tp.Traces();
 	if (traces.empty())
 	{
 		Msg("No loaded traces\n");
@@ -238,7 +237,7 @@ CON_COMMAND_F(spt_trace_unload, "Unload trace(s) with the given path(s), support
 	}
 
 	auto& tp = TrTracePlayer::Singleton();
-	auto& traces = tp.AllTraces();
+	auto& traces = tp.Traces();
 	auto rt = tp.GetRecordingTraceHandle();
 
 	size_t nDeleted = 0;
@@ -447,6 +446,8 @@ bool PlayerTraceFeature::ShouldLoadFeature()
 	return TickSignal.Works && interfaces::engine_tool;
 }
 
+// TODO move this to the imgui file
+// for tabs which draw detailed information about a single trace, draw a dropdown to select it and exit early if there are none
 static void WrapSingleTraceInfoTab(SptImGuiGroup::Tab& imguiTab, tr_imgui::single_trace_info_tab_fn fn)
 {
 	imguiTab.RegisterUserCallback(
@@ -519,6 +520,7 @@ void PlayerTraceFeature::UnloadFeature()
 	igfd.reset();
 }
 
+// TODO don't allow scrolling past end of the trace
 void PlayerTraceFeature::ChangeDisplayTick(int diff)
 {
 	if (diff < 0 && (tr_tick)-diff > absDrawTick)
@@ -554,7 +556,7 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 		return;
 
 	auto& tp = TrTracePlayer::Singleton();
-	auto& traces = tp.AllTraces();
+	auto& traces = tp.Traces();
 	if (!spt_trace_draw_while_recording.GetBool() && tp.GetRecordingTraceHandle() != traces.end())
 		return;
 
@@ -572,35 +574,50 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 	drawRecordingTrace |= rt == traces.end(); // bit of a hack to make the logic below slightly easier
 
 	// TODO display the count in imgui somehow
-	static std::vector<const TrTracePlayer::TraceEntry*> entriesToDraw;
+	static std::vector<TrTracePlayer::entry_handle> entriesToDraw;
 	entriesToDraw.clear();
 
-	TrTracePlayer::entry_handle priorityTrace =
-	    tp.imguiHoveredTrace == traces.end() ? tp.soloTrace : tp.imguiHoveredTrace;
-
-	if (priorityTrace != traces.end())
+	if (tp.imguiHoveredTrace != traces.end())
 	{
-		entriesToDraw.push_back(&priorityTrace->second);
+		// hovering over a trace in ImGui
+		entriesToDraw.push_back(tp.imguiHoveredTrace);
+	}
+	else if (tp.soloTrace != traces.end())
+	{
+		// soloing a single trace in ImGui
+		entriesToDraw.push_back(tp.soloTrace);
 	}
 	else if (tp.soloGroup != tp.Groups().end())
 	{
-		for (auto& traceIt : tp.soloGroup->entries)
-			if (traceIt->second.visible && (drawRecordingTrace || traceIt != rt))
-				entriesToDraw.push_back(&traceIt->second);
+		// soloing a single group
+		for (auto& entry : tp.soloGroup->entries)
+			if (entry->second.visible && (drawRecordingTrace || entry != rt))
+				entriesToDraw.push_back(entry);
 	}
 	else
 	{
-		for (auto& [_, entry] : traces)
-			if (entry.visible && entry.myGroup->visible && (drawRecordingTrace || &entry == &rt->second))
-				entriesToDraw.push_back(&entry);
+		// TODO - is there really no nicer begin/end?
+
+		// draw all visible traces
+		for (auto entry = TrTracePlayer::entry_handle::Begin(traces);
+		     entry != TrTracePlayer::entry_handle::End(traces);
+		     ++entry)
+		{
+			if (entry->second.visible && entry->second.group->visible
+			    && (drawRecordingTrace || entry == rt))
+			{
+				entriesToDraw.push_back(entry);
+			}
+		}
 	}
 
-	for (auto pEntry : entriesToDraw)
+	for (auto entry : entriesToDraw)
 	{
-		TrReadContextScope scope{pEntry->tr};
-		auto& renderCache = pEntry->tr.GetRenderingCache();
+		auto& trEntry = entry->second;
+		TrReadContextScope scope{trEntry.tr};
+		auto& renderCache = trEntry.tr.GetRenderingCache();
+		auto& style = trEntry.group->GetCfg(tp.mainStyleConfig);
 
-		auto& style = pEntry->myGroup->GetCfg(tp.mainStyleConfig);
 		if (entriesToDraw.size() == 1)
 		{
 			renderCache.RenderAll(mr, style, absDrawTick);
@@ -612,6 +629,8 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 			renderCache.RenderAll(mr, style, absDrawTick);
 		}
 	}
+
+	tp.nDrawnTracesLastFrame = entriesToDraw.size();
 
 	// imgui will set this
 	tp.imguiHoveredTrace = TrTracePlayer::entry_handle::End(traces);
