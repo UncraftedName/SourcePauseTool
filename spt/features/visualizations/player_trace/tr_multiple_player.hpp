@@ -173,6 +173,7 @@ namespace player_trace
 				group.InvalidateCfg();
 		}
 
+		bool multiEnableFlagsInheritDisabledSingleEnableFlags = true;
 		TrRenderEnableConfig singleTraceRenderEnableCfg;
 		TrRenderEnableConfig multiTraceRenderEnableCfg;
 

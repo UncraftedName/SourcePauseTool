@@ -41,8 +41,7 @@ class GroupTintCallback
 	} inline static imguiPersist;
 
 public:
-	GroupTintCallback(TrTracePlayer& tracePlayer)
-	    : tracePlayer(tracePlayer), imguiEntrySelection(tracePlayer.imguiEntrySelect)
+	GroupTintCallback() : tracePlayer(TrTracePlayer::Singleton()), imguiEntrySelection(tracePlayer.imguiEntrySelect)
 	{
 #ifndef NDEBUG
 		// sanity check
@@ -391,35 +390,39 @@ private:
 	}
 };
 
-static bool inheritSingleTraceFlags = true;
+// returns flag value
+static bool DrawEnableFlag(TrRenderEnableFlag flag, const char* label)
+{
+	bool val = flag;
+	if (ImGui::Checkbox(label, &val))
+		flag = val;
+	return val;
+}
 
 static void DrawMultiTraceEnableFlag(TrRenderEnableOpt opt, const char* label)
 {
 	auto& tp = TrTracePlayer::Singleton();
 	TrRenderEnableFlag multiFlag = tp.multiTraceRenderEnableCfg[opt];
 
-	if (inheritSingleTraceFlags)
+	if (tp.multiEnableFlagsInheritDisabledSingleEnableFlags)
 	{
 		TrRenderEnableFlag singleFlag = tp.singleTraceRenderEnableCfg[opt];
 		ImGui::BeginDisabled(!singleFlag);
-		bool val = multiFlag;
-		if (ImGui::Checkbox(label, &val))
-			multiFlag = val;
+		DrawEnableFlag(multiFlag, label);
 		if (!singleFlag)
 			ImGui::SetItemTooltip("Disabled in general settings");
 		ImGui::EndDisabled();
 	}
 	else
 	{
-		bool val = multiFlag;
-		if (ImGui::Checkbox(label, &val))
-			multiFlag = val;
+		DrawEnableFlag(multiFlag, label);
 	}
 }
 
 static void DrawMultiTraceEnableConfig()
 {
-	ImGui::Checkbox("Inherit disabled single trace flags", &inheritSingleTraceFlags);
+	auto& tp = TrTracePlayer::Singleton();
+	ImGui::Checkbox("Inherit disabled single trace flags", &tp.multiEnableFlagsInheritDisabledSingleEnableFlags);
 	ImGui::SameLine();
 	SptImGui::HelpMarker(
 	    "If a setting is disabled in the general settings,\n"
@@ -440,7 +443,135 @@ static void DrawMultiTraceEnableConfig()
 	DrawMultiTraceEnableFlag(TR_RENDER_ENABLE_ENT_COLLECT_AABB, "Draw entity collection volume");
 }
 
-static void DrawSingleTraceConfig() {}
+class SingleTraceConfigCallback
+{
+	TrTracePlayer& tracePlayer;
+	TrRenderStyleConfig& style;
+	TrRenderEnableConfig& enableFlags;
+	bool groupsDirty = false;
+
+public:
+	SingleTraceConfigCallback()
+	    : tracePlayer(TrTracePlayer::Singleton())
+	    , style(tracePlayer.mainStyleConfig)
+	    , enableFlags(tracePlayer.singleTraceRenderEnableCfg)
+	{
+	}
+
+	void Draw()
+	{
+		PlayerPath();
+
+		if (groupsDirty)
+			tracePlayer.MarkGroupStylesDirty();
+	}
+
+private:
+	static bool ResetButton()
+	{
+		bool ret = ImGui::SmallButton(ICON_CI_DEBUG_RESTART);
+		ImGui::SetItemTooltip("reset default values");
+		return ret;
+	}
+
+	void SliderFloat(const char* label,
+	                 float* v,
+	                 float displayMin,
+	                 float displayMax,
+	                 float actualMin,
+	                 float actualMax)
+	{
+		if (ImGui::SliderFloat(label, v, displayMin, displayMax))
+		{
+			*v = std::max(*v, actualMin);
+			*v = std::min(*v, actualMax);
+			groupsDirty = true;
+		}
+	}
+
+	void SliderInt(const char* label, int* v, int displayMin, int displayMax, int actualMin, int actualMax)
+	{
+		if (ImGui::SliderInt(label, v, displayMin, displayMax))
+		{
+			*v = std::max(*v, actualMin);
+			*v = std::min(*v, actualMax);
+			groupsDirty = true;
+		}
+	}
+
+	struct ScopedEnableSection
+	{
+		bool open = false;
+		bool enabled = true;
+		bool resetButtonPressed = false; // check for this by hand
+
+		ScopedEnableSection(const char* label, TrRenderEnableOpt opt)
+		{
+			open = ImGui::TreeNode(label);
+			if (!open)
+				return;
+			enabled = DrawEnableFlag(TrTracePlayer::Singleton().singleTraceRenderEnableCfg[opt], "draw");
+			ImGui::BeginDisabled(!enabled);
+			resetButtonPressed = ResetButton();
+		}
+
+		~ScopedEnableSection()
+		{
+			if (open)
+			{
+				ImGui::EndDisabled();
+				ImGui::TreePop();
+			}
+		}
+	};
+
+	void PlayerPath()
+	{
+		ScopedEnableSection scope("Player path", TR_RENDER_ENABLE_PLAYER_PATH);
+		auto& playerPath = style.playerPath;
+		if (scope.resetButtonPressed)
+			playerPath = TrRenderStyleConfig{}.playerPath;
+
+		PlayerPathCones();
+		PlayerPathEndpoints();
+		// TODO segments
+	}
+
+	void PlayerPathCones()
+	{
+		ScopedEnableSection scope("Cones", TR_RENDER_ENABLE_PLAYER_PATH_CONES);
+		auto& cones = style.playerPath.cones;
+		if (scope.resetButtonPressed)
+			cones = TrRenderStyleConfig{}.playerPath.cones;
+
+		SliderFloat("opacity", &cones.opacity, 0.f, 1.f, 0.f, 1.f);
+		SliderInt("circle resolution", &cones.nCirclePoints, 3, 15, 3, 666);
+		SliderFloat("length", &cones.length, 0.1f, 10.f, 0.01f, INFINITY);
+		SliderFloat("radius", &cones.radius, 0.1f, 4.f, 0.01f, INFINITY);
+		SliderInt("tick interval", &cones.tickInterval, 5, 50, 1, 666);
+	}
+
+	void PlayerPathEndpoints()
+	{
+		ScopedEnableSection scope("Endpoints", TR_RENDER_ENABLE_PLAYER_PATH_ENDPOINTS);
+		auto& endpoints = style.playerPath.endpoints;
+		if (scope.resetButtonPressed)
+			endpoints = TrRenderStyleConfig{}.playerPath.endpoints;
+
+		SliderFloat("opacity", &endpoints.opacity, 0.f, 1.f, 0.f, 1.f);
+		SliderInt("circle resolution", &endpoints.nCirclePoints, 3, 15, 3, 666);
+		SliderFloat("radius", &endpoints.radius, 0.1f, 10.f, 0.01f, INFINITY);
+	}
+
+	void PlayerHull() {
+		ScopedEnableSection scope("Player hull", TR_RENDER_ENABLE_PLAYER_HULL);
+		auto& playerHull = style.playerHull;
+		if (scope.resetButtonPressed)
+			playerHull = TrRenderStyleConfig{}.playerHull;
+
+
+	}
+};
 
 void tr_imgui::RenderStyleTab()
 {
@@ -448,18 +579,21 @@ void tr_imgui::RenderStyleTab()
 	bool draw = SptImGui::CvarCheckbox(spt_draw_trace, "Draw trace(s)");
 	ImGui::BeginDisabled(!draw);
 
-	auto& tp = TrTracePlayer::Singleton();
-
 	if (ImGui::CollapsingHeader("Trace groups"))
 	{
-		GroupTintCallback groupTints(tp);
+		GroupTintCallback groupTints;
 		groupTints.Draw();
 	}
+
+	auto& tp = TrTracePlayer::Singleton();
 
 	ImGui::Text("Drawing %u trace%s", tp.nDrawnTracesLastFrame, tp.nDrawnTracesLastFrame == 1 ? "" : "s");
 
 	if (ImGui::CollapsingHeader("Style settings"))
-		DrawSingleTraceConfig();
+	{
+		SingleTraceConfigCallback singleTraceConfig;
+		singleTraceConfig.Draw();
+	}
 
 	ImGui::BeginDisabled(tp.nDrawnTracesLastFrame < 2);
 	if (ImGui::CollapsingHeader("Multi-trace options"))

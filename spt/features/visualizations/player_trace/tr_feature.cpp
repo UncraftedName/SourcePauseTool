@@ -549,12 +549,22 @@ void PlayerTraceFeature::OnMeshRenderSignal(MeshRendererDelegate& mr)
 		}
 	}
 
+	TrRenderEnableConfig enableCfg;
+	if (entriesToDraw.size() > 1)
+	{
+		enableCfg = tp.multiTraceRenderEnableCfg;
+		if (tp.multiEnableFlagsInheritDisabledSingleEnableFlags)
+			enableCfg &= tp.singleTraceRenderEnableCfg;
+	}
+	else
+	{
+		enableCfg = tp.singleTraceRenderEnableCfg;
+	}
+
 	for (auto entry : entriesToDraw)
 	{
 		auto& trEntry = entry->second;
 		TrReadContextScope scope{trEntry.tr};
-		TrRenderEnableConfig enableCfg =
-		    entriesToDraw.size() == 1 ? tp.singleTraceRenderEnableCfg : tp.multiTraceRenderEnableCfg;
 		auto& style = trEntry.group->GetCfg(tp.mainStyleConfig);
 		auto& renderCache = trEntry.tr.GetRenderingCache();
 		renderCache.RenderAll(mr, enableCfg, style, absDrawTick);
