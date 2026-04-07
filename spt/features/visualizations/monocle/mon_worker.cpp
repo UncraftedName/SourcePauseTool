@@ -19,14 +19,14 @@ MonocleWorker::~MonocleWorker()
 		thread.join();
 }
 
-mon::Vector MonocleWorker::PixelToWorldCoordinates(WorkerPixel px, const mon::TeleportChainParams* paramsOverride) const
+Vector MonocleWorker::PixelToWorldCoordinates(WorkerPixel px, const mon::TeleportChainParams* paramsOverride) const
 {
 	Assert(!!monocleData);
 	const mon::TeleportChainParams* params = paramsOverride ? paramsOverride : &monocleData->paramsTemplate;
 	const mon::Portal& p = params->EntryPortal();
 	// center on each pixel and orient as if we're looking at the portal
-	mon::Vector uShift = p.u * (mon::PORTAL_HALF_HEIGHT * ((2 * px.y + 1) / (float)img.size.y - 1));
-	mon::Vector rShift = p.r * (mon::PORTAL_HALF_WIDTH * ((2 * px.x + 1) / (float)img.size.x - 1));
+	Vector uShift = p.u * (mon::PORTAL_HALF_HEIGHT * ((2 * px.y + 1) / (float)img.size.y - 1));
+	Vector rShift = p.r * (mon::PORTAL_HALF_WIDTH * ((2 * px.x + 1) / (float)img.size.x - 1));
 	return (p.pos - uShift) - rShift;
 }
 
@@ -229,53 +229,52 @@ void MonocleWorker::RecomputeEffectiveTpSpace()
 		* The player will always be teleported when their center is on the portal plane. To figure
 		* out the effective teleport space:
 		* - slice the player using the portal plane to create a 2D polygon
-		* - create an AABB of that polygon
+		* - create a 2D AABB of that polygon
 		* - "subtract" that AABB from the portal rectangle
 		*/
 
 		matrix3x4_t portalToWorld;
-		AngleIMatrix(*(QAngle*)&p.ang, *(Vector*)&p.pos, portalToWorld);
+		AngleIMatrix(p.ang, p.pos, portalToWorld);
 
 		// create an AABB centered at the portal
 		mon::Entity centeredEnt = ent.WithNewCenter(p.pos);
-		mon::Vector mins = centeredEnt.GetWorldMins();
-		mon::Vector maxs = centeredEnt.GetWorldMaxs();
 
 		// get a cross section of the player sliced by the portal plane (world space)
 		std::array<Vector, 10> edgeIntersectionsWorldSpace;
 		size_t intersectionCount = 0;
 
-		auto checkPlaneIntersectLine = [&](const Vector& a, const Vector& b)
+		auto checkPortalPlaneIntersectLineSegment = [&](const Vector& a, const Vector& b)
 		{
-			const VPlane& portalPlane = *(VPlane*)&p.plane;
-			float aDotN = a.Dot(portalPlane.m_Normal);
-			float bDotN = b.Dot(portalPlane.m_Normal);
+			float aDotN = a.Dot(p.plane.n);
+			float bDotN = b.Dot(p.plane.n);
 			// t is the fraction at which the line segment a->b intersects the portal plane
-			float t = (portalPlane.m_Dist - aDotN) / (bDotN - aDotN);
+			float t = (p.plane.d - aDotN) / (bDotN - aDotN);
 			// because of this epsilon, we may sometimes get false positives and include more edges than necessary (up to 10)
 			if (t >= -0.0001f && t <= 1.0001f)
 				edgeIntersectionsWorldSpace[intersectionCount++] = Lerp(t, a, b);
 		};
 
-		// iterate over all player AABB edges
+		// iterate over all player AABB edges - pick 4 reference corners and change each of the 3 axes one at a time (mins<->maxs) to get an adjacent corner
 
-		// edges from the mins corner
-		checkPlaneIntersectLine(*(Vector*)&mins, {maxs.x, mins.y, mins.z});
-		checkPlaneIntersectLine(*(Vector*)&mins, {mins.x, maxs.y, mins.z});
-		checkPlaneIntersectLine(*(Vector*)&mins, {mins.x, mins.y, maxs.z});
+		Vector a = centeredEnt.GetWorldMins();
+		Vector b = centeredEnt.GetWorldMaxs();
 
-		// the other 9 edges :)
-		for (size_t r = 0; r < 3; r++)
-		{
-			Vector from = *(Vector*)&maxs;
-			from[r] = mins[r];
-			for (size_t flipAx = 0; flipAx < 3; flipAx++)
-			{
-				Vector to = from;
-				to[flipAx] = r == flipAx ? maxs[flipAx] : mins[flipAx];
-				checkPlaneIntersectLine(from, to);
-			}
-		}
+		Vector ref = {a.x, a.y, a.z};
+		checkPortalPlaneIntersectLineSegment(ref, {b.x, a.y, a.z});
+		checkPortalPlaneIntersectLineSegment(ref, {a.x, b.y, a.z});
+		checkPortalPlaneIntersectLineSegment(ref, {a.x, a.y, b.z});
+		ref = {a.x, b.y, b.z};
+		checkPortalPlaneIntersectLineSegment(ref, {b.x, b.y, b.z});
+		checkPortalPlaneIntersectLineSegment(ref, {a.x, a.y, b.z});
+		checkPortalPlaneIntersectLineSegment(ref, {a.x, b.y, a.z});
+		ref = {b.x, a.y, b.z};
+		checkPortalPlaneIntersectLineSegment(ref, {a.x, a.y, b.z});
+		checkPortalPlaneIntersectLineSegment(ref, {b.x, b.y, b.z});
+		checkPortalPlaneIntersectLineSegment(ref, {b.x, a.y, a.z});
+		ref = {b.x, b.y, a.z};
+		checkPortalPlaneIntersectLineSegment(ref, {a.x, b.y, a.z});
+		checkPortalPlaneIntersectLineSegment(ref, {b.x, a.y, a.z});
+		checkPortalPlaneIntersectLineSegment(ref, {b.x, b.y, b.z});
 
 		// convert the intersections to a local space AABB (+z is up, +y is left)
 		Vector localMins(666, 666, 666);

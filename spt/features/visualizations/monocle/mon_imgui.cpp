@@ -616,10 +616,10 @@ bool MonocleFeature::CheckPortalsChanged(const utils::PortalInfo* newEntryPortal
 
 	auto& oldEntry = oldMonData->paramsTemplate.EntryPortal();
 	auto& oldExit = oldMonData->paramsTemplate.ExitPortal();
-	auto vec_match = [](auto& a, auto& b) { return *(Vector*)&a == *(Vector*)&b; };
 
-	return !vec_match(oldEntry.pos, newEntryPortal->pos) || !vec_match(oldExit.pos, newLinkedPortal->pos)
-	       || !vec_match(oldEntry.ang, newEntryPortal->ang) || !vec_match(oldExit.ang, newLinkedPortal->ang);
+	return (const Vector&)oldEntry.pos != newEntryPortal->pos || (const Vector&)oldExit.pos != newLinkedPortal->pos
+	       || (const QAngle&)oldEntry.ang != newEntryPortal->ang
+	       || (const QAngle&)oldExit.ang != newLinkedPortal->ang;
 }
 
 void MonocleFeature::RestartWorkers(const utils::PortalInfo* newEntryPortal)
@@ -639,10 +639,10 @@ void MonocleFeature::RestartWorkers(const utils::PortalInfo* newEntryPortal)
 
 		mon::TeleportChainParams paramsTemplate;
 
-		mon::Vector entCenter = *(mon::Vector*)&newEntryPortal->pos;
+		auto& entCenter = newEntryPortal->pos;
 		paramsTemplate.ent =
 		    imguiPersist.usePlayer
-		        ? mon::Entity::CreatePlayerFromCenter(entCenter, imguiPersist.combos.playerCrouched.Grab())
+		        ? mon::Entity::CreatePlayerFromCenter(newEntryPortal->pos, imguiPersist.combos.playerCrouched.Grab())
 		        : mon::Entity::CreateBall(entCenter, imguiPersist.nonPlayerRadius);
 		paramsTemplate.first_tp_from_blue = !newEntryPortal->isOrange;
 		paramsTemplate.record_flags = mon::TCRF_NONE;

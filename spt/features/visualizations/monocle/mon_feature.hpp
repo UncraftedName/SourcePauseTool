@@ -8,6 +8,7 @@
 
 #include "spt\feature.hpp"
 
+#include "thirdparty\monocle_implicit_conversions.hpp"
 #include "teleport_chain\generate.hpp"
 
 #include <d3d9.h>
@@ -84,13 +85,7 @@ struct WorkerMonocleData
 	                  mon::PlacementOrder order,
 	                  mon::GameVersion gv,
 	                  const mon::TeleportChainParams& paramsTemplate)
-	    : pp(*(mon::Vector*)&bluePos,
-	         *(mon::QAngle*)&blueAng,
-	         *(mon::Vector*)&orangePos,
-	         *(mon::QAngle*)&orangeAng,
-	         order,
-	         gv)
-	    , paramsTemplate(paramsTemplate)
+	    : pp(bluePos, blueAng, orangePos, orangeAng, order, gv), paramsTemplate(paramsTemplate)
 	{
 		this->paramsTemplate.pp = &pp;
 	}
@@ -220,8 +215,7 @@ public:
 		return img.size;
 	}
 
-	mon::Vector PixelToWorldCoordinates(WorkerPixel px,
-	                                    const mon::TeleportChainParams* paramsOverride = nullptr) const;
+	Vector PixelToWorldCoordinates(WorkerPixel px, const mon::TeleportChainParams* paramsOverride = nullptr) const;
 
 	std::optional<WorkerPixelData> GetPixelResult(WorkerPixel px) const
 	{

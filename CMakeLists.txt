@@ -195,7 +195,7 @@ set(SPT_SOURCES
 FetchContent_Declare(
 	monocle
 	GIT_REPOSITORY https://github.com/UncraftedName/Monocle
-	GIT_TAG        3ff422cc2a7d4048369c1cae7b1315155e9afa08
+	GIT_TAG        cf2d275f0b63c9294ec217141f9e5e19492f3192
 )
 
 FetchContent_MakeAvailable(monocle)
