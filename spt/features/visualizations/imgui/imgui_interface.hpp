@@ -125,26 +125,36 @@ namespace SptImGuiGroup
 		friend class Section;
 		friend class SptImGuiFeature;
 		friend class SptImGui;
-		const char* name;
+		// the name show in the tab bar e.g. ":) VAG Trace", for the root tab this is the window name
+		std::string tabItemName;
+		// the name shown when we're popped out e.g. "SPT/Drawing/VAG Trace"
+		std::string fullyQualifiedName;
 		Tab* parent;
 		SptImGuiTabCallback userCb;
 		// These counts are recursive (including self). Leaf count is calculated in the constructor
 		// during static initialization; the registered count is updated during runtime.
-		int nLeafUserCallbacks;
-		int nRegisteredUserCallbacks;
+		int nLeafUserCallbacks = 0;
+		int nRegisteredUserCallbacks = 0;
 		std::vector<class Section*> childSections;
 		std::vector<Tab*> childTabs;
+		// rendering in a separate window?
+		bool poppedOut = false;
+		// if all children are popped out (OR self), don't draw this tab
+		bool allChildrenPoppedOut = false;
 
 	public:
 		Tab() = delete;
 		Tab(Tab&) = delete;
-		Tab(const char* name, Tab* parent);
+		Tab(Tab* parent, const char* iconPrefix, const char* name);
+		Tab(Tab* parent, const char* name) : Tab(parent, "", name) {};
 		// call from PreHook() or later!
 		bool RegisterUserCallback(const SptImGuiTabCallback& cb);
 
 	private:
-		void Draw() const;
-		void DrawChildrenRecursive() const;
+		void DrawPopOutButton();
+		void Draw();
+		void DrawChildrenRecursive();
+		void DrawPoppedOutTabsRecursive();
 		void ClearCallbacksRecursive();
 	};
 
@@ -162,88 +172,88 @@ namespace SptImGuiGroup
 	public:
 		Section() = delete;
 		Section(Section&) = delete;
-		Section(const char* name, Tab* parent);
+		Section(Tab* parent, const char* name);
 		// call from PreHook() or later!
 		bool RegisterUserCallback(const SptImGuiSectionCallback& cb);
 	};
 
 	// dummy tab, should be first - has the callback for rendering the window
-	inline Tab Root{"SPT", nullptr};
+	inline Tab Root{nullptr, "SPT"};
 
 	// render overlay
-	inline Tab Overlay{ICON_CI_MULTIPLE_WINDOWS " Overlay", &Root};
+	inline Tab Overlay{&Root, ICON_CI_MULTIPLE_WINDOWS " ", "Overlay"};
 
 	// drawing visualizations
-	inline Tab Draw{ICON_CI_SYMBOL_COLOR " Drawing", &Root};
-	inline Tab Draw_Collides{"Collision", &Draw};
-	inline Tab Draw_Collides_World{"World collides", &Draw_Collides};
-	inline Tab Draw_Collides_Ents{"Entity collides", &Draw_Collides};
-	inline Tab Draw_Collides_PortalEnv{"Portal environment collision", &Draw_Collides};
-	inline Tab Draw_MapOverlay{"Map overlay", &Draw};
-	inline Tab Draw_PpPlacement{"Portal placement", &Draw};
-	inline Section Draw_PpPlacement_Gun{"Gun portal placement", &Draw_PpPlacement};
-	inline Section Draw_PpPlacement_Grid{"Portal placement grid", &Draw_PpPlacement};
-	inline Tab Draw_VagTrace{"VAG trace", &Draw};
-	inline Tab Draw_Monocle{"VAG test", &Draw};
-	inline Tab Draw_Lines{"Draw lines", &Draw};
-	inline Tab Draw_Misc{"Misc.", &Draw};
-	inline Section Draw_Misc_OobEnts{"OOB entities", &Draw_Misc};
-	inline Section Draw_Misc_Seams{"Seamshots", &Draw_Misc};
-	inline Section Draw_Misc_LeafVis{"Leaf vis", &Draw_Misc};
+	inline Tab Draw{&Root, ICON_CI_SYMBOL_COLOR " ", "Drawing"};
+	inline Tab Draw_Collides{&Draw, "Collision"};
+	inline Tab Draw_Collides_World{&Draw_Collides, "World collides"};
+	inline Tab Draw_Collides_Ents{&Draw_Collides, "Entity collides"};
+	inline Tab Draw_Collides_PortalEnv{&Draw_Collides, "Portal environment collision"};
+	inline Tab Draw_MapOverlay{&Draw, "Map overlay"};
+	inline Tab Draw_PpPlacement{&Draw, "Portal placement"};
+	inline Section Draw_PpPlacement_Gun{&Draw_PpPlacement, "Gun portal placement"};
+	inline Section Draw_PpPlacement_Grid{&Draw_PpPlacement, "Portal placement grid"};
+	inline Tab Draw_VagTrace{&Draw, "VAG trace"};
+	inline Tab Draw_Monocle{&Draw, "VAG test"};
+	inline Tab Draw_Lines{&Draw, "Draw lines"};
+	inline Tab Draw_Misc{&Draw, "Misc."};
+	inline Section Draw_Misc_OobEnts{&Draw_Misc, "OOB entities"};
+	inline Section Draw_Misc_Seams{&Draw_Misc, "Seamshots"};
+	inline Section Draw_Misc_LeafVis{&Draw_Misc, "Leaf vis"};
 
 	// player trace
-	inline Tab PlayerTrace{ICON_CI_ISSUE_REOPENED " Player trace", &Root};
-	inline Tab PlayerTrace_Player{ICON_CI_PERSON " Player data", &PlayerTrace};
-	inline Tab PlayerTrace_Entities{ICON_CI_PACKAGE " Active entities", &PlayerTrace};
-	inline Tab PlayerTrace_Portals{ICON_CI_CIRCLE_LARGE " Active portals", &PlayerTrace};
+	inline Tab PlayerTrace{&Root, ICON_CI_ISSUE_REOPENED " ", "Player trace"};
+	inline Tab PlayerTrace_Player{&PlayerTrace, ICON_CI_PERSON " ", "Player data"};
+	inline Tab PlayerTrace_Entities{&PlayerTrace, ICON_CI_PACKAGE " ", "Active entities"};
+	inline Tab PlayerTrace_Portals{&PlayerTrace, ICON_CI_CIRCLE_LARGE " ", "Active portals"};
 
 	// quality of life and/or purely visual stuff
-	inline Tab QoL{ICON_CI_SMILEY " QoL", &Root};
-	inline Section QoL_Demo{"Demo utils", &QoL};
-	inline Section QoL_MultiInstance{"Multiple game instances", &QoL};
-	inline Section QoL_Noclip{"Noclip", &QoL}; // QoL instead of in cheats cuz noclip is cheating anyways :)
-	inline Section QoL_NoSleep{"No sleep", &QoL};
-	inline Section QoL_Visual{"Visual fixes", &QoL};
-	inline Section QoL_ConNotify{"Console notify", &QoL};
-	inline Section QoL_FastLoads{"Fast loads", &QoL};
-	inline Section QoL_Timer{"Timer", &QoL};
+	inline Tab QoL{&Root, ICON_CI_SMILEY " ", "QoL"};
+	inline Section QoL_Demo{&QoL, "Demo utils"};
+	inline Section QoL_MultiInstance{&QoL, "Multiple game instances"};
+	inline Section QoL_Noclip{&QoL, "Noclip"}; // QoL instead of in cheats cuz noclip is cheating anyways :)
+	inline Section QoL_NoSleep{&QoL, "No sleep"};
+	inline Section QoL_Visual{&QoL, "Visual fixes"};
+	inline Section QoL_ConNotify{&QoL, "Console notify"};
+	inline Section QoL_FastLoads{&QoL, "Fast loads"};
+	inline Section QoL_Timer{&QoL, "Timer"};
 
 	// cheats - stuff that changes gameplay or cannot be done via normal means
-	inline Tab Cheats{ICON_CI_SHIELD " Cheats", &Root};
-	inline Tab Cheats_PortalSpecific{"Portal specific", &Cheats};
-	inline Section Cheats_PortalSpecific_SetSg{"Set SG", &Cheats_PortalSpecific};
-	inline Section Cheats_PortalSpecific_VagCrash{"Prevent VAG crash", &Cheats_PortalSpecific};
-	inline Section Cheats_PortalSpecific_VagSearch{"VAG search", &Cheats_PortalSpecific};
-	inline Tab Cheats_Misc{"Misc.", &Cheats};
-	inline Section Cheats_Misc_Jumping{"Jumping", &Cheats_Misc};
-	inline Section Cheats_Misc_HL2AirControl{"HL2 air control", &Cheats_Misc};
-	inline Section Cheats_Misc_ISG{"ISG", &Cheats_Misc};
-	inline Section Cheats_Misc_SnapshotOverflow{"Snapshot overflow fix", &Cheats_Misc};
-	inline Section Cheats_Misc_PlayerShadow{"Player shadow", &Cheats_Misc};
-	inline Section Cheats_Misc_Pause{"Pause on load", &Cheats_Misc};
-	inline Section Cheats_Misc_FreeOob{"Free OOB", &Cheats_Misc};
-	inline Section Cheats_Misc_PlayerCollisionGroup{"Player collision group", &Cheats_Misc};
-	inline Section Cheats_Misc_MaxSpeed{"Max speed", &Cheats_Misc};
-	inline Section Cheats_Misc_Tickrate{"Tickrate", &Cheats_Misc};
+	inline Tab Cheats{&Root, ICON_CI_SHIELD " ", "Cheats"};
+	inline Tab Cheats_PortalSpecific{&Cheats, "Portal specific"};
+	inline Section Cheats_PortalSpecific_SetSg{&Cheats_PortalSpecific, "Set SG"};
+	inline Section Cheats_PortalSpecific_VagCrash{&Cheats_PortalSpecific, "Prevent VAG crash"};
+	inline Section Cheats_PortalSpecific_VagSearch{&Cheats_PortalSpecific, "VAG search"};
+	inline Tab Cheats_Misc{&Cheats, "Misc."};
+	inline Section Cheats_Misc_Jumping{&Cheats_Misc, "Jumping"};
+	inline Section Cheats_Misc_HL2AirControl{&Cheats_Misc, "HL2 air control"};
+	inline Section Cheats_Misc_ISG{&Cheats_Misc, "ISG"};
+	inline Section Cheats_Misc_SnapshotOverflow{&Cheats_Misc, "Snapshot overflow fix"};
+	inline Section Cheats_Misc_PlayerShadow{&Cheats_Misc, "Player shadow"};
+	inline Section Cheats_Misc_Pause{&Cheats_Misc, "Pause on load"};
+	inline Section Cheats_Misc_FreeOob{&Cheats_Misc, "Free OOB"};
+	inline Section Cheats_Misc_PlayerCollisionGroup{&Cheats_Misc, "Player collision group"};
+	inline Section Cheats_Misc_MaxSpeed{&Cheats_Misc, "Max speed"};
+	inline Section Cheats_Misc_Tickrate{&Cheats_Misc, "Tickrate"};
 
 	// spt_hud and friends
-	inline Tab Hud{ICON_CI_SYMBOL_KEY " HUD", &Root};
-	inline Tab Hud_TextHud{"Text HUD", &Hud}; // use the RegisterHudCvarXXX functions below to add cvars here
-	inline Tab Hud_IHud{"Input HUD", &Hud};
-	inline Tab Hud_JHud{"Jump HUD", &Hud};
-	inline Tab Hud_StrafeHud{"Strafe HUD", &Hud};
+	inline Tab Hud{&Root, ICON_CI_SYMBOL_KEY " ", "HUD"};
+	inline Tab Hud_TextHud{&Hud, "Text HUD"}; // use the RegisterHudCvarXXX functions below to add cvars here
+	inline Tab Hud_IHud{&Hud, "Input HUD"};
+	inline Tab Hud_JHud{&Hud, "Jump HUD"};
+	inline Tab Hud_StrafeHud{&Hud, "Strafe HUD"};
 
 	// imgui settings
-	inline Tab Settings{ICON_CI_GEAR " Settings", &Root};
+	inline Tab Settings{&Root, ICON_CI_GEAR " ", "Settings "};
 
 	// development/debugging features
-	inline Tab Dev{ICON_CI_BUG " DEV", &Root};
-	inline Section Dev_GameDetection{"Game detection", &Dev};
-	inline Section Dev_Mesh{"Meshes", &Dev};
-	inline Section Dev_ImGui{"ImGui developer settings", &Dev};
+	inline Tab Dev{&Root, ICON_CI_BUG " ", "DEV"};
+	inline Section Dev_GameDetection{&Dev, "Game detection"};
+	inline Section Dev_Mesh{&Dev, "Meshes"};
+	inline Section Dev_ImGui{&Dev, "ImGui developer settings"};
 
 	// should be last - for development to make sure that no one else creates Tabs & Sections :p
-	inline Tab _DummyLast{nullptr, nullptr};
+	inline Tab _DummyLast{nullptr, "DUMMY"};
 
 } // namespace SptImGuiGroup
 
@@ -265,8 +275,7 @@ public:
 	* 
 	* Window callbacks are called in the order that the register functions were called in.
 	* Since this (probably) depends on feature initialization order it should not be relied on
-	* (at least until feature dependencies are implemented). The main window has no special
-	* priority over other windows.
+	* (at least until feature dependencies are implemented).
 	* 
 	* If your feature can be used from the console and you want support for many games/versions,
 	* avoid relying on the ImGui callback to update the feature internals. Instead, use e.g.

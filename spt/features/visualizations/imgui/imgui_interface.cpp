@@ -199,7 +199,7 @@ private:
 		{
 			return;
 		}
-		if (ImGui::Begin(SptImGuiGroup::Root.name, &showMainWindow, ImGuiWindowFlags_MenuBar))
+		if (ImGui::Begin(SptImGuiGroup::Root.tabItemName.c_str(), &showMainWindow, ImGuiWindowFlags_MenuBar))
 		{
 			if (ImGui::BeginMenuBar())
 			{
@@ -719,8 +719,22 @@ private:
 		ImGui::NewFrame();
 
 		if (doWindowCallbacks)
+		{
+			// submit central dockspace before any windows (imgui requires this to allow any window to dock to it)
+			ImGui::DockSpaceOverViewport(0,
+			                             ImGui::GetMainViewport(),
+			                             ImGuiDockNodeFlags_PassthruCentralNode);
+
+			/*
+			* With only a simple boolean Tab::poppedOut, we must draw the popped out tabs before
+			* the main window, otherwise on the frame that the tab is popped out it will be
+			* drawn twice which causes problems.
+			*/
+			SptImGuiGroup::Root.DrawPoppedOutTabsRecursive();
+
 			for (auto& cb : windowCallbacks)
 				cb();
+		}
 
 		/*
 		* Normally ImGui doesn't require us to explicitly call EndFrame() because Render() will
@@ -1037,7 +1051,7 @@ namespace SptImGuiGroup
 	static inline bool initializingTabs = false;
 	static inline const char* outOfPlaceCtorMsg = "spt: all tabs/sections should be initialized together!";
 
-	Section::Section(const char* name, Tab* parent) : name{name}, parent{parent}
+	Section::Section(Tab* parent, const char* name) : name{name}, parent{parent}
 	{
 		Assert(name);
 		AssertMsg(parent, "spt: every section should be in a tab!");
@@ -1065,7 +1079,8 @@ namespace SptImGuiGroup
 		return true;
 	}
 
-	Tab::Tab(const char* name, Tab* parent) : name{name}, parent{parent}
+	Tab::Tab(Tab* parent, const char* iconPrefix, const char* name)
+	    : tabItemName(std::string(iconPrefix) + name), parent{parent}
 	{
 		if (!parent)
 		{
@@ -1074,20 +1089,24 @@ namespace SptImGuiGroup
 				AssertMsg(!initializingTabs, outOfPlaceCtorMsg);
 				initializingTabs = true;
 				nLeafUserCallbacks = 1;
+				fullyQualifiedName = name;
 			}
 			else if (this == &_DummyLast)
 			{
 				AssertMsg(initializingTabs, outOfPlaceCtorMsg);
 				initializingTabs = false;
+				fullyQualifiedName = "INVALID";
 			}
 			else
 			{
 				AssertMsg(0, "spt: every tab should have a parent!");
+				fullyQualifiedName = "INVALID";
 			}
 		}
 		else if (!initializingTabs)
 		{
 			AssertMsg(0, outOfPlaceCtorMsg);
+			fullyQualifiedName = "INVALID";
 		}
 		else
 		{
@@ -1099,6 +1118,7 @@ namespace SptImGuiGroup
 				for (Tab* t = parent; t; t = t->parent)
 					t->nLeafUserCallbacks++;
 			parent->childTabs.push_back(this);
+			fullyQualifiedName = parent->fullyQualifiedName + '/' + name;
 		}
 	}
 
@@ -1133,12 +1153,40 @@ namespace SptImGuiGroup
 			t->ClearCallbacksRecursive();
 	}
 
-	void Tab::Draw() const
+	void Tab::DrawPopOutButton()
+	{
+		if (poppedOut)
+			return;
+		// only allow popping out in leaf tabs
+		Assert(childTabs.empty());
+
+		if (ImGui::SmallButton(ICON_CI_LINK_EXTERNAL))
+		{
+			poppedOut = true;
+			allChildrenPoppedOut = true;
+			for (Tab* t = parent; t; t = t->parent)
+			{
+				t->allChildrenPoppedOut =
+				    std::ranges::all_of(t->childTabs, [](Tab* tc) { return tc->allChildrenPoppedOut; });
+				if (!t->allChildrenPoppedOut)
+					break;
+			}
+		}
+		ImGui::SetItemTooltip("Popout this tab");
+	}
+
+	void Tab::Draw()
 	{
 		if (userCb)
+		{
+			Assert(childTabs.empty());
+			DrawPopOutButton();
 			userCb();
+		}
 		else if (!childTabs.empty() || !childSections.empty())
+		{
 			DrawChildrenRecursive();
+		}
 	}
 
 	/*
@@ -1149,7 +1197,7 @@ namespace SptImGuiGroup
 	* If drawNonRegisteredCallbacks is set, then tabs & sections w/o user defined callbacks will be drawn
 	* and an appropriate message will be displayed.
 	*/
-	void Tab::DrawChildrenRecursive() const
+	void Tab::DrawChildrenRecursive()
 	{
 		AssertMsg(childTabs.empty() || childSections.empty(),
 		          "spt: child tabs or sections expected, not both!");
@@ -1163,11 +1211,14 @@ namespace SptImGuiGroup
 				return;
 			for (size_t i = 0; i < childTabs.size(); i++)
 			{
-				const Tab* child = childTabs[i];
+				Tab* child = childTabs[i];
 				bool anyRegistered = child->nRegisteredUserCallbacks;
 				bool allRegistered = child->nRegisteredUserCallbacks == child->nLeafUserCallbacks;
 				if (!anyRegistered && !SptImGuiFeature::drawNonRegisteredCallbacks)
 					continue;
+				if (child->poppedOut || child->allChildrenPoppedOut)
+					continue; // child will be rendered in a separate window
+
 				// Create new ID scope to allow multiple tabs with the same name.
 				// Make sure to push the actual index of the tab item INCLUDING the
 				// disabled tabs. This ensures that the current selected tab will not
@@ -1184,7 +1235,7 @@ namespace SptImGuiGroup
 						ImGui::PushStyleColor(ImGuiCol_Text, SPT_IMGUI_WARN_COLOR_YELLOW);
 				}
 				// don't use ImGuiTabItemFlags_NoPushId - that breaks if there's an item with the same name as the tab item
-				if (ImGui::BeginTabItem(child->name))
+				if (ImGui::BeginTabItem(child->tabItemName.c_str()))
 				{
 					if (!anyRegistered)
 						ImGui::Text("This tab doesn't have an associated callback!");
@@ -1206,6 +1257,8 @@ namespace SptImGuiGroup
 		}
 		else
 		{
+			DrawPopOutButton();
+
 			for (size_t i = 0; i < childSections.size(); i++)
 			{
 				const Section* section = childSections[i];
@@ -1229,6 +1282,25 @@ namespace SptImGuiGroup
 				}
 			}
 		}
+	}
+
+	void Tab::DrawPoppedOutTabsRecursive()
+	{
+		if (poppedOut)
+		{
+			ImGui::Begin(fullyQualifiedName.c_str(), &poppedOut);
+			Draw();
+			ImGui::End();
+
+			// if we're not popped out anymore, update all of our parents
+			if (!poppedOut)
+			{
+				for (Tab* t = this; t && t->allChildrenPoppedOut; t = t->parent)
+					t->allChildrenPoppedOut = false;
+			}
+		}
+		for (auto child : childTabs)
+			child->DrawPoppedOutTabsRecursive();
 	}
 } // namespace SptImGuiGroup
 
@@ -1274,7 +1346,7 @@ ImGuiWindow* SptImGui::GetMainWindow()
 {
 	if (!Loaded())
 		return nullptr;
-	return ImGui::FindWindowByName(SptImGuiGroup::Root.name);
+	return ImGui::FindWindowByName(SptImGuiGroup::Root.tabItemName.c_str());
 }
 
 void SptImGui::ToggleFeature()
