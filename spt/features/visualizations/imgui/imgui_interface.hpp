@@ -125,10 +125,6 @@ namespace SptImGuiGroup
 		friend class Section;
 		friend class SptImGuiFeature;
 		friend class SptImGui;
-		// the name show in the tab bar e.g. ":) VAG Trace", for the root tab this is the window name
-		std::string tabItemName;
-		// the name shown when we're popped out e.g. "SPT/Drawing/VAG Trace"
-		std::string fullyQualifiedName;
 		Tab* parent;
 		SptImGuiTabCallback userCb;
 		// These counts are recursive (including self). Leaf count is calculated in the constructor
@@ -142,6 +138,13 @@ namespace SptImGuiGroup
 		// if all children are popped out (OR self), don't draw this tab
 		bool allChildrenPoppedOut = false;
 
+		bool dockedToParent = true;
+		bool deferredDockToParent = true;
+		std::optional<ImGuiID> dockSpaceId;
+		std::string fullyQualifiedName;
+		std::string dockedName;
+		std::string undockedName;
+
 	public:
 		Tab() = delete;
 		Tab(Tab&) = delete;
@@ -151,6 +154,8 @@ namespace SptImGuiGroup
 		bool RegisterUserCallback(const SptImGuiTabCallback& cb);
 
 	private:
+		void DrawV2();
+		void DrawV2Sections();
 		void DrawPopOutButton();
 		void Draw();
 		void DrawChildrenRecursive();

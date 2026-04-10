@@ -199,7 +199,12 @@ private:
 		{
 			return;
 		}
-		if (ImGui::Begin(SptImGuiGroup::Root.tabItemName.c_str(), &showMainWindow, ImGuiWindowFlags_MenuBar))
+
+		SptImGuiGroup::Root.DrawV2();
+
+		/*if (ImGui::Begin(SptImGuiGroup::Root.tabItemName.c_str(),
+		                      &showMainWindow,
+		                      ImGuiWindowFlags_MenuBar))
 		{
 			if (ImGui::BeginMenuBar())
 			{
@@ -212,7 +217,7 @@ private:
 			}
 			SptImGuiGroup::Root.Draw();
 		}
-		ImGui::End();
+		ImGui::End();*/
 	}
 
 	static void AboutWindowCallback()
@@ -730,7 +735,7 @@ private:
 			* the main window, otherwise on the frame that the tab is popped out it will be
 			* drawn twice which causes problems.
 			*/
-			SptImGuiGroup::Root.DrawPoppedOutTabsRecursive();
+			// SptImGuiGroup::Root.DrawPoppedOutTabsRecursive();
 
 			for (auto& cb : windowCallbacks)
 				cb();
@@ -1079,9 +1084,12 @@ namespace SptImGuiGroup
 		return true;
 	}
 
-	Tab::Tab(Tab* parent, const char* iconPrefix, const char* name)
-	    : tabItemName(std::string(iconPrefix) + name), parent{parent}
+	Tab::Tab(Tab* parent, const char* iconPrefix, const char* name) : parent{parent}
 	{
+		fullyQualifiedName = parent ? (parent->fullyQualifiedName + '/' + name) : name;
+		// must be done to make the hash the same as the docked name
+		undockedName = fullyQualifiedName + "###" + fullyQualifiedName;
+		dockedName = std::string(iconPrefix) + name + "###" + fullyQualifiedName;
 		if (!parent)
 		{
 			if (this == &Root)
@@ -1089,24 +1097,20 @@ namespace SptImGuiGroup
 				AssertMsg(!initializingTabs, outOfPlaceCtorMsg);
 				initializingTabs = true;
 				nLeafUserCallbacks = 1;
-				fullyQualifiedName = name;
 			}
 			else if (this == &_DummyLast)
 			{
 				AssertMsg(initializingTabs, outOfPlaceCtorMsg);
 				initializingTabs = false;
-				fullyQualifiedName = "INVALID";
 			}
 			else
 			{
 				AssertMsg(0, "spt: every tab should have a parent!");
-				fullyQualifiedName = "INVALID";
 			}
 		}
 		else if (!initializingTabs)
 		{
 			AssertMsg(0, outOfPlaceCtorMsg);
-			fullyQualifiedName = "INVALID";
 		}
 		else
 		{
@@ -1118,7 +1122,6 @@ namespace SptImGuiGroup
 				for (Tab* t = parent; t; t = t->parent)
 					t->nLeafUserCallbacks++;
 			parent->childTabs.push_back(this);
-			fullyQualifiedName = parent->fullyQualifiedName + '/' + name;
 		}
 	}
 
@@ -1151,6 +1154,86 @@ namespace SptImGuiGroup
 			s->userCb = nullptr;
 		for (Tab* t : childTabs)
 			t->ClearCallbacksRecursive();
+	}
+
+	void Tab::DrawV2()
+	{
+		if (deferredDockToParent && parent)
+		{
+			deferredDockToParent = false;
+			ImGui::SetNextWindowDockID(*parent->dockSpaceId, ImGuiCond_Always);
+		}
+
+		bool pad = childTabs.empty();
+		if (!pad)
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
+
+		bool undockedWindowOpen = true;
+		bool* pOpen =
+		    dockedToParent ? nullptr : (parent ? &undockedWindowOpen : &SptImGuiFeature::showMainWindow);
+
+		ImGui::SetNextWindowSizeConstraints(ImVec2(100.f, 100.f), ImVec2(INFINITY, INFINITY));
+		bool beginRet = ImGui::Begin(dockedToParent ? dockedName.c_str() : undockedName.c_str(), pOpen);
+
+		if (parent)
+		{
+			dockedToParent = ImGui::GetWindowDockID() == *parent->dockSpaceId;
+			if (pOpen && !*pOpen)
+				deferredDockToParent = true; // undocked window was closed, redock it to its parent
+		}
+
+		if (userCb)
+		{
+			if (beginRet)
+				userCb();
+		}
+		else if (!childTabs.empty())
+		{
+			ImGuiDockNodeFlags dockNodeFlags =
+			    ImGuiDockNodeFlags_NoCloseButton | ImGuiDockNodeFlags_NoDockingSplit;
+			dockSpaceId = ImGui::DockSpace(ImGui::GetID("tab dock"), ImVec2(0, 0), dockNodeFlags);
+		}
+		else if (!childSections.empty())
+		{
+			if (beginRet)
+				DrawV2Sections();
+		}
+
+		ImGui::End();
+		if (!pad)
+			ImGui::PopStyleVar();
+
+		// TODO - use beginRet here
+		for (auto child : childTabs)
+			child->DrawV2();
+
+		// TODO handle SptImGuiFeature::drawNonRegisteredCallbacks
+	}
+
+	void Tab::DrawV2Sections()
+	{
+		for (size_t i = 0; i < childSections.size(); i++)
+		{
+			const Section* section = childSections[i];
+			if (!section->userCb && !SptImGuiFeature::drawNonRegisteredCallbacks)
+				continue;
+			if (section->userCb)
+			{
+				ImGui::SeparatorText(section->name);
+				// same logic here - push the index from within the entire section list
+				ImGui::PushID(i);
+				section->userCb();
+				ImGui::PopID();
+			}
+			else
+			{
+				ImGui::PushStyleColor(ImGuiCol_Text, SPT_IMGUI_WARN_COLOR_RED);
+				ImGui::PushStyleColor(ImGuiCol_Separator, SPT_IMGUI_WARN_COLOR_RED);
+				ImGui::SeparatorText(section->name);
+				ImGui::Text("This section doesn't have an associated callback!");
+				ImGui::PopStyleColor(2);
+			}
+		}
 	}
 
 	void Tab::DrawPopOutButton()
@@ -1235,7 +1318,7 @@ namespace SptImGuiGroup
 						ImGui::PushStyleColor(ImGuiCol_Text, SPT_IMGUI_WARN_COLOR_YELLOW);
 				}
 				// don't use ImGuiTabItemFlags_NoPushId - that breaks if there's an item with the same name as the tab item
-				if (ImGui::BeginTabItem(child->tabItemName.c_str()))
+				/*if (ImGui::BeginTabItem(child->tabItemName.c_str()))
 				{
 					if (!anyRegistered)
 						ImGui::Text("This tab doesn't have an associated callback!");
@@ -1250,7 +1333,7 @@ namespace SptImGuiGroup
 				else if (!allRegistered && SptImGuiFeature::drawNonRegisteredCallbacks)
 				{
 					ImGui::PopStyleColor();
-				}
+				}*/
 				ImGui::PopID();
 			}
 			ImGui::EndTabBar();
@@ -1346,7 +1429,7 @@ ImGuiWindow* SptImGui::GetMainWindow()
 {
 	if (!Loaded())
 		return nullptr;
-	return ImGui::FindWindowByName(SptImGuiGroup::Root.tabItemName.c_str());
+	return ImGui::FindWindowByName(SptImGuiGroup::Root.undockedName.c_str());
 }
 
 void SptImGui::ToggleFeature()
