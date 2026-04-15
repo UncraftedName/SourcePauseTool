@@ -75,6 +75,8 @@ public:
 	inline static bool forceMainWindowFocus = false;
 	inline static bool drawNonRegisteredCallbacks = false;
 	inline static bool doWindowCallbacks = false;
+	// TODO if set, tabs part of the main window will keep their "intended" order
+	inline static bool enforceMainWindowTabOrder = true;
 	inline static std::vector<SptImGuiWindowCallback> windowCallbacks;
 	inline static std::set<ImGuiHudCvar> hudCvars;
 
@@ -200,7 +202,7 @@ private:
 			return;
 		}
 
-		SptImGuiGroup::Root.DrawV2();
+		SptImGuiGroup::Root.DrawV2(true);
 
 		/*if (ImGui::Begin(SptImGuiGroup::Root.tabItemName.c_str(),
 		                      &showMainWindow,
@@ -1156,8 +1158,10 @@ namespace SptImGuiGroup
 			t->ClearCallbacksRecursive();
 	}
 
-	void Tab::DrawV2()
+	void Tab::DrawV2(bool visible)
 	{
+		if (!dockedToParent)
+			visible = true;
 		if (deferredDockToParent && parent)
 		{
 			deferredDockToParent = false;
@@ -1168,44 +1172,58 @@ namespace SptImGuiGroup
 		if (!pad)
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-		bool undockedWindowOpen = true;
-		bool* pOpen =
-		    dockedToParent ? nullptr : (parent ? &undockedWindowOpen : &SptImGuiFeature::showMainWindow);
-
-		ImGui::SetNextWindowSizeConstraints(ImVec2(100.f, 100.f), ImVec2(INFINITY, INFINITY));
-		bool beginRet = ImGui::Begin(dockedToParent ? dockedName.c_str() : undockedName.c_str(), pOpen);
-
-		if (parent)
+		if (visible)
 		{
-			dockedToParent = ImGui::GetWindowDockID() == *parent->dockSpaceId;
-			if (pOpen && !*pOpen)
-				deferredDockToParent = true; // undocked window was closed, redock it to its parent
+			bool undockedWindowOpen = true;
+			bool* pOpen = dockedToParent
+			                  ? nullptr
+			                  : (parent ? &undockedWindowOpen : &SptImGuiFeature::showMainWindow);
+
+			ImGui::SetNextWindowSizeConstraints(ImVec2(100.f, 100.f), ImVec2(INFINITY, INFINITY));
+			bool beginRet = ImGui::Begin(dockedToParent ? dockedName.c_str() : undockedName.c_str(), pOpen);
+
+			if (parent)
+			{
+				dockedToParent = ImGui::GetWindowDockID() == *parent->dockSpaceId;
+				// undocked window was closed, redock it to its parent
+				if (pOpen && !*pOpen)
+					deferredDockToParent = true;
+			}
+			if (!beginRet)
+			{
+				visible = false;
+				ImGui::End();
+			}
 		}
 
 		if (userCb)
 		{
-			if (beginRet)
+			if (visible)
 				userCb();
 		}
 		else if (!childTabs.empty())
 		{
 			ImGuiDockNodeFlags dockNodeFlags =
 			    ImGuiDockNodeFlags_NoCloseButton | ImGuiDockNodeFlags_NoDockingSplit;
-			dockSpaceId = ImGui::DockSpace(ImGui::GetID("tab dock"), ImVec2(0, 0), dockNodeFlags);
+			if (!visible)
+				dockNodeFlags |= ImGuiDockNodeFlags_KeepAliveOnly;
+			ImGuiID newDockSpaceId =
+			    ImGui::DockSpace(ImHashStr(fullyQualifiedName.c_str()), ImVec2(0, 0), dockNodeFlags);
+			Assert(dockSpaceId.value_or(newDockSpaceId) == newDockSpaceId);
+			dockSpaceId = newDockSpaceId;
 		}
 		else if (!childSections.empty())
 		{
-			if (beginRet)
+			if (visible)
 				DrawV2Sections();
 		}
-
-		ImGui::End();
+		if (visible)
+			ImGui::End();
 		if (!pad)
 			ImGui::PopStyleVar();
 
-		// TODO - use beginRet here
 		for (auto child : childTabs)
-			child->DrawV2();
+			child->DrawV2(visible);
 
 		// TODO handle SptImGuiFeature::drawNonRegisteredCallbacks
 	}

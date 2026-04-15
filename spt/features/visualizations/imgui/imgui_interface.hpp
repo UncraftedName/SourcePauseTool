@@ -140,6 +140,7 @@ namespace SptImGuiGroup
 
 		bool dockedToParent = true;
 		bool deferredDockToParent = true;
+		bool dockSpaceCreatedThisFrame = false;
 		std::optional<ImGuiID> dockSpaceId;
 		std::string fullyQualifiedName;
 		std::string dockedName;
@@ -154,7 +155,7 @@ namespace SptImGuiGroup
 		bool RegisterUserCallback(const SptImGuiTabCallback& cb);
 
 	private:
-		void DrawV2();
+		void DrawV2(bool visible);
 		void DrawV2Sections();
 		void DrawPopOutButton();
 		void Draw();
