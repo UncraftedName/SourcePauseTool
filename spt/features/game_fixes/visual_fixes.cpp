@@ -3,6 +3,7 @@
 #include "..\feature.hpp"
 #include "convar.hpp"
 #include "ent_utils.hpp"
+#include "game_detection.hpp"
 #include "signals.hpp"
 #include "..\visualizations\imgui\imgui_interface.hpp"
 #include "spt\utils\ent_list.hpp"
@@ -44,6 +45,10 @@ ConVar spt_disable_render_delay("spt_disable_render_delay",
                                 0,
                                 "Removes the 0.25s render delay after load.",
                                 RenderDelayCVarCallback);
+ConVar spt_disable_portal_roll_offset("spt_disable_portal_roll_offset",
+                                      "0",
+                                      0,
+                                      "Removes the roll offset applied to the camera in Portal.");
 
 // Misc visual fixes
 class VisualFixes : public FeatureWrapper<VisualFixes>
@@ -91,6 +96,9 @@ private:
 	                   void* owner,
 	                   const Vector& eyePosition,
 	                   const QAngle& eyeAngles);
+
+	// Vector EyeFootPosition( const QAngle &qEyeAngles );
+	DECL_HOOK_THISCALL(Vector*, C_Portal_Player__EyeFootPosition, void*, Vector* out, QAngle* qEyeAngles);
 
 	void OnFinishRestore(void* thisptr);
 };
@@ -169,6 +177,8 @@ namespace patterns
 	    "83 3D ?? ?? ?? ?? 01 75 ?? 8B 0D ?? ?? ?? ?? 8B 11",
 	    "7122284",
 	    "83 3D ?? ?? ?? ?? 01 75 ?? 8B 0D ?? ?? ?? ?? 8B 01 8B 40 ?? FF D0 84 C0 75 ?? F3 0F 10 05 ?? ?? ?? ??");
+	// TODO: Steampipe support. This function is inlined in 7122284.
+	PATTERNS(C_Portal_Player__EyeFootPosition, "5135", "83 EC 18 8B 44 24 ?? D9 40 ?? 8D 54 24 ?? D9 E1 52");
 } // namespace patterns
 
 void VisualFixes::InitHooks()
@@ -183,6 +193,11 @@ void VisualFixes::InitHooks()
 	FIND_PATTERN(client, CAM_ToThirdPerson);
 	HOOK_FUNCTION(client, C_BaseViewModel__CalcViewModelView);
 	FIND_PATTERN(engine, MiddleOfCL_FullyConnected);
+
+	if (utils::DoesGameLookLikePortal())
+	{
+		HOOK_FUNCTION(client, C_Portal_Player__EyeFootPosition);
+	}
 }
 
 bool VisualFixes::ShouldLoadFeature()
@@ -272,6 +287,11 @@ void VisualFixes::LoadFeature()
 		InitConcommandBase(spt_disable_render_delay);
 	}
 
+	if (ORIG_C_Portal_Player__EyeFootPosition)
+	{
+		InitConcommandBase(spt_disable_portal_roll_offset);
+	}
+
 	SptImGuiGroup::QoL_Visual.RegisterUserCallback(
 	    []()
 	    {
@@ -279,6 +299,7 @@ void VisualFixes::LoadFeature()
 		    SptImGui::CvarCheckbox(y_spt_disable_shake, "##checkbox_shake");
 		    SptImGui::CvarCheckbox(y_spt_disable_tone_map_reset, "##checkbox_tone_map");
 		    SptImGui::CvarCheckbox(spt_disable_render_delay, "##checkbox_render_delay");
+		    SptImGui::CvarCheckbox(spt_disable_portal_roll_offset, "##checkbox_portal_roll_offset");
 		    SptImGui::CvarInputTextInteger(y_spt_override_tpose, "T-pose sequence override", "");
 
 		    ConVar* cvars[] = {&spt_viewmodel_offset_x, &spt_viewmodel_offset_y, &spt_viewmodel_offset_z};
@@ -371,6 +392,17 @@ IMPL_HOOK_THISCALL(VisualFixes,
 	            + (vecRight * spt_viewmodel_offset_x.GetFloat());
 
 	spt_visual_fixes.ORIG_C_BaseViewModel__CalcViewModelView(thisptr, owner, vmorigin, eyeAngles);
+}
+
+IMPL_HOOK_THISCALL(VisualFixes, Vector*, C_Portal_Player__EyeFootPosition, void*, Vector* out, QAngle* qEyeAngles)
+{
+	if (spt_disable_portal_roll_offset.GetBool())
+	{
+		*out = utils::GetPlayerEyePosition();
+		return out;
+	}
+
+	return spt_visual_fixes.ORIG_C_Portal_Player__EyeFootPosition(thisptr, out, qEyeAngles);
 }
 
 void VisualFixes::OnFinishRestore(void* thisptr)
