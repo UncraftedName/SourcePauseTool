@@ -482,24 +482,24 @@ bool Tracing::ShouldLoadFeature()
 
 void Tracing::UnloadFeature() {}
 #if defined(SSDK2013)
-IMPL_HOOK_THISCALL(Tracing, void, CGameMovement__GetPlayerMins, IGameMovement*, Vector* out)
+IMPL_HOOK_THISCALL(Tracing, Vector*, CGameMovement__GetPlayerMins, IGameMovement*, Vector* out)
 {
 	if (spt_tracing.overrideMinMax)
 	{
 		*out = spt_tracing._mins;
+		return out;
 	}
-	else
-		spt_tracing.ORIG_CGameMovement__GetPlayerMins(thisptr, out);
+	return spt_tracing.ORIG_CGameMovement__GetPlayerMins(thisptr, out);
 }
 
-IMPL_HOOK_THISCALL(Tracing, void, CGameMovement__GetPlayerMaxs, IGameMovement*, Vector* out)
+IMPL_HOOK_THISCALL(Tracing, Vector*, CGameMovement__GetPlayerMaxs, IGameMovement*, Vector* out)
 {
 	if (spt_tracing.overrideMinMax)
 	{
 		*out = spt_tracing._maxs;
+		return out;
 	}
-	else
-		spt_tracing.ORIG_CGameMovement__GetPlayerMaxs(thisptr, out);
+	return spt_tracing.ORIG_CGameMovement__GetPlayerMaxs(thisptr, out);
 }
 #else
 IMPL_HOOK_THISCALL(Tracing, const Vector&, CGameMovement__GetPlayerMins, IGameMovement*)

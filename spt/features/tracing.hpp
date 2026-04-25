@@ -175,8 +175,10 @@ private:
 	                     trace_t& pm);
 
 #if defined(SSDK2013)
-	DECL_HOOK_THISCALL(void, CGameMovement__GetPlayerMins, IGameMovement*, Vector*);
-	DECL_HOOK_THISCALL(void, CGameMovement__GetPlayerMaxs, IGameMovement*, Vector*);
+	// virtual Vector GetPlayerMins( void ) const;
+	DECL_HOOK_THISCALL(Vector*, CGameMovement__GetPlayerMins, IGameMovement*, Vector*);
+	// virtual Vector GetPlayerMaxs( void ) const;
+	DECL_HOOK_THISCALL(Vector*, CGameMovement__GetPlayerMaxs, IGameMovement*, Vector*);
 #else
 	DECL_HOOK_THISCALL(const Vector&, CGameMovement__GetPlayerMins, IGameMovement*);
 	DECL_HOOK_THISCALL(const Vector&, CGameMovement__GetPlayerMaxs, IGameMovement*);
