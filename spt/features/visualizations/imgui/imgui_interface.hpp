@@ -185,6 +185,7 @@ namespace SptImGuiGroup
 	inline Section Draw_PpPlacement_Grid{"Portal placement grid", &Draw_PpPlacement};
 	inline Tab Draw_VagTrace{"VAG trace", &Draw};
 	inline Tab Draw_Monocle{"VAG test", &Draw};
+	inline Tab Draw_VagHunt{ICON_CI_UNFOLD "VAG hunt", &Draw};
 	inline Tab Draw_Lines{"Draw lines", &Draw};
 	inline Tab Draw_Misc{"Misc.", &Draw};
 	inline Section Draw_Misc_OobEnts{"OOB entities", &Draw_Misc};

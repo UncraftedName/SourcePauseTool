@@ -149,6 +149,9 @@ set(SPT_SOURCES
 	spt/features/visualizations/renderer/internal/mesh_construction.cpp
 	spt/features/visualizations/renderer/internal/mesh_renderer.cpp
 	spt/features/visualizations/renderer/internal/static_mesh.cpp
+	spt/features/visualizations/vag_hunter/hunt_draw.cpp
+	spt/features/visualizations/vag_hunter/hunt_imgui.cpp
+	spt/features/visualizations/vag_hunter/hunt_search.cpp
 	
 	spt/ipc/ipc.cpp
 	
