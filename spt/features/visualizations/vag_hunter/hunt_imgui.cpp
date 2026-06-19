@@ -3,7 +3,7 @@
 #include "hunt.hpp"
 #include "spt/utils/ent_utils.hpp"
 
-static bool PointTargetConfig(HtVagPointTarget& target)
+bool VagHunterHuntFeature::ImGuiPointTargetConfig(HtVagPointTarget& target)
 {
 	bool changed = false;
 
@@ -42,6 +42,7 @@ static bool PointTargetConfig(HtVagPointTarget& target)
 
 		if (removePointIdx >= 0)
 		{
+			std::unique_lock lk{targetMtx};
 			target.points.erase(target.points.begin() + removePointIdx);
 			changed = true;
 		}
@@ -49,6 +50,7 @@ static bool PointTargetConfig(HtVagPointTarget& target)
 
 	if (ImGui::SmallButton(ICON_CI_PLUS ICON_CI_EYE))
 	{
+		std::unique_lock lk{targetMtx};
 		target.points.push_back(utils::GetPlayerEyePosition());
 		changed = true;
 	}
@@ -57,7 +59,7 @@ static bool PointTargetConfig(HtVagPointTarget& target)
 	return changed;
 }
 
-static bool AabbTargetConfig(HtVagBoxTarget& target)
+bool VagHunterHuntFeature::ImGuiBoxTargetConfig(HtVagBoxTarget& target)
 {
 	bool changed = false;
 
@@ -102,6 +104,7 @@ static bool AabbTargetConfig(HtVagBoxTarget& target)
 
 		if (removePointIdx >= 0)
 		{
+			std::unique_lock lk{targetMtx};
 			target.aabbs.erase(target.aabbs.begin() + removePointIdx);
 			changed = true;
 		}
@@ -117,6 +120,7 @@ static bool AabbTargetConfig(HtVagBoxTarget& target)
 			Vector mins, maxs;
 			VectorMin(target.pendingAabbTargetCorner.value(), newPt, mins);
 			VectorMax(target.pendingAabbTargetCorner.value(), newPt, maxs);
+			std::unique_lock lk{targetMtx};
 			target.aabbs.emplace_back(mins, maxs);
 			target.pendingAabbTargetCorner.reset();
 			changed = true;
@@ -147,11 +151,11 @@ void VagHunterHuntFeature::ImGuiTabCallbackImpl()
 {
 	ImGui::SeparatorText("VAG target set");
 	ImGui::PushID("point");
-	if (PointTargetConfig(vagTarget.pointTarget))
+	if (ImGuiPointTargetConfig(vagTarget.pointTarget))
 		vagTarget.RecalcMaxInternalDist();
 	ImGui::PopID();
 	ImGui::PushID("box");
-	if (AabbTargetConfig(vagTarget))
+	if (ImGuiBoxTargetConfig(vagTarget))
 		vagTarget.RecalcMaxInternalDist();
 	ImGui::PopID();
 

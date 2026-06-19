@@ -4,6 +4,9 @@
 #include "../renderer/mesh_renderer.hpp"
 #include "../imgui/imgui_interface.hpp"
 
+#include <random>
+#include <shared_mutex>
+
 class HtIVagTarget
 {
 public:
@@ -112,6 +115,117 @@ public:
 	}
 };
 
+struct HtPortal
+{
+	Vector pos;
+	float pitch, yaw;
+};
+
+struct HtPortalPair
+{
+	HtPortal blue, orange;
+
+	Vector CalcVagPt(bool blueEntry) const;
+};
+
+using candidate_idx = uint32_t;
+
+struct HtCandidate
+{
+	HtPortalPair pair;
+	float metric;
+	uint32_t blueEntry : 1;
+	uint32_t hasParent : 1;
+	uint32_t generation : 20;
+	candidate_idx parentIndex;
+};
+
+struct HtCandidateCreateParams
+{
+	uint32_t generation;
+	bool blueEntry;
+};
+
+struct HtCandidateNudgeParams
+{
+	uint32_t generation;
+	bool blueEntry;
+	bool allowBlueNudge;
+	bool allowOrangeNudge;
+	candidate_idx parent;
+};
+
+struct HtGenerationInfoRatios
+{
+	float keepExact = 10.f;
+	float mutateStrong = 50.f;
+	float mutateWeak = 20.f;
+	float injectRandom = 20.f;
+};
+
+struct HtGenerationInfo
+{
+	size_t generationSize;
+	// keep this many of the strongest candidates without changing them
+	size_t keepExact;
+	// choose this many of the strongest and mutate them
+	size_t mutateStrong;
+	// choose this many of the remaining weak ones and mutate them
+	size_t mutateWeak;
+	// add this many randomly choosen portals
+	size_t injectRandom;
+
+	HtGenerationInfo(size_t generationSize, const HtGenerationInfoRatios& ratios) : generationSize(generationSize)
+	{
+		float s = 1.f / (keepExact + mutateStrong + mutateWeak + injectRandom);
+		keepExact = generationSize * s * ratios.keepExact;
+		mutateStrong = generationSize * s * ratios.mutateStrong;
+		mutateWeak = generationSize * s * ratios.mutateWeak;
+		injectRandom = generationSize * s * ratios.injectRandom;
+	}
+};
+
+class HtIWorld
+{
+public:
+	virtual HtCandidate CreateRandomCandidate(const HtCandidateCreateParams& params) const = 0;
+	virtual HtCandidate NudgeCandidate(const HtCandidateNudgeParams& params) const = 0;
+	virtual ~HtIWorld() {};
+};
+
+class HtContinuousWorld : public HtIWorld
+{
+public:
+	virtual HtCandidate CreateRandomCandidate(const HtCandidateCreateParams& params) const override;
+	virtual HtCandidate NudgeCandidate(const HtCandidateNudgeParams& params) const override;
+};
+
+class HtWorker
+{
+	std::thread thread;
+	std::condition_variable cv;
+	std::shared_mutex mtx;
+
+	const HtGenerationInfo genInfo;
+	std::minstd_rand rng;
+
+	std::shared_ptr<const HtIWorld> world;
+
+	std::vector<HtCandidate> candidateHistory;
+	std::vector<candidate_idx> curGeneration;
+
+	void Stop();
+	void WorkerLoop();
+
+public:
+	HtWorker(size_t generationSize, const HtGenerationInfoRatios& genRatios, std::shared_ptr<const HtIWorld> world);
+
+	~HtWorker()
+	{
+		Stop();
+	}
+};
+
 class VagHunterHuntFeature : public FeatureWrapper<VagHunterHuntFeature>
 {
 protected:
@@ -126,8 +240,12 @@ protected:
 
 private:
 	HtVagBoxTarget vagTarget;
+	static std::shared_mutex targetMtx;
+	std::unique_ptr<HtWorker> worker;
 
 	void ImGuiTabCallbackImpl();
+	bool ImGuiPointTargetConfig(HtVagPointTarget& target);
+	bool ImGuiBoxTargetConfig(HtVagBoxTarget& target);
 
 	static void ImGuiTabCallback()
 	{
