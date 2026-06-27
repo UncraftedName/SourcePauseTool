@@ -121,46 +121,67 @@ struct HtPortal
 	float pitch, yaw;
 };
 
+enum HtPortalColor : unsigned char
+{
+	HT_ENTRY_BLUE,
+	HT_ENTRY_ORANGE,
+};
+
 struct HtPortalPair
 {
-	HtPortal blue, orange;
+	std::array<HtPortal, 2> p;
 
-	Vector CalcVagPt(bool blueEntry) const;
+	Vector CalcVagPt(HtPortalColor entryColor) const;
 };
 
 using candidate_idx = uint32_t;
+constexpr candidate_idx HT_INVALID_CANDIDATE_IDX = std::numeric_limits<candidate_idx>::max();
 
 struct HtCandidate
 {
-	HtPortalPair pair;
+	HtPortalPair pp;
 	float metric;
-	uint32_t blueEntry : 1;
-	uint32_t hasParent : 1;
+	uint32_t entryColor : 1;
 	uint32_t generation : 20;
+	candidate_idx myIdx;
 	candidate_idx parentIndex;
+
+	void RecalcDistMetric();
 };
 
 struct HtCandidateCreateParams
 {
 	uint32_t generation;
-	bool blueEntry;
+	HtPortalColor entryColor;
+	candidate_idx newCandIdx;
 };
 
 struct HtCandidateNudgeParams
 {
 	uint32_t generation;
-	bool blueEntry;
+	HtPortalColor entryColor;
 	bool allowBlueNudge;
 	bool allowOrangeNudge;
-	candidate_idx parent;
+	HtCandidate* sourceCand;
+	candidate_idx newCandIdx;
 };
 
 struct HtGenerationInfoRatios
 {
-	float keepExact = 10.f;
-	float mutateStrong = 50.f;
-	float mutateWeak = 20.f;
-	float injectRandom = 20.f;
+	float keepExact = 0.f;
+	float mutateStrong = 0.f;
+	float mutateWeak = 0.f;
+	float injectRandom = 1.f;
+
+	static HtGenerationInfoRatios CreateReasonableRatios()
+	{
+		return HtGenerationInfoRatios{
+		    .keepExact = 10.f,
+		    .mutateStrong = 10.f,
+		    .mutateWeak = 70.f,
+		    .injectRandom = 10.f,
+		};
+	}
 };
 
 struct HtGenerationInfo
@@ -177,7 +198,7 @@ struct HtGenerationInfo
 
 	HtGenerationInfo(size_t generationSize, const HtGenerationInfoRatios& ratios) : generationSize(generationSize)
 	{
-		float s = 1.f / (keepExact + mutateStrong + mutateWeak + injectRandom);
+		float s = 1.f / (ratios.keepExact + ratios.mutateStrong + ratios.mutateWeak + ratios.injectRandom);
 		keepExact = generationSize * s * ratios.keepExact;
 		mutateStrong = generationSize * s * ratios.mutateStrong;
 		mutateWeak = generationSize * s * ratios.mutateWeak;
@@ -185,40 +206,56 @@ struct HtGenerationInfo
 	}
 };
 
+using ht_rng = std::minstd_rand;
+
 class HtIWorld
 {
 public:
-	virtual HtCandidate CreateRandomCandidate(const HtCandidateCreateParams& params) const = 0;
-	virtual HtCandidate NudgeCandidate(const HtCandidateNudgeParams& params) const = 0;
+	virtual HtCandidate CreateRandomCandidate(const HtCandidateCreateParams& params, ht_rng& rng) const = 0;
+	virtual HtCandidate NudgeCandidate(const HtCandidateNudgeParams& params, ht_rng& rng) const = 0;
 	virtual ~HtIWorld() {};
 };
 
 class HtContinuousWorld : public HtIWorld
 {
 public:
-	virtual HtCandidate CreateRandomCandidate(const HtCandidateCreateParams& params) const override;
-	virtual HtCandidate NudgeCandidate(const HtCandidateNudgeParams& params) const override;
+	virtual HtCandidate CreateRandomCandidate(const HtCandidateCreateParams& params, ht_rng& rng) const override;
+	virtual HtCandidate NudgeCandidate(const HtCandidateNudgeParams& params, ht_rng& rng) const override;
 };
 
 class HtWorker
 {
 	std::thread thread;
 	std::condition_variable cv;
-	std::shared_mutex mtx;
+
+	enum WorkerState
+	{
+		WORK_INIT,
+		WORK_IDLE,
+		WORK_MAKE_GENERATION,
+		WORK_STOP,
+	};
+
+	WorkerState state = WORK_INIT;
 
 	const HtGenerationInfo genInfo;
-	std::minstd_rand rng;
+	ht_rng rng;
 
 	std::shared_ptr<const HtIWorld> world;
 
-	std::vector<HtCandidate> candidateHistory;
-	std::vector<candidate_idx> curGeneration;
-
 	void Stop();
 	void WorkerLoop();
+	void WorkerMakeGeneration(const HtGenerationInfo& curGenInfo, size_t generation);
 
 public:
+	std::atomic<size_t> nGenerations = 0;
+	std::mutex mtx;
+	std::vector<HtCandidate> candidateHistory;
+	std::vector<candidate_idx> lastGeneration, newGenerationScratch;
+
 	HtWorker(size_t generationSize, const HtGenerationInfoRatios& genRatios, std::shared_ptr<const HtIWorld> world);
+
+	void MakeNewGeneration();
 
 	~HtWorker()
 	{
@@ -238,9 +275,16 @@ protected:
 		SptImGuiGroup::Draw_VagHunt.RegisterUserCallback(ImGuiTabCallback);
 	}
 
-private:
+	virtual void UnloadFeature() override
+	{
+		worker.reset();
+	}
+
+public:
 	HtVagBoxTarget vagTarget;
-	static std::shared_mutex targetMtx;
+	inline static std::shared_mutex targetMtx;
+
+private:
 	std::unique_ptr<HtWorker> worker;
 
 	void ImGuiTabCallbackImpl();

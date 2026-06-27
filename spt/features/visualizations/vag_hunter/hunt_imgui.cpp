@@ -159,5 +159,22 @@ void VagHunterHuntFeature::ImGuiTabCallbackImpl()
 		vagTarget.RecalcMaxInternalDist();
 	ImGui::PopID();
 
-	ImGui::Text("Debug: player eye distance to target: %.9g", vagTarget.DistTo(utils::GetPlayerEyePosition()));
+	// ImGui::Text("Debug: player eye distance to target: %.9g", vagTarget.DistTo(utils::GetPlayerEyePosition()));
+
+	if (ImGui::Button("Do generation"))
+	{
+		if (!worker)
+		{
+			worker = std::make_unique<HtWorker>(100,
+			                                    HtGenerationInfoRatios::CreateReasonableRatios(),
+			                                    std::make_shared<HtContinuousWorld>());
+		}
+
+		worker->MakeNewGeneration();
+	}
+
+	ImGui::BeginDisabled(!worker);
+	if (ImGui::Button("Stop"))
+		worker.reset();
+	ImGui::EndDisabled();
 }

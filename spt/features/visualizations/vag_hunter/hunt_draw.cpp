@@ -5,6 +5,8 @@
 
 void VagHunterHuntFeature::OnRenderSignal(MeshRendererDelegate& mr)
 {
+	// draw target(s)
+
 	mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
 	    [&](MeshBuilderDelegate& mb)
 	    {
@@ -24,4 +26,39 @@ void VagHunterHuntFeature::OnRenderSignal(MeshRendererDelegate& mr)
 			              {C_OUTLINE(255, 150, 0, 20)});
 		    }
 	    }));
+
+	// draw all candidates
+
+	if (worker)
+	{
+		std::unique_lock kl(worker->mtx);
+
+		mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
+		    [&](MeshBuilderDelegate& mb)
+		    {
+			    for (auto& c : worker->candidateHistory)
+			    {
+				    mb.AddCross(c.pp.CalcVagPt((HtPortalColor)c.entryColor),
+				                5.f,
+				                color32(255, 0, 0, 255));
+				    if (c.parentIndex != HT_INVALID_CANDIDATE_IDX)
+				    {
+					    auto& cp = worker->candidateHistory[c.parentIndex];
+					    mb.AddLine(c.pp.CalcVagPt((HtPortalColor)c.entryColor),
+					               cp.pp.CalcVagPt((HtPortalColor)cp.entryColor),
+					               color32(100, 100, 0, 255));
+				    }
+			    }
+
+			    for (auto cIdx : worker->lastGeneration)
+			    {
+				    auto& c = worker->candidateHistory[cIdx];
+				    mb.AddBox(c.pp.CalcVagPt((HtPortalColor)c.entryColor),
+				              Vector(-5.f),
+				              Vector(5.f),
+				              vec3_angle,
+				              {C_WIRE(0, 255, 0, 255)});
+			    }
+		    }));
+	}
 }
