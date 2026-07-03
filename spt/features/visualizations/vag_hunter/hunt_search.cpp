@@ -1,6 +1,8 @@
 #include "stdafx.hpp"
 #include "hunt.hpp"
 
+#include <numeric>
+
 Vector HtPortalPair::CalcVagPt(HtPortalColor entryColor) const
 {
 	const HtPortal& entry = p[entryColor];
@@ -22,6 +24,22 @@ void HtCandidate::RecalcDistMetric()
 	Vector vagPt = pp.CalcVagPt((HtPortalColor)entryColor);
 	std::shared_lock lk(spt_vag_hunter_feat.targetMtx);
 	metric = spt_vag_hunter_feat.vagTarget.DistTo(vagPt);
+}
+
+HtGenerationInfo::HtGenerationInfo(size_t generationSize, const ht_sample_ratios& ratios)
+    : generationSize(generationSize)
+{
+	// distribute the ratios to the counts, making sure that the total of the counts is the generation size
+	float ratioSum = std::accumulate(ratios.begin(), ratios.end(), 0.f);
+	Assert(ratioSum > 0.f);
+	size_t remaining = generationSize;
+	for (size_t i = 0; i < HT_ST_COUNT; i++)
+	{
+		counts[i] = (size_t)std::roundf(remaining * ratios[i] / ratioSum);
+		remaining -= counts[i];
+		ratioSum -= ratios[i];
+	}
+	Assert(std::accumulate(counts.begin(), counts.end(), 0u) == generationSize);
 }
 
 HtCandidate HtContinuousWorld::CreateRandomCandidate(const HtCandidateCreateParams& params, ht_rng& rng) const
@@ -95,9 +113,7 @@ HtCandidate HtContinuousWorld::NudgeCandidate(const HtCandidateNudgeParams& para
 	return ret;
 }
 
-HtWorker::HtWorker(size_t generationSize,
-                   const HtGenerationInfoRatios& genRatios,
-                   std::shared_ptr<const HtIWorld> world)
+HtWorker::HtWorker(size_t generationSize, const ht_sample_ratios& genRatios, std::shared_ptr<const HtIWorld> world)
     : genInfo(generationSize, genRatios), world(std::move(world))
 {
 	Assert(generationSize > 0);
@@ -127,7 +143,8 @@ void HtWorker::Stop()
 
 void HtWorker::WorkerLoop()
 {
-	HtGenerationInfoRatios firstGenRatios;
+	ht_sample_ratios firstGenRatios{};
+	firstGenRatios[HT_ST_INJECT_RANDOM] = 1.f;
 	HtGenerationInfo firstGenInfo(genInfo.generationSize, firstGenRatios);
 
 	for (;;)
@@ -156,11 +173,13 @@ void HtWorker::WorkerMakeGeneration(const HtGenerationInfo& curGenInfo, size_t g
 
 	// copy the best candidates
 	std::copy(lastGeneration.begin(),
-	          lastGeneration.begin() + curGenInfo.keepExact,
+	          lastGeneration.begin() + curGenInfo.counts[HT_ST_KEEP_EXACT],
 	          std::back_inserter(newGenerationScratch));
 
 	std::uniform_real_distribution realDist(0.0f, 1.0f);
-	std::uniform_int_distribution<size_t> weakIdxDist(curGenInfo.keepExact, curGenInfo.generationSize - 1);
+	std::uniform_int_distribution<size_t> weakIdxDist(curGenInfo.counts[HT_ST_KEEP_EXACT],
+	                                                  curGenInfo.generationSize - 1);
+	std::uniform_int_distribution<size_t> historyIdxDist(0, candidateHistory.size() - 1);
 	float invNCandidates = 1.f / curGenInfo.generationSize;
 
 	HtCandidateNudgeParams nudgeParams{
@@ -173,7 +192,7 @@ void HtWorker::WorkerMakeGeneration(const HtGenerationInfo& curGenInfo, size_t g
 
 	for (size_t doStrong = 0; doStrong < 2; doStrong++)
 	{
-		size_t nMutations = doStrong ? curGenInfo.mutateStrong : curGenInfo.mutateWeak;
+		size_t nMutations = curGenInfo.counts[doStrong ? HT_ST_MUTATE_STRONG : HT_ST_MUTATE_WEAK];
 		for (size_t i = 0; i < nMutations; i++)
 		{
 			size_t genSourceIdx;
@@ -201,11 +220,20 @@ void HtWorker::WorkerMakeGeneration(const HtGenerationInfo& curGenInfo, size_t g
 	};
 
 	// create some new random candidates
-	for (size_t i = 0; i < curGenInfo.injectRandom; i++)
+	for (size_t i = 0; i < curGenInfo.counts[HT_ST_INJECT_RANDOM]; i++)
 	{
 		createParams.newCandIdx = candidateHistory.size();
 		candidateHistory.push_back(world->CreateRandomCandidate(createParams, rng));
 		newGenerationScratch.push_back(createParams.newCandIdx);
+	}
+
+	// grab some from the history
+	for (size_t i = 0; i < curGenInfo.counts[HT_ST_MUTATE_EXPIRED]; i++)
+	{
+		nudgeParams.sourceCand = &candidateHistory[historyIdxDist(rng)];
+		nudgeParams.newCandIdx = candidateHistory.size();
+		candidateHistory.push_back(world->NudgeCandidate(nudgeParams, rng));
+		newGenerationScratch.push_back(nudgeParams.newCandIdx);
 	}
 
 	std::swap(lastGeneration, newGenerationScratch);

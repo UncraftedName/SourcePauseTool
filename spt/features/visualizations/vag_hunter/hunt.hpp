@@ -166,44 +166,41 @@ struct HtCandidateNudgeParams
 	candidate_idx newCandIdx;
 };
 
-struct HtGenerationInfoRatios
+enum HtSampleType
 {
-	float keepExact = 0.f;
-	float mutateStrong = 0.f;
-	float mutateWeak = 0.f;
-	float injectRandom = 1.f;
+	// keep this many of the strongest candidates without changing them
+	HT_ST_KEEP_EXACT,
+	// choose this many of the strongest and mutate them
+	HT_ST_MUTATE_STRONG,
+	// choose this many of the remaining weak ones and mutate them
+	HT_ST_MUTATE_WEAK,
+	// add this many randomly generated samples
+	HT_ST_INJECT_RANDOM,
+	// grab this many from the history
+	HT_ST_MUTATE_EXPIRED,
 
-	static HtGenerationInfoRatios CreateReasonableRatios()
-	{
-		return HtGenerationInfoRatios{
-		    .keepExact = 10.f,
-		    .mutateStrong = 10.f,
-		    .mutateWeak = 70.f,
-		    .injectRandom = 10.f,
-		};
-	}
+	HT_ST_COUNT,
 };
+
+using ht_sample_ratios = std::array<float, HT_ST_COUNT>;
+
+inline ht_sample_ratios HtCreateReasonableRatios()
+{
+	ht_sample_ratios ret{};
+	ret[HT_ST_KEEP_EXACT] = 5.f;
+	ret[HT_ST_MUTATE_STRONG] = 10.f;
+	ret[HT_ST_MUTATE_WEAK] = 20.f;
+	ret[HT_ST_INJECT_RANDOM] = 5.f;
+	ret[HT_ST_MUTATE_EXPIRED] = 60.f;
+	return ret;
+}
 
 struct HtGenerationInfo
 {
 	size_t generationSize;
-	// keep this many of the strongest candidates without changing them
-	size_t keepExact;
-	// choose this many of the strongest and mutate them
-	size_t mutateStrong;
-	// choose this many of the remaining weak ones and mutate them
-	size_t mutateWeak;
-	// add this many randomly choosen portals
-	size_t injectRandom;
+	std::array<size_t, HT_ST_COUNT> counts;
 
-	HtGenerationInfo(size_t generationSize, const HtGenerationInfoRatios& ratios) : generationSize(generationSize)
-	{
-		float s = 1.f / (ratios.keepExact + ratios.mutateStrong + ratios.mutateWeak + ratios.injectRandom);
-		keepExact = generationSize * s * ratios.keepExact;
-		mutateStrong = generationSize * s * ratios.mutateStrong;
-		mutateWeak = generationSize * s * ratios.mutateWeak;
-		injectRandom = generationSize * s * ratios.injectRandom;
-	}
+	HtGenerationInfo(size_t generationSize, const ht_sample_ratios& ratios);
 };
 
 using ht_rng = std::minstd_rand;
@@ -253,7 +250,7 @@ public:
 	std::vector<HtCandidate> candidateHistory;
 	std::vector<candidate_idx> lastGeneration, newGenerationScratch;
 
-	HtWorker(size_t generationSize, const HtGenerationInfoRatios& genRatios, std::shared_ptr<const HtIWorld> world);
+	HtWorker(size_t generationSize, const ht_sample_ratios& genRatios, std::shared_ptr<const HtIWorld> world);
 
 	void MakeNewGeneration();
 

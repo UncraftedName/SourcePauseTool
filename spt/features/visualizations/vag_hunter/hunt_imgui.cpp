@@ -166,7 +166,7 @@ void VagHunterHuntFeature::ImGuiTabCallbackImpl()
 		if (!worker)
 		{
 			worker = std::make_unique<HtWorker>(100,
-			                                    HtGenerationInfoRatios::CreateReasonableRatios(),
+			                                    HtCreateReasonableRatios(),
 			                                    std::make_shared<HtContinuousWorld>());
 		}
 
