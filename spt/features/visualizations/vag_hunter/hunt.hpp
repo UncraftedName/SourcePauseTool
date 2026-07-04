@@ -184,7 +184,7 @@ enum HtSampleType
 
 using ht_sample_ratios = std::array<float, HT_ST_COUNT>;
 
-inline ht_sample_ratios HtCreateReasonableRatios()
+inline ht_sample_ratios HtCreateReasonableSampleRatios()
 {
 	ht_sample_ratios ret{};
 	ret[HT_ST_KEEP_EXACT] = 5.f;
@@ -282,7 +282,13 @@ public:
 	inline static std::shared_mutex targetMtx;
 
 private:
+	ht_sample_ratios sampleRatios = HtCreateReasonableSampleRatios();
+	size_t generationSize = 100;
 	std::unique_ptr<HtWorker> worker;
+	std::vector<StaticMesh> historyMeshes;
+	size_t meshesBuiltUpToIndex = 0;
+	
+	void InitNewWorker();
 
 	void ImGuiTabCallbackImpl();
 	bool ImGuiPointTargetConfig(HtVagPointTarget& target);

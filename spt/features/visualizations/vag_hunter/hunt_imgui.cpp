@@ -147,6 +147,13 @@ bool VagHunterHuntFeature::ImGuiBoxTargetConfig(HtVagBoxTarget& target)
 	return changed;
 }
 
+void VagHunterHuntFeature::InitNewWorker()
+{
+	worker = std::make_unique<HtWorker>(generationSize, sampleRatios, std::make_shared<HtContinuousWorld>());
+	meshesBuiltUpToIndex = 0;
+	historyMeshes.clear();
+}
+
 void VagHunterHuntFeature::ImGuiTabCallbackImpl()
 {
 	ImGui::SeparatorText("VAG target set");
@@ -164,12 +171,7 @@ void VagHunterHuntFeature::ImGuiTabCallbackImpl()
 	if (ImGui::Button("Do generation"))
 	{
 		if (!worker)
-		{
-			worker = std::make_unique<HtWorker>(100,
-			                                    HtCreateReasonableRatios(),
-			                                    std::make_shared<HtContinuousWorld>());
-		}
-
+			InitNewWorker();
 		worker->MakeNewGeneration();
 	}
 

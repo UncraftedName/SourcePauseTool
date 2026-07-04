@@ -31,25 +31,47 @@ void VagHunterHuntFeature::OnRenderSignal(MeshRendererDelegate& mr)
 
 	if (worker)
 	{
-		std::unique_lock kl(worker->mtx);
+		if (!StaticMesh::AllValid(historyMeshes))
+		{
+			historyMeshes.clear();
+			meshesBuiltUpToIndex = 0;
+		}
 
+		std::unique_lock lk(worker->mtx);
+
+		// build up the history as static mesh(es)
+		spt_meshBuilder.CreateMultipleMeshes<StaticMesh>(
+		    std::back_inserter(historyMeshes),
+		    [this]() { return meshesBuiltUpToIndex < worker->candidateHistory.size(); },
+		    [this](MeshBuilderDelegate& mb)
+		    {
+			    const HtCandidate& c = worker->candidateHistory[meshesBuiltUpToIndex];
+			    bool ret =
+			        mb.AddCross(c.pp.CalcVagPt((HtPortalColor)c.entryColor), 5.f, color32(255, 0, 0, 255));
+			    if (!ret)
+				    return false;
+			    if (c.parentIndex != HT_INVALID_CANDIDATE_IDX)
+			    {
+				    auto& cp = worker->candidateHistory[c.parentIndex];
+				    ret = mb.AddLine(c.pp.CalcVagPt((HtPortalColor)c.entryColor),
+				                     cp.pp.CalcVagPt((HtPortalColor)cp.entryColor),
+				                     color32(100, 100, 0, 255));
+				    if (!ret)
+					    return false;
+			    }
+
+			    meshesBuiltUpToIndex++;
+			    return true;
+		    });
+
+		for (auto& mesh : historyMeshes)
+			if (mesh.Valid())
+				mr.DrawMesh(mesh);
+
+		// highlight last generation
 		mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(
 		    [&](MeshBuilderDelegate& mb)
 		    {
-			    for (auto& c : worker->candidateHistory)
-			    {
-				    mb.AddCross(c.pp.CalcVagPt((HtPortalColor)c.entryColor),
-				                5.f,
-				                color32(255, 0, 0, 255));
-				    if (c.parentIndex != HT_INVALID_CANDIDATE_IDX)
-				    {
-					    auto& cp = worker->candidateHistory[c.parentIndex];
-					    mb.AddLine(c.pp.CalcVagPt((HtPortalColor)c.entryColor),
-					               cp.pp.CalcVagPt((HtPortalColor)cp.entryColor),
-					               color32(100, 100, 0, 255));
-				    }
-			    }
-
 			    for (auto cIdx : worker->lastGeneration)
 			    {
 				    auto& c = worker->candidateHistory[cIdx];
