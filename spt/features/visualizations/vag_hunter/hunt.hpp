@@ -147,6 +147,11 @@ struct HtCandidate
 	candidate_idx parentIndex;
 
 	void RecalcDistMetric();
+
+	Vector CalcVagPt() const
+	{
+		return pp.CalcVagPt((HtPortalColor)entryColor);
+	}
 };
 
 struct HtCandidateCreateParams
@@ -240,19 +245,32 @@ class HtWorker
 
 	std::shared_ptr<const HtIWorld> world;
 
+	struct
+	{
+		std::vector<StaticMesh> histories;
+		candidate_idx historyBuiltUpToIdx = 0;
+		std::array<StaticMesh, 2> portal;
+	} meshes;
+
+	std::vector<candidate_idx> sortedHistory;
+
 	void Stop();
 	void WorkerLoop();
 	void WorkerMakeGeneration(const HtGenerationInfo& curGenInfo, size_t generation);
+	void DrawDetailedCandidate(MeshRendererDelegate& mr, candidate_idx cIdx);
 
 public:
 	std::atomic<size_t> nGenerations = 0;
 	std::mutex mtx;
 	std::vector<HtCandidate> candidateHistory;
 	std::vector<candidate_idx> lastGeneration, newGenerationScratch;
+	std::optional<candidate_idx> drawPortalsForIdx;
 
 	HtWorker(size_t generationSize, const ht_sample_ratios& genRatios, std::shared_ptr<const HtIWorld> world);
 
 	void MakeNewGeneration();
+	void DrawHistory(MeshRendererDelegate& mr);
+	void DrawImGuiHistoryTable();
 
 	~HtWorker()
 	{
@@ -285,9 +303,7 @@ private:
 	ht_sample_ratios sampleRatios = HtCreateReasonableSampleRatios();
 	size_t generationSize = 100;
 	std::unique_ptr<HtWorker> worker;
-	std::vector<StaticMesh> historyMeshes;
-	size_t meshesBuiltUpToIndex = 0;
-	
+
 	void InitNewWorker();
 
 	void ImGuiTabCallbackImpl();

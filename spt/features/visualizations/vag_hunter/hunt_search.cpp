@@ -21,7 +21,7 @@ Vector HtPortalPair::CalcVagPt(HtPortalColor entryColor) const
 void HtCandidate::RecalcDistMetric()
 {
 	// TODO the target being a global is a bit weird and cringe... maybe at least make a class {target, targetMtx} wrapper?
-	Vector vagPt = pp.CalcVagPt((HtPortalColor)entryColor);
+	Vector vagPt = CalcVagPt();
 	std::shared_lock lk(spt_vag_hunter_feat.targetMtx);
 	metric = spt_vag_hunter_feat.vagTarget.DistTo(vagPt);
 }

@@ -3,6 +3,11 @@
 #include "hunt.hpp"
 #include "spt/utils/ent_utils.hpp"
 
+#include <numeric>
+
+inline ImVec4 BLUE_PORTAL_COLOR = ImGui::ColorConvertU32ToFloat4(Color32ToImU32({64, 160, 255, 127}));
+inline ImVec4 ORANGE_PORTAL_COLOR = ImGui::ColorConvertU32ToFloat4(Color32ToImU32({255, 160, 32, 127}));
+
 bool VagHunterHuntFeature::ImGuiPointTargetConfig(HtVagPointTarget& target)
 {
 	bool changed = false;
@@ -150,8 +155,6 @@ bool VagHunterHuntFeature::ImGuiBoxTargetConfig(HtVagBoxTarget& target)
 void VagHunterHuntFeature::InitNewWorker()
 {
 	worker = std::make_unique<HtWorker>(generationSize, sampleRatios, std::make_shared<HtContinuousWorld>());
-	meshesBuiltUpToIndex = 0;
-	historyMeshes.clear();
 }
 
 void VagHunterHuntFeature::ImGuiTabCallbackImpl()
@@ -178,5 +181,65 @@ void VagHunterHuntFeature::ImGuiTabCallbackImpl()
 	ImGui::BeginDisabled(!worker);
 	if (ImGui::Button("Stop"))
 		worker.reset();
+	if (worker)
+		worker->DrawImGuiHistoryTable();
 	ImGui::EndDisabled();
+}
+
+void HtWorker::DrawImGuiHistoryTable()
+{
+	std::unique_lock lk(mtx);
+
+	if (sortedHistory.size() != candidateHistory.size())
+	{
+		for (candidate_idx i = sortedHistory.size(); i < candidateHistory.size(); i++)
+			sortedHistory.push_back(i);
+
+		std::ranges::sort(sortedHistory,
+		                  std::less{},
+		                  [this](candidate_idx i) { return candidateHistory[i].metric; });
+	}
+
+	ImGuiTableFlags tableFlags = ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY;
+	ImVec2 outer_size = ImVec2(0.0f, ImGui::GetTextLineHeightWithSpacing() * 8);
+	if (ImGui::BeginTable("history_table", 3, tableFlags, outer_size))
+	{
+		ImGui::TableSetupScrollFreeze(0, 1);
+		ImGui::TableSetupColumn("index");
+		ImGui::TableSetupColumn("distance");
+		ImGui::TableSetupColumn("entry");
+		ImGui::TableHeadersRow();
+
+		ImGuiListClipper clipper;
+		clipper.Begin(sortedHistory.size());
+		while (clipper.Step())
+		{
+			for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; row++)
+			{
+				ImGui::TableNextRow();
+				candidate_idx cIdx = sortedHistory[row];
+				const auto& c = candidateHistory[cIdx];
+
+				ImGui::TableSetColumnIndex(0);
+				char buf[10];
+				sprintf_s(buf, "%d", row);
+
+				ImGuiSelectableFlags selectFlags = ImGuiSelectableFlags_SpanAllColumns;
+				if (ImGui::Selectable(buf, cIdx == drawPortalsForIdx, selectFlags))
+					drawPortalsForIdx = cIdx;
+				if (ImGui::IsItemHovered())
+					drawPortalsForIdx = cIdx;
+
+				ImGui::TableSetColumnIndex(1);
+				ImGui::Text("%.7g", c.metric);
+
+				ImGui::TableSetColumnIndex(2);
+				if (c.entryColor == HT_ENTRY_BLUE)
+					ImGui::TextColored(BLUE_PORTAL_COLOR, "blue");
+				else
+					ImGui::TextColored(ORANGE_PORTAL_COLOR, "orange");
+			}
+		}
+		ImGui::EndTable();
+	}
 }
