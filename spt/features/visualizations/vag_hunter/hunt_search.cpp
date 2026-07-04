@@ -9,11 +9,11 @@ Vector HtPortalPair::CalcVagPt(HtPortalColor entryColor) const
 	const HtPortal& exit = p[1 - entryColor];
 	Vector vagPt = entry.pos;
 	matrix3x4_t mat;
-	AngleIMatrix(QAngle{entry.pitch, entry.yaw, 0.f}, entry.pos, mat);
+	AngleIMatrix(QAngle{exit.pitch, exit.yaw, 0.f}, exit.pos, mat);
 	utils::VectorTransform(mat, vagPt);
 	vagPt[0] = -vagPt[0];
 	vagPt[1] = -vagPt[1];
-	AngleMatrix(QAngle{exit.pitch, exit.yaw, 0.f}, exit.pos, mat);
+	AngleMatrix(QAngle{entry.pitch, entry.yaw, 0.f}, entry.pos, mat);
 	utils::VectorTransform(mat, vagPt);
 	return vagPt;
 }
