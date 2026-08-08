@@ -115,10 +115,33 @@ public:
 	}
 };
 
+enum HtPortalDim
+{
+	HT_RAW_POS_X,
+	HT_RAW_POS_Y,
+	HT_RAW_POS_Z,
+	HT_RAW_PITCH,
+	HT_RAW_YAW,
+
+	HT_RAW_COUNT,
+};
+
 struct HtPortal
 {
-	Vector pos;
-	float pitch, yaw;
+	union
+	{
+		struct
+		{
+			Vector pos;
+			float pitch, yaw;
+		} loc;
+
+		std::array<float, HT_RAW_COUNT> raw;
+
+		static_assert(sizeof(loc) == sizeof(raw));
+	};
+
+	HtPortal() {}
 };
 
 enum HtPortalColor : unsigned char

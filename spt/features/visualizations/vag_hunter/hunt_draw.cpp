@@ -90,7 +90,7 @@ void HtWorker::DrawDetailedCandidate(MeshRendererDelegate& mr, candidate_idx cId
 		HtPortal p = c.pp.p[i];
 		mr.DrawMesh(meshes.portal[i],
 		            [p](const CallbackInfoIn& in, CallbackInfoOut& out)
-		            { AngleMatrix(QAngle(p.pitch, p.yaw, 0.f), p.pos, out.mat); });
+		            { AngleMatrix(QAngle(p.loc.pitch, p.loc.yaw, 0.f), p.loc.pos, out.mat); });
 	}
 
 	mr.DrawMesh(spt_meshBuilder.CreateDynamicMesh(

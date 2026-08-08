@@ -5,8 +5,8 @@
 
 Vector HtPortalPair::CalcVagPt(HtPortalColor entryColor) const
 {
-	const HtPortal& entry = p[entryColor];
-	const HtPortal& exit = p[1 - entryColor];
+	const auto& entry = p[entryColor].loc;
+	const auto& exit = p[1 - entryColor].loc;
 	Vector vagPt = entry.pos;
 	matrix3x4_t mat;
 	AngleIMatrix(QAngle{exit.pitch, exit.yaw, 0.f}, exit.pos, mat);
@@ -52,7 +52,7 @@ HtCandidate HtContinuousWorld::CreateRandomCandidate(const HtCandidateCreatePara
 
 	for (int i = 0; i < 2; i++)
 	{
-		auto& p = ret.pp.p[i];
+		auto& p = ret.pp.p[i].loc;
 		p.pos = Vector(posDist(rng), posDist(rng), posDist(rng));
 		int portalType = portalTypeDist(rng);
 		switch (portalType)
@@ -91,7 +91,7 @@ HtCandidate HtContinuousWorld::NudgeCandidate(const HtCandidateNudgeParams& para
 
 	HtCandidate ret;
 	std::memcpy(&ret.pp, &sourcePp, sizeof HtPortalPair);
-	HtPortal& nudgePortal = ret.pp.p[nudgeOrange];
+	auto& nudgePortal = ret.pp.p[nudgeOrange].loc;
 
 	std::uniform_real_distribution posDist(-500.f, 500.f);
 	nudgePortal.pos += Vector(posDist(rng), posDist(rng), posDist(rng));
