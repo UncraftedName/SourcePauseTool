@@ -142,6 +142,11 @@ struct HtPortal
 	};
 
 	HtPortal() {}
+
+	bool IsApproxFloorCeil() const
+	{
+		return std::fabsf(std::fabsf(loc.pitch) - 90.f) < 0.001f;
+	}
 };
 
 enum HtPortalColor : unsigned char
@@ -239,6 +244,18 @@ public:
 	virtual HtCandidate CreateRandomCandidate(const HtCandidateCreateParams& params, ht_rng& rng) const = 0;
 	virtual HtCandidate NudgeCandidate(const HtCandidateNudgeParams& params, ht_rng& rng) const = 0;
 	virtual ~HtIWorld() {};
+
+protected:
+	/*
+	* Choose a (weighted) random dimension (pos/angle) and use gradient decent to figure out where
+	* the portal should go to minimize the distance to the vag target. The returned pair is:
+	* <dimension, value of new dimension>.
+	*/
+	std::pair<HtPortalDim, float> MinimizeCandidateDimension(const HtPortalPair& pair,
+	                                                         HtPortalColor whichPortal,
+	                                                         HtPortalColor entryColor,
+	                                                         ht_rng& rng,
+	                                                         size_t maxSteps) const;
 };
 
 class HtContinuousWorld : public HtIWorld

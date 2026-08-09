@@ -2,6 +2,7 @@
 #include "hunt.hpp"
 
 #include <numeric>
+#include <bitset>
 
 Vector HtPortalPair::CalcVagPt(HtPortalColor entryColor) const
 {
@@ -81,17 +82,107 @@ HtCandidate HtContinuousWorld::CreateRandomCandidate(const HtCandidateCreatePara
 	return ret;
 }
 
+std::pair<HtPortalDim, float> HtIWorld::MinimizeCandidateDimension(const HtPortalPair& pair,
+                                                                   HtPortalColor whichPortal,
+                                                                   HtPortalColor entryColor,
+                                                                   ht_rng& rng,
+                                                                   size_t maxSteps) const
+{
+	HtPortalPair newPair = pair;
+
+	/*
+	* Chose a random dimension, but ignore some (only floor/ceiling portals can rotate). Doing a
+	* weighted sample based on the derivative size sounds like a good idea at first, but it means
+	* that dimensions sitting at a local maximum will never get chosen. So we just choose a random
+	* one instead.
+	* 
+	* TODO if this is just going to use a random dimension we can pull that and the rng out of here
+	*/
+	std::bitset<HT_RAW_COUNT> dimIgnore;
+	dimIgnore[HT_RAW_PITCH] = true;
+	if (!pair.p[whichPortal].IsApproxFloorCeil())
+		dimIgnore[HT_RAW_YAW] = true;
+
+	std::array<HtPortalDim, HT_RAW_COUNT> dimList;
+	size_t availDimCount = 0;
+	for (size_t i = 0; i < HT_RAW_COUNT; i++)
+		if (!dimIgnore[i])
+			dimList[availDimCount++] = (HtPortalDim)i;
+
+	// choose a random dimension, preferring ones with a higher weight
+	std::uniform_int_distribution<size_t> dist(0, availDimCount - 1);
+	HtPortalDim dim = dimList[dist(rng)];
+
+	// nudge point along that dimension & find the minimum distance to the vag target
+
+	// TODO tidy up global target
+	std::shared_lock lk(spt_vag_hunter_feat.targetMtx);
+	HtIVagTarget& target = spt_vag_hunter_feat.vagTarget;
+
+	constexpr float stepThresh = 0.2f;
+	constexpr float dvDelta = 0.1f;
+
+	float stepSize = 2.0f;
+	float& dimRef = newPair.p[whichPortal].raw[dim];
+	float prevDist = target.DistTo(newPair.CalcVagPt(entryColor));
+
+	Assert(maxSteps > 1);
+	for (size_t i = 0; i < maxSteps && stepSize > stepThresh; i++)
+	{
+		// calculate derivate using finite difference
+		float prevDimVal = dimRef;
+		dimRef = prevDimVal - dvDelta;
+		float cd1 = target.DistTo(newPair.CalcVagPt(entryColor));
+		dimRef = prevDimVal + dvDelta;
+		float cd2 = target.DistTo(newPair.CalcVagPt(entryColor));
+		float dv = (cd2 - cd1) / (2 * dvDelta);
+
+		// nudge portal
+		dimRef = prevDimVal + (dv > 0.f ? -stepSize : stepSize);
+		float newDist = target.DistTo(newPair.CalcVagPt(entryColor));
+
+		if (newDist < prevDist)
+		{
+			prevDist = newDist;
+			stepSize *= 1.5f;
+		}
+		else
+		{
+			dimRef = prevDimVal;
+			stepSize *= 0.5f;
+		}
+	}
+
+	return {dim, dimRef};
+}
+
 HtCandidate HtContinuousWorld::NudgeCandidate(const HtCandidateNudgeParams& params, ht_rng& rng) const
 {
 	// select portal to nudge
 	const HtPortalPair& sourcePp = params.sourceCand->pp;
 	Assert(params.allowBlueNudge || params.allowOrangeNudge);
-	std::uniform_int_distribution boolDist(0, 1);
-	bool nudgeOrange = params.allowBlueNudge && params.allowOrangeNudge ? boolDist(rng) : params.allowOrangeNudge;
+
+	HtPortalColor nudgeColor;
+	if (params.allowBlueNudge && params.allowOrangeNudge)
+	{
+		std::uniform_int_distribution boolDist(0, 1);
+		nudgeColor = (HtPortalColor)boolDist(rng);
+	}
+	else
+	{
+		nudgeColor = params.allowOrangeNudge ? HT_ENTRY_ORANGE : HT_ENTRY_BLUE;
+	}
 
 	HtCandidate ret;
 	std::memcpy(&ret.pp, &sourcePp, sizeof HtPortalPair);
-	auto& nudgePortal = ret.pp.p[nudgeOrange].loc;
+
+	auto [dim, newDimVal] =
+	    MinimizeCandidateDimension(ret.pp, nudgeColor, (HtPortalColor)params.sourceCand->entryColor, rng, 10);
+	float& dimRef = ret.pp.p[nudgeColor].raw[dim];
+	std::uniform_real_distribution scaleFactorDist(0.3f, 0.7f); // [0,1]; 0 is slow, 1 is fast
+	dimRef = dimRef + (newDimVal - dimRef) * scaleFactorDist(rng);
+
+	/*auto& nudgePortal = ret.pp.p[nudgeColor].loc;
 
 	std::uniform_real_distribution posDist(-500.f, 500.f);
 	nudgePortal.pos += Vector(posDist(rng), posDist(rng), posDist(rng));
@@ -102,7 +193,7 @@ HtCandidate HtContinuousWorld::NudgeCandidate(const HtCandidateNudgeParams& para
 		std::uniform_real_distribution yawDist(0.f, 360.f);
 		nudgePortal.yaw += yawDist(rng);
 		nudgePortal.yaw = std::fmodf(nudgePortal.yaw + 180.f, 360.f) - 180.f;
-	}
+	}*/
 
 	ret.entryColor = params.sourceCand->entryColor;
 	ret.generation = params.generation;
